@@ -147,11 +147,28 @@ class SettingsDialog(QtWidgets.QDialog):
         for c in self.owner._available_characters():
             self.cb_char.addItem(c.display_name, c.key)
         self.cb_exam = QtWidgets.QCheckBox("显示考试倒计时常驻徽章", g)
+        self.cb_wandering = QtWidgets.QCheckBox("允许空闲时在屏幕边缘漫游", g)
+        self.cb_taskbar_dock = QtWidgets.QCheckBox("靠近任务栏时自动吸附并坐下", g)
+        self.cb_sedentary = QtWidgets.QCheckBox("开启久坐关怀与健康提醒", g)
+        self.combo_sedentary = QtWidgets.QComboBox(g)
+        self.combo_sedentary.addItem("45 分钟", 45)
+        self.combo_sedentary.addItem("60 分钟（推荐）", 60)
+        self.combo_sedentary.addItem("90 分钟", 90)
+        self.combo_sedentary.addItem("120 分钟", 120)
+        sed_row = QtWidgets.QHBoxLayout()
+        sed_row.addWidget(self.cb_sedentary)
+        sed_row.addWidget(QtWidgets.QLabel("间隔", g))
+        sed_row.addWidget(self.combo_sedentary)
+        sed_row.addStretch(1)
+
         self.cb_check_updates = QtWidgets.QCheckBox("启动时检查更新", g)
         self.cb_knowledge_embed = QtWidgets.QCheckBox(
             "讲义检索：使用本地语义模型（需安装，未安装自动回退词频）", g)
         gl.addRow("默认角色", self.cb_char)
         gl.addRow("", self.cb_exam)
+        gl.addRow("", self.cb_wandering)
+        gl.addRow("", self.cb_taskbar_dock)
+        gl.addRow("", sed_row)
         gl.addRow("", self.cb_check_updates)
         gl.addRow("", self.cb_knowledge_embed)
         self.ver_label = QtWidgets.QLabel(
@@ -200,6 +217,13 @@ class SettingsDialog(QtWidgets.QDialog):
         if idx >= 0:
             self.cb_char.setCurrentIndex(idx)
         self.cb_exam.setChecked(o.prefs.get("exam_badge", True))
+        self.cb_wandering.setChecked(o.prefs.get("wandering_enabled", True))
+        self.cb_taskbar_dock.setChecked(o.prefs.get("taskbar_dock_enabled", True))
+        self.cb_sedentary.setChecked(o.prefs.get("sedentary_enabled", True))
+        sed_ival = int(o.prefs.get("sedentary_interval_min", 60))
+        sed_idx = self.combo_sedentary.findData(sed_ival)
+        if sed_idx >= 0:
+            self.combo_sedentary.setCurrentIndex(sed_idx)
         self.cb_check_updates.setChecked(o.prefs.get("check_updates", True))
         self.cb_knowledge_embed.setChecked(
             o.prefs.get("knowledge_embed", True))
@@ -240,6 +264,14 @@ class SettingsDialog(QtWidgets.QDialog):
             if key:
                 o.prefs.set("character", key)
             o.prefs.set("exam_badge", self.cb_exam.isChecked())
+            o.prefs.set("wandering_enabled", self.cb_wandering.isChecked())
+            o.prefs.set("taskbar_dock_enabled", self.cb_taskbar_dock.isChecked())
+            if hasattr(o, "wander_coord") and not self.cb_wandering.isChecked():
+                o.wander_coord.cancel_wandering()
+            o.prefs.set("sedentary_enabled", self.cb_sedentary.isChecked())
+            o.prefs.set("sedentary_interval_min", int(self.combo_sedentary.currentData()))
+            if hasattr(o, "sedentary_coord"):
+                o.sedentary_coord.reload_config()
             o.prefs.set("check_updates", self.cb_check_updates.isChecked())
             o.prefs.set("knowledge_embed", self.cb_knowledge_embed.isChecked())
             o._apply_knowledge_prefs()

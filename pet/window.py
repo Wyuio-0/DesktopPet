@@ -22,10 +22,12 @@ from .input_controller import PetInputController
 from .menu import PetContextMenuBuilder
 from .ocr import OcrError, ocr_image, summarize_ai
 from .region_select import RegionSelect
+from .sedentary import PetSedentaryCareCoordinator
 from .settings import Settings, characters_dirs
 from .translate import TranslationPopup, TranslateWorker
 from .tray import PetTrayCoordinator
 from .voice import VoicePlayer
+from .wander import PetWanderCoordinator
 from . import actions, knowledge, logging as petlog, memory, theme, tts
 from . import single_instance, updater
 
@@ -221,10 +223,13 @@ class PetWindow(QtWidgets.QWidget):
         tts.set_manual_auto_stop(self.prefs.get("clone_manual_autostop", False))
 
         # ── 关注点分离 (SoC) 独立控制器实例化 ─────────────────────────
+        self._facing_left = False
         self.focus_mgr = PetFocusToolsManager(self)
         self.input_ctrl = PetInputController(self)
         self.tray_coord = PetTrayCoordinator(self)
         self.menu_builder = PetContextMenuBuilder(self)
+        self.wander_coord = PetWanderCoordinator(self)
+        self.sedentary_coord = PetSedentaryCareCoordinator(self)
 
         # AI 定时提醒路由
         self.reminder_requested.connect(
@@ -295,6 +300,8 @@ class PetWindow(QtWidgets.QWidget):
         return self.input_ctrl.chat_anchor
 
     def open_chat(self):
+        if hasattr(self, "wander_coord"):
+            self.wander_coord.cancel_wandering()
         self.input_ctrl.open_chat()
 
     def _toggle_chat(self):
@@ -338,6 +345,9 @@ class PetWindow(QtWidgets.QWidget):
 
     def _toggle_exam_badge(self, checked):
         self.focus_mgr.toggle_exam_badge(checked)
+
+    def _refresh_exam_badge(self):
+        self.focus_mgr.refresh_exam_badge()
 
     def _reminder_dialog(self):
         self.focus_mgr.reminder_dialog()
@@ -612,6 +622,9 @@ class PetWindow(QtWidgets.QWidget):
 
         self._timer.stop()
         self._rest_timer.stop()
+        if hasattr(self, "wander_coord"):
+            self.wander_coord.cancel_wandering()
+        self._facing_left = False
         self.focus_mgr.close()
         if self._cap is not None:
             self._cap.release()
@@ -727,248 +740,327 @@ class PetWindow(QtWidgets.QWidget):
             self.trans_popup.reposition(rect)
 
     def moveEvent(self, e):
+        # Moving across monitors can change the device-pixel-ratio; keep our
+        # rendering/hit-test scale in sync so she doesn't blur or mis-align.
         self._sync_dpr()
         self._reposition_popups()
         super().moveEvent(e)
 
     def _current_dpr(self):
+        """Device-pixel-ratio of the screen the window currently sits on."""
         pt = self.frameGeometry().center()
         scr = QtWidgets.QApplication.screenAt(pt) or self.screen()
         return scr.devicePixelRatio() if scr else 1.0
 
     def _sync_dpr(self):
+        """Refresh `_dpr` when the window has moved to a differently-scaled
+        screen, and immediately re-key the current frame at the new density."""
         dpr = self._current_dpr()
         if abs(dpr - self._dpr) < 1e-3:
             return
         self._dpr = dpr
-        if self._cur_action is not None and self._frames:
-            self._frames = []
-            self._mem.clear_cache()
-            self._caching = self._cur_action.loop
-            self._replay = False
-            self._replay_i = 0
-            self._cache_full = False
-            self._compress_timer.stop()
-            self._compress_i = 0
+        # Cached frames were keyed at the old density; rebuild by replaying the
+        # current action at the new one (re-decodes and re-fills the cache).
         if self._cur_action is not None:
-            self._timer.setInterval(max(1, int(1000.0 / self._cur_action.fps)))
+            self.play(self._cur_action.name)
+
+    # ------------------------------------------------------------------ #
+    # Playback                                                             #
+    # ------------------------------------------------------------------ #
 
     def play(self, action_name):
-        act = self.char.action(action_name)
-        if not act or not act.files:
+        if action_name != "move":
+            self._facing_left = False
+        action = self.char.action(action_name)
+        if action is None:
             return
-        fn = random.choice(act.files)
-        cap = cv2.VideoCapture(fn)
-        if not cap.isOpened():
+        clip = action.pick_clip()
+        if clip is None:
             return
         if self._cap is not None:
             self._cap.release()
-        self._cap = cap
-        self._cur_action = act
-        self._loops_left = act.loop_count
+        self._cap = cv2.VideoCapture(clip)
+        self._cur_action = action
+        self._loops_left = action.loop_count
+        # Reset the per-clip frame cache. Only sustained loops (idle/sit/sleep/
+        # move/drag) are worth caching; short loop_count clips aren't.
         self._frames = []
-        self._mem.clear_cache()
-        self._caching = act.loop
+        self._mem.clear_cache()         # release old clip's budget
+        self._compress_timer.stop()     # cancel in-flight compression
+        self._compress_i = 0
         self._replay = False
         self._replay_i = 0
-        self._cache_full = False
-        self._skip_count = 0
-        self._last_bgra = None
-        self._compress_timer.stop()
-        self._compress_i = 0
-        self._sync_dpr()
-        self._timer.setInterval(max(1, int(1000.0 / act.fps)))
-        self._timer.start()
+        self._caching = action.loop
+        self._cache_full = False        # reset budget tracker for this clip
+        self._skip_count = 0            # reset frame-skip counter
+        # 按视频原生帧率播放（保持原始速度）；QTimer 0ms 未定义且吃 CPU，下限 1ms。
+        fps = self._cap.get(cv2.CAP_PROP_FPS)
+        if fps and fps > 1:
+            interval = round(1000 / fps)
+        else:
+            interval = action.interval
+        self._timer.start(max(1, interval))
         self._schedule_rest(action_name)
+
+    # ------------------------------------------------------------------ #
+    # Idle rest cycle (idle -> sit -> sleep)                               #
+    # ------------------------------------------------------------------ #
 
     @staticmethod
     def _range_ms(cfg, def_lo_s, def_hi_s):
+        """Normalise a [min,max] seconds config into a (min_ms, max_ms) pair."""
         lo, hi = def_lo_s, def_hi_s
-        if isinstance(cfg, (list, tuple)) and len(cfg) >= 2:
-            try:
-                lo, hi = float(cfg[0]), float(cfg[1])
-            except (ValueError, TypeError):
-                pass
+        if isinstance(cfg, (list, tuple)) and len(cfg) == 2:
+            lo, hi = float(cfg[0]), float(cfg[1])
+        if hi < lo:
+            lo, hi = hi, lo
         return int(lo * 1000), int(hi * 1000)
 
     def _schedule_rest(self, action_name):
+        """Arm/disarm the relaxation timer based on the action just started.
+
+        Each transition waits a fresh random duration inside its configured
+        range: she stands (idle) 5-10 min, then sits 1-2 h before lying down.
+        """
         self._rest_timer.stop()
-        if action_name == "idle" and self.char.action("sit"):
-            self._rest_target = "sit"
-            lo, hi = self._idle_to_sit_ms
-            self._rest_timer.start(random.randint(lo, hi))
-        elif action_name == "sit" and self.char.action("sleep"):
-            self._rest_target = "sleep"
-            lo, hi = self._sit_to_sleep_ms
-            self._rest_timer.start(random.randint(lo, hi))
+        if action_name == "idle":
+            self._rest_timer.start(random.randint(*self._idle_to_sit_ms))
+        elif action_name == "sit":
+            self._rest_timer.start(random.randint(*self._sit_to_sleep_ms))
+        # sleep holds; every other action suppresses resting entirely.
 
     def _rest_step(self):
-        target = getattr(self, "_rest_target", None)
-        if target:
-            self.play(target)
+        """Advance one step down the relaxation chain when time elapses."""
+        if self._cur_action is None:
+            return
+        if self._cur_action.name == "idle":
+            self.play("sit")
+        elif self._cur_action.name == "sit":
+            self.play("sleep")
 
     def _wake(self):
+        """Return to idle if she's currently sitting or sleeping."""
         if self._cur_action and self._cur_action.name in ("sit", "sleep"):
             self.play("idle")
-        elif self._cur_action and self._cur_action.name == "idle":
-            self._schedule_rest("idle")
+            return True
+        return False
 
     def _tick(self):
-        tier = self._mem.tier
-        if tier.fps_divisor > 1:
-            self._skip_count += 1
-            if self._skip_count % tier.fps_divisor != 0:
-                return
-
+        # 隐藏（托盘最小化）时不渲染：省掉解码/重绘的无效开销。
+        if not self.isVisible():
+            return
+        # ── replay path: serve cached frames from memory ────────────────
+        # 缓存里是压缩过的 PNG 字节，重放时解出来显示。
         if self._replay:
-            if not self._frames:
-                self._replay = False
-                self._caching = bool(self._cur_action and self._cur_action.loop)
+            cached = self._frames[self._replay_i]
+            if isinstance(cached, bytes):
+                import numpy as np
+                bgra = cv2.imdecode(np.frombuffer(cached, np.uint8),
+                                    cv2.IMREAD_UNCHANGED)
             else:
-                entry = self._frames[self._replay_i]
-                if isinstance(entry, bytes):
-                    bgra = cv2.imdecode(
-                        memory.from_buffer_uint8(entry), cv2.IMREAD_UNCHANGED)
-                else:
-                    bgra = entry
-                self._replay_i = (self._replay_i + 1) % len(self._frames)
-                self._show(bgra)
-                return
-
+                bgra = cached
+            self._show(bgra)
+            self._replay_i = (self._replay_i + 1) % len(self._frames)
+            self._mem.tick_gc()
+            return
         if self._cap is None:
             return
-        ret, frame = self._cap.read()
-        if not ret:
-            if self._cur_action and self._cur_action.loop:
-                if self._caching and self._frames and not self._cache_full:
-                    self._replay = True
-                    self._replay_i = 0
-                    self._caching = False
-                    self._cap.release()
-                    self._cap = None
-                    self._compress_i = 0
-                    self._compress_timer.start(15)
-                    self._tick()
-                    return
-                self._cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
-                ret, frame = self._cap.read()
-                if not ret:
-                    return
-            elif self._loops_left > 1:
-                self._loops_left -= 1
-                self._cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
-                ret, frame = self._cap.read()
-                if not ret:
-                    return
-            else:
+        ok, frame = self._cap.read()
+        if not ok:
+            # First pass finished.
+            if (self._cur_action.loop and self._frames
+                    and not self._cache_full):
                 self._cap.release()
                 self._cap = None
-                self.play(self._cur_action.next_action if self._cur_action else "idle")
+                self._replay = True
+                self._replay_i = 1 % len(self._frames)
+                cached = self._frames[0]
+                if isinstance(cached, bytes):
+                    import numpy as np
+                    bgra = cv2.imdecode(np.frombuffer(cached, np.uint8),
+                                        cv2.IMREAD_UNCHANGED)
+                else:
+                    bgra = cached
+                self._show(bgra)
+                # 重放期间后台把原始帧压成 PNG 腾内存（不占热路径）。
+                self._compress_i = 0
+                self._compress_timer.start(120)
                 return
-
-        bgra = key_frame(frame, dpr=self._dpr * tier.dpr_factor)
-        if self._caching:
-            if not self._mem.can_cache_more():
-                self._cache_full = True
-                self._caching = False
-                self._frames = []
+            if self._cur_action.loop:
+                self._cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                ok, frame = self._cap.read()
+                if not ok:
+                    return
+            elif self._loops_left > 0:
+                self._loops_left -= 1
+                self._cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                ok, frame = self._cap.read()
+                if not ok:
+                    return
             else:
+                self._timer.stop()
+                next_action = self._cur_action.next or "idle"
+                self.play(next_action)
+                return
+        # ── frame skip: under memory pressure, skip expensive key_frame
+        # processing for non-critical frames.  Skip only outside the active
+        # caching pass (which needs every frame for a smooth loop) and
+        # outside replay (which is already cheap).  Skipped ticks don't
+        # re-show: the label already displays the last frame, so there is
+        # nothing to repaint.
+        div = self._mem.fps_divisor
+        can_skip = (not self._caching) or self._cache_full
+        if div > 1 and can_skip and self._last_bgra is not None:
+            self._skip_count += 1
+            if self._skip_count % div != 0:
+                self._mem.tick_gc()
+                return
+        bgra = key_frame(frame, self.char.scale * self._dpr)
+        # ── first pass: store raw BGRA (fast, keeps original playback speed) ──
+        # 预算按"估算压缩后大小"记账（PNG 约 10-15:1），而不是原始大小——
+        # 否则几帧就撑爆预算导致缓存中止、每轮循环全量重抠图。
+        # 实际压缩由 _compress_tick 在重放期间后台完成，并把账目修正为真实值。
+        if self._caching and not self._cache_full:
+            raw_mb = bgra.nbytes / (1024 * 1024)
+            est_mb = max(0.05, raw_mb / 12.0)
+            if self._mem.can_cache(est_mb):
                 self._frames.append(bgra)
+                self._mem.add_cached(est_mb)
+            else:
+                self._cache_full = True
+                self._mem.force_collect()
         self._show(bgra)
+        self._last_bgra = bgra      # save for potential frame-skip reuse
+        self._mem.tick_gc()
 
     def _compress_tick(self):
-        while self._compress_i < len(self._frames):
-            entry = self._frames[self._compress_i]
-            if not isinstance(entry, bytes):
-                ok, png = cv2.imencode(".png", entry)
-                if ok:
-                    png_bytes = png.tobytes()
-                    self._frames[self._compress_i] = png_bytes
-                    self._mem.record_cached_frame(len(png_bytes))
-                self._compress_i += 1
-                return
+        """Lazy background compression: convert one cached raw BGRA frame to
+        PNG bytes per call.  Runs during replay so animation stays smooth;
+        memory gradually shrinks without any hot-path encoding cost."""
+        if self._compress_i >= len(self._frames):
+            self._compress_timer.stop()
+            return
+        cached = self._frames[self._compress_i]
+        if isinstance(cached, bytes):
+            # Already compressed (shouldn't happen, but guard it).
             self._compress_i += 1
-        self._compress_timer.stop()
+            return
+        ok, png = cv2.imencode(".png", cached,
+                                [cv2.IMWRITE_PNG_COMPRESSION, 1])
+        if ok:
+            png_bytes = png.tobytes()
+            old_mb = cached.nbytes / (1024 * 1024)
+            new_mb = len(png_bytes) / (1024 * 1024)
+            self._frames[self._compress_i] = png_bytes
+            # 账目从"首遍的估算值"修正为真实压缩大小（对齐 _tick 的记账）。
+            est_mb = max(0.05, old_mb / 12.0)
+            self._mem.add_cached(new_mb - est_mb)
+        self._compress_i += 1
 
     def _show(self, bgra):
-        h, w = bgra.shape[:2]
+        if getattr(self, "_facing_left", False):
+            bgra = cv2.flip(bgra, 1)
+        ph, pw = bgra.shape[:2]                 # physical pixels
         self._alpha = bgra[:, :, 3]
-        self._bbox = None
-        self._qimg = QtGui.QImage(
-            bgra.data, w, h, w * 4, QtGui.QImage.Format_ARGB32)
-        pix = QtGui.QPixmap.fromImage(self._qimg)
-        pix.setDevicePixelRatio(self._dpr)
-        self.label.setPixmap(pix)
-        log_w = int(w / self._dpr)
-        log_h = int(h / self._dpr)
-        self.label.resize(log_w, log_h)
-        self.resize(log_w, log_h)
+        self._bbox = None                       # frame changed -> recompute lazily
+        # OpenCV BGRA byte order (B,G,R,A) == Qt Format_ARGB32 on x86
+        # (little-endian 0xAARRGGBB == bytes B,G,R,A).  Skip the cvtColor
+        # copy entirely — saves one full-frame allocation per tick.
+        self._qimg = QtGui.QImage(bgra.data, pw, ph, 4 * pw,
+                                  QtGui.QImage.Format_ARGB32)
+        pm = QtGui.QPixmap.fromImage(self._qimg)
+        pm.setDevicePixelRatio(self._dpr)       # map physical -> logical 1:1
+        self.label.setPixmap(pm)
+        # Logical (on-screen) size = physical / dpr.
+        lw, lh = round(pw / self._dpr), round(ph / self._dpr)
+        if self.size() != QtCore.QSize(lw, lh):
+            self.resize(lw, lh)
+            self.label.resize(lw, lh)
+            # The window has no size until the first frame arrives, so do the
+            # initial placement now rather than in __init__（恢复上次位置）。
+            if not self._first_frame_shown:
+                self._first_frame_shown = True
+                self._restore_position()
 
-        if not self._first_frame_shown:
-            self._first_frame_shown = True
-            if not self._restore_position():
-                self._place_bottom_center()
+    # ------------------------------------------------------------------ #
+    # Geometry helpers                                                     #
+    # ------------------------------------------------------------------ #
 
     def _place_bottom_center(self):
-        screen = self.screen() or QtWidgets.QApplication.primaryScreen()
-        if not screen:
-            return
-        geo = screen.availableGeometry()
-        x = geo.x() + (geo.width() - self.width()) // 2
-        y = geo.y() + geo.height() - self.height()
-        self.move(x, y)
+        screen = QtWidgets.QApplication.primaryScreen().availableGeometry()
+        self.move(screen.center().x() - self.width() // 2,
+                  screen.bottom() - self.height())
+
+    # ── 位置记忆：记住停靠位置，重启/多屏变化时恢复 ────────────────────
 
     def _save_pet_position(self):
-        self.prefs.set("pet_x", self.x())
-        self.prefs.set("pet_y", self.y())
+        """把当前窗口位置写入 prefs（拖拽结束 / 退出时调用）。"""
+        g = self.frameGeometry()
+        try:
+            self.prefs.set("pet_pos", [g.x(), g.y()])
+        except Exception:
+            pass
 
     def _position_visible(self, x, y, w, h):
-        for scr in QtWidgets.QApplication.screens():
-            ag = scr.availableGeometry()
-            overlap_w = max(0, min(x + w, ag.right()) - max(x, ag.left()))
-            overlap_h = max(0, min(y + h, ag.bottom()) - max(y, ag.top()))
-            if overlap_w * overlap_h >= 0.3 * w * h:
+        """窗口矩形是否落在某个屏幕的可用区域内（多显示器 / 拔掉显示器检测）。"""
+        rect = QtCore.QRect(x, y, w, h)
+        for screen in QtWidgets.QApplication.screens():
+            if rect.intersects(screen.availableGeometry()):
                 return True
         return False
 
     def _restore_position(self):
-        x = self.prefs.get("pet_x")
-        y = self.prefs.get("pet_y")
-        if x is None or y is None:
-            return False
-        w, h = self.width(), self.height()
-        if not self._position_visible(x, y, w, h):
-            return False
-        self.move(x, y)
-        return True
+        """恢复上次停靠位置；保存的位置已不在任何屏幕（拔了外接屏）时，
+        回退到主屏底部居中。"""
+        pos = self.prefs.get("pet_pos")
+        if (isinstance(pos, (list, tuple)) and len(pos) == 2
+                and self._position_visible(int(pos[0]), int(pos[1]),
+                                           self.width(), self.height())):
+            self.move(int(pos[0]), int(pos[1]))
+            return
+        self._place_bottom_center()
 
     def _body_rect(self):
-        if self._bbox is not None:
-            x, y, w, h = self._bbox
-            return QtCore.QRect(self.mapToGlobal(QtCore.QPoint(x, y)),
-                                QtCore.QSize(w, h))
+        """Global-coord QRect of Amiya's visible body (opaque pixels).
+
+        The window frame contains lots of transparent space and she sits
+        off-centre, so popups anchor to this rather than the whole frame.
+        """
         if self._alpha is None:
             return self.frameGeometry()
-        ys, xs = (self._alpha > 40).nonzero()
-        if len(xs) == 0:
-            return self.frameGeometry()
-        d = self._dpr
-        self._bbox = (int(xs.min() / d), int(ys.min() / d),
-                      int((xs.max() - xs.min()) / d),
-                      int((ys.max() - ys.min()) / d))
+        # The opaque-pixel bounds only change when the frame does, so scan the
+        # alpha once per frame and cache the result (logical px, window-local).
+        # moveEvent (fires densely while dragging) then just re-maps to global.
+        if self._bbox is None:
+            import numpy as np
+            ys, xs = np.where(self._alpha > 40)
+            if len(xs) == 0:
+                return self.frameGeometry()
+            d = self._dpr  # alpha is in physical px; geometry is logical
+            self._bbox = (int(xs.min() / d), int(ys.min() / d),
+                          int((xs.max() - xs.min()) / d),
+                          int((ys.max() - ys.min()) / d))
         x, y, w, h = self._bbox
         return QtCore.QRect(self.mapToGlobal(QtCore.QPoint(x, y)),
                             QtCore.QSize(w, h))
 
     def _opaque_at(self, pos):
+        """True if the pixel under `pos` belongs to the character (not bg)."""
         if self._alpha is None:
             return False
-        x, y = int(pos.x() * self._dpr), int(pos.y() * self._dpr)
+        x, y = int(pos.x() * self._dpr), int(pos.y() * self._dpr)  # -> physical
         if 0 <= y < self._alpha.shape[0] and 0 <= x < self._alpha.shape[1]:
             return self._alpha[y, x] > 40
         return False
 
     def nativeEvent(self, eventType, message):
+        """像素级点击穿透（Windows WM_NCHITTEST 命中测试）：
+
+        mousePressEvent 的 e.ignore() 只能将 Qt 事件向上传递给父窗口，无法穿透到
+        底层窗口，透明区域一直挡住桌面图标。拦截 WM_NCHITTEST 返回
+        HTTRANSPARENT，Windows 就会把消息派发给底层窗口；角色身体部分（不含
+        透明像素）返回客户区响应点击/拖拽。
+        """
         if eventType == b"windows_generic_MSG":
             try:
                 import ctypes
@@ -979,46 +1071,59 @@ class PetWindow(QtWidgets.QWidget):
                     y = ctypes.c_short((msg.lParam >> 16) & 0xFFFF).value
                     pos = self.mapFromGlobal(QtCore.QPoint(x, y))
                     if not self._opaque_at(pos):
-                        return True, -1
+                        return True, -1    # HTTRANSPARENT -> 穿透给下层
                 elif msg.message == self._show_request_msg():
+                    # 单实例守护：第二实例广播的「显示请求」回到前台
                     self._show_pet()
                     return True, 0
             except Exception:
-                pass
+                pass  # 命中测试失败就按默认行为响应
         return super().nativeEvent(eventType, message)
 
     def _show_request_msg(self):
+        """单实例显示消息 id（首次注册，之后复用缓存）。"""
         if getattr(self, "_show_msg_id", None) is None:
             self._show_msg_id = single_instance.show_message_id()
         return self._show_msg_id or -1
 
+    # ------------------------------------------------------------------ #
+    # Interactions                                                         #
+    # ------------------------------------------------------------------ #
+
     def mousePressEvent(self, e):
+        # Clicks on transparent area fall through to the desktop.
+        if not self._opaque_at(e.pos()):
+            e.ignore()
+            return
+        if hasattr(self, "wander_coord"):
+            self.wander_coord.cancel_wandering()
         if e.button() == QtCore.Qt.LeftButton:
             self._drag_offset = e.globalPos() - self.frameGeometry().topLeft()
             self._moved = False
-            self.play("drag")
-            self.voice.play("drag")
-            self._wake()
 
     def mouseMoveEvent(self, e):
-        if self._drag_offset is not None:
-            self._moved = True
+        if self._drag_offset is not None and e.buttons() & QtCore.Qt.LeftButton:
             self.move(e.globalPos() - self._drag_offset)
-            self._reposition_popups()
+            if not self._moved:
+                self._moved = True
+                self.play(self.char.interaction("on_drag") or "move")
 
     def mouseReleaseEvent(self, e):
-        if e.button() == QtCore.Qt.LeftButton:
-            if self._moved:
-                self._save_pet_position()
-            self._drag_offset = None
-            if not self._moved:
-                self.play(self.char.interaction("on_click") or "click")
-                self.voice.play("click")
-            else:
+        was_dragging = self._drag_offset is not None
+        self._drag_offset = None
+        if was_dragging and self._moved:
+            snapped = False
+            if hasattr(self, "wander_coord"):
+                snapped = self.wander_coord.check_taskbar_snap(moved=True)
+            if not snapped:
                 self.play("idle")
+            self._save_pet_position()   # 记住停靠位置
+        elif was_dragging and self._opaque_at(e.pos()):
+            self.play(self.char.interaction("on_click") or "click")
+            self.voice.play("click")
 
     def mouseDoubleClickEvent(self, e):
-        if e.button() == QtCore.Qt.LeftButton:
+        if self._opaque_at(e.pos()):
             self.open_chat()
 
     def _apply_ai_settings(self, cfg):
@@ -1144,6 +1249,10 @@ class PetWindow(QtWidgets.QWidget):
 
         self.input_ctrl.stop_worker(3000)
         self.focus_mgr.close()
+        if hasattr(self, "wander_coord"):
+            self.wander_coord.close()
+        if hasattr(self, "sedentary_coord"):
+            self.sedentary_coord.close()
 
         for w in (self._tts_worker, self._trans_worker, self._ocr_worker):
             if w is not None and w.isRunning():
