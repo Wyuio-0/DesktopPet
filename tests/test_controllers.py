@@ -92,6 +92,32 @@ class TestPetContextMenuBuilder:
         assert "切换人物" in titles
         assert "声音与克隆" in titles
 
+    def test_action_speed_menu(self, mock_window):
+        builder = PetContextMenuBuilder(mock_window)
+        m = QtWidgets.QMenu()
+        builder.add_action_menu(m)
+        action_menu = None
+        for act in m.actions():
+            if act.text() == "动作互动":
+                action_menu = act.menu()
+                break
+        assert action_menu is not None
+        sub_titles = [act.text() for act in action_menu.actions()]
+        assert "打招呼" in sub_titles
+        assert "施放技能" in sub_titles
+        assert "动作速度" in sub_titles
+
+        speed_menu = None
+        for act in action_menu.actions():
+            if act.text() == "动作速度":
+                speed_menu = act.menu()
+                break
+        assert speed_menu is not None
+        speed_labels = [act.text() for act in speed_menu.actions()]
+        assert any("1.0x" in lbl for lbl in speed_labels)
+        assert any("1.15x" in lbl for lbl in speed_labels)
+        assert any("自定义速度" in lbl for lbl in speed_labels)
+
 
 class TestPetFocusToolsManager:
     def test_hhmm_parsing(self):

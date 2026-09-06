@@ -5,57 +5,57 @@
   "actions": {
     "start": {
       "folder": "start",
-      "interval": 25,
+      "interval": 15,
       "loop": false,
       "next": "idle"
     },
     "idle": {
       "folder": "idle",
-      "interval": 25,
+      "interval": 16,
       "loop": true,
       "random": true
     },
     "click": {
       "folder": "click",
-      "interval": 20,
+      "interval": 15,
       "loop": false,
       "random": true,
       "next": "idle"
     },
     "drag": {
       "folder": "drag",
-      "interval": 25,
+      "interval": 16,
       "loop": true,
       "random": false
     },
     "greet": {
       "folder": "greet",
-      "interval": 20,
+      "interval": 15,
       "loop": false,
       "random": true,
       "next": "idle"
     },
     "move": {
       "folder": "move",
-      "interval": 25,
+      "interval": 16,
       "loop": true,
       "random": false
     },
     "sit": {
       "folder": "sit",
-      "interval": 25,
+      "interval": 15,
       "loop": true,
       "random": false
     },
     "sleep": {
       "folder": "sleep",
-      "interval": 30,
+      "interval": 15,
       "loop": true,
       "random": false
     },
     "skill_begin": {
       "folder": "skill_begin",
-      "interval": 20,
+      "interval": 15,
       "loop": false,
       "loop_count": 1,
       "next": "idle"

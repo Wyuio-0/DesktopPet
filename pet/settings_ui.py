@@ -80,6 +80,7 @@ class SettingsDialog(QtWidgets.QDialog):
         self.setModal(True)
         self.setMinimumWidth(540)
         self.setStyleSheet(theme.DIALOG_QSS + _EXTRA_QSS)
+        self._orig_speed = float(self.owner.prefs.get("anim_speed", 1.0)) if hasattr(self.owner, "prefs") else 1.0
         self._build()
         self._load()
 
@@ -148,6 +149,22 @@ class SettingsDialog(QtWidgets.QDialog):
         self.cb_char = QtWidgets.QComboBox(g)
         for c in self.owner._available_characters():
             self.cb_char.addItem(c.display_name, c.key)
+
+        # 动作播放速度滑杆 (50% ~ 200%, 默认 100% / 1.0x)
+        speed_row = QtWidgets.QHBoxLayout()
+        self.speed_slider = QtWidgets.QSlider(QtCore.Qt.Horizontal, g)
+        self.speed_slider.setRange(50, 200)
+        self.speed_slider.setSingleStep(5)
+        self.speed_slider.valueChanged.connect(self._on_speed_slider)
+        self.speed_label = QtWidgets.QLabel("", g)
+        self.speed_label.setFixedWidth(130)
+        self.btn_reset_speed = QtWidgets.QPushButton("重置", g)
+        self.btn_reset_speed.setFixedWidth(50)
+        self.btn_reset_speed.clicked.connect(lambda: self.speed_slider.setValue(100))
+        speed_row.addWidget(self.speed_slider, 1)
+        speed_row.addWidget(self.speed_label)
+        speed_row.addWidget(self.btn_reset_speed)
+
         self.cb_exam = QtWidgets.QCheckBox("显示考试倒计时常驻徽章", g)
         self.cb_wandering = QtWidgets.QCheckBox("允许空闲时在屏幕边缘漫游", g)
         self.cb_taskbar_dock = QtWidgets.QCheckBox("靠近任务栏时自动吸附并坐下", g)
@@ -167,6 +184,7 @@ class SettingsDialog(QtWidgets.QDialog):
         self.cb_knowledge_embed = QtWidgets.QCheckBox(
             "讲义检索：使用本地语义模型（需安装，未安装自动回退词频）", g)
         gl.addRow("默认角色", self.cb_char)
+        gl.addRow("动作速度", speed_row)
         gl.addRow("", self.cb_exam)
         gl.addRow("", self.cb_wandering)
         gl.addRow("", self.cb_taskbar_dock)
@@ -259,6 +277,9 @@ class SettingsDialog(QtWidgets.QDialog):
         self.cb_check_updates.setChecked(o.prefs.get("check_updates", True))
         self.cb_knowledge_embed.setChecked(
             o.prefs.get("knowledge_embed", True))
+        speed_pct = int(round(float(o.prefs.get("anim_speed", 1.0)) * 100))
+        self.speed_slider.setValue(max(50, min(200, speed_pct)))
+        self._on_speed_slider(self.speed_slider.value(), live_apply=False)
 
     def _check_now(self):
         """立即检查更新（结果以气泡/托盘提示显示）。"""
@@ -266,6 +287,28 @@ class SettingsDialog(QtWidgets.QDialog):
 
     def _on_volume(self, value):
         self.vol_label.setText("%d%%" % value)
+
+    def _on_speed_slider(self, value, live_apply=True):
+        spd = value / 100.0
+        text = "%.2fx" % spd
+        if value == 100:
+            text += "（原速）"
+        elif value == 115:
+            text += "（轻快·推荐）"
+        elif value == 130:
+            text += "（敏捷）"
+        elif value == 150:
+            text += "（极速）"
+        elif value == 80:
+            text += "（从容）"
+        self.speed_label.setText(text)
+        if live_apply and hasattr(self.owner, "set_anim_speed"):
+            self.owner.set_anim_speed(spd)
+
+    def reject(self):
+        if hasattr(self.owner, "set_anim_speed") and hasattr(self, "_orig_speed"):
+            self.owner.set_anim_speed(self._orig_speed)
+        super().reject()
 
     def _save(self):
         from .hotkey import parse_hotkey
@@ -316,6 +359,9 @@ class SettingsDialog(QtWidgets.QDialog):
             o.prefs.set("check_updates", self.cb_check_updates.isChecked())
             o.prefs.set("knowledge_embed", self.cb_knowledge_embed.isChecked())
             o._apply_knowledge_prefs()
+            speed = self.speed_slider.value() / 100.0
+            if hasattr(o, "set_anim_speed"):
+                o.set_anim_speed(speed)
             o._refresh_exam_badge()
         except Exception:
             import traceback

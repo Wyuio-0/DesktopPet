@@ -10,7 +10,7 @@ class Action:
     def __init__(self, name, cfg, base_dir):
         self.name = name
         self.folder = os.path.join(base_dir, cfg.get("folder", name))
-        self.interval = int(cfg.get("interval", 40))
+        self.interval = int(cfg.get("interval", 0))
         self.loop = bool(cfg.get("loop", False))
         self.random = bool(cfg.get("random", False))
         # How many extra times to replay the clip before advancing to `next`

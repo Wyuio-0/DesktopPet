@@ -15,7 +15,7 @@ from PyQt5 import QtCore, QtGui, QtWidgets
 from .ai import AmiyaBrain
 from .character import Character
 from .focus import PetFocusToolsManager
-from .frames import key_frame
+from .frames import key_frame, calc_action_interval
 from .hotkey import GlobalHotkey
 from .info_panel import InfoPanel, PAGE_OCR, PAGE_SCHEDULE, PAGE_TASKS
 from .input_controller import PetInputController
@@ -825,17 +825,11 @@ class PetWindow(QtWidgets.QWidget):
         self._caching = action.loop
         self._cache_full = False        # reset budget tracker for this clip
         self._skip_count = 0            # reset frame-skip counter
-        # 按视频原生帧率播放（保持原始速度）；QTimer 0ms 未定义且吃 CPU，下限 10ms。
-        # 注意：部分 WebM 文件（如 Spine/Unity 导出的素材）未写入真实帧率元数据时，
-        # OpenCV 会返回容器默认的 1000.0 fps；若直接 1000/fps 会得到 1ms 的极端高频刷新，
-        # 导致坐下/睡眠等动作以 25~30 倍速疯狂快进。
-        # 因此只有 1 < fps <= 120 才是合理的视频原生帧率，超出范围必须回退到 action.interval。
+        # 按动画原始真实速度播放（优先使用各角色 config.json 中校准的原生真实毫秒间隔）。
         fps = self._cap.get(cv2.CAP_PROP_FPS)
-        if fps and 1 < fps <= 120:
-            interval = round(1000 / fps)
-        else:
-            interval = action.interval
-        self._timer.start(max(10, interval))
+        speed = float(self.prefs.get("anim_speed", 1.0)) if hasattr(self, "prefs") else 1.0
+        interval = calc_action_interval(action.interval, fps, speed_mult=speed)
+        self._timer.start(interval)
         self._schedule_rest(action_name)
 
     # ------------------------------------------------------------------ #
@@ -1283,6 +1277,15 @@ class PetWindow(QtWidgets.QWidget):
     def _on_volume_slider(self, value):
         self.voice.set_volume(value / 100.0)
         self._save_vol_timer.start(400)
+
+    def set_anim_speed(self, speed):
+        """动态设置动画播放速度倍率，即时生效并更新当前运行中的定时器。"""
+        spd = max(0.5, min(3.0, float(speed)))
+        self.prefs.set("anim_speed", spd)
+        if self._cur_action and hasattr(self, "_timer") and self._timer.isActive():
+            fps = self._cap.get(cv2.CAP_PROP_FPS) if self._cap else 0.0
+            interval = calc_action_interval(self._cur_action.interval, fps, speed_mult=spd)
+            self._timer.setInterval(interval)
 
     def _quit(self):
         self._quitting = True

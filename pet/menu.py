@@ -103,7 +103,7 @@ class PetContextMenuBuilder(QtCore.QObject):
     # ── 子菜单装配 ───────────────────────────────────────────────────
 
     def add_action_menu(self, parent):
-        """动作互动子菜单（打招呼、施放技能、坐下休息/站起身来）。"""
+        """动作互动子菜单（打招呼、施放技能、坐下休息/站起身来、动作速度调节）。"""
         w = self.window
         sub = parent.addMenu("动作互动")
         sub.addAction("打招呼", lambda: w._act_voice("greet", "greet"))
@@ -116,6 +116,24 @@ class PetContextMenuBuilder(QtCore.QObject):
             sub.addAction("站起身来", lambda: w.play("idle"))
         else:
             sub.addAction("坐下休息", lambda: w._act_voice("sit", "sit"))
+
+        sub.addSeparator()
+        speed_sub = sub.addMenu("动作速度")
+        cur_speed = float(w.prefs.get("anim_speed", 1.0)) if hasattr(w, "prefs") else 1.0
+        speeds = [
+            ("0.8x（从容慢速）", 0.8),
+            ("1.0x（原速标准）", 1.0),
+            ("1.15x（轻快流畅 · 推荐）", 1.15),
+            ("1.3x（敏捷快速）", 1.3),
+            ("1.5x（极速）", 1.5),
+        ]
+        for label, val in speeds:
+            act = speed_sub.addAction(label, lambda v=val: w.set_anim_speed(v))
+            act.setCheckable(True)
+            if abs(cur_speed - val) < 0.05:
+                act.setChecked(True)
+        speed_sub.addSeparator()
+        speed_sub.addAction("自定义速度…", self.open_settings)
 
     def add_character_menu(self, parent):
         """切换人物子菜单（aboutToShow 懒加载，防磁盘卡顿）。"""

@@ -98,3 +98,23 @@ def key_frame(frame, scale):
     bgra = cv2.cvtColor(frame, cv2.COLOR_BGR2BGRA)
     bgra[:, :, 3] = alpha
     return bgra
+
+
+def calc_action_interval(action_interval, fps=0.0, speed_mult=1.0):
+    """计算动作播放的真实帧间隔（毫秒）。
+
+    - 优先使用 action_interval（各角色 config.json 中为各动作精确校准的原生真实毫秒间隔）。
+    - 若未配置或为 0，且视频容器提供了合理帧率 (1 < fps <= 120)，按 round(1000 / fps) 计算。
+    - 若两者皆无或 fps 异常（如 WebM 容器缺省时间基返回 1000.0），兜底为 25ms (~40fps)。
+    - 若指定了速度倍率 speed_mult (> 0)，则按 interval / speed_mult 换算。
+    - 最终 clamp 在 [10, 1000] ms，保证 QTimer 安全且不吃满 CPU。
+    """
+    if action_interval and action_interval > 0:
+        interval = int(action_interval)
+    elif fps and 1 < fps <= 120:
+        interval = round(1000 / fps)
+    else:
+        interval = 25
+    if speed_mult and speed_mult > 0 and speed_mult != 1.0:
+        interval = round(interval / speed_mult)
+    return max(10, min(1000, interval))
