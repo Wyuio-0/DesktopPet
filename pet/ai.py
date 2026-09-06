@@ -22,6 +22,10 @@ PERSONA = (
     "查课表、添加作业截止（add_task）、开程序、开网页这类操作——"
     "你必须实际调用对应的工具，绝不能只用嘴答应而不调用。"
     "先调用工具，再根据工具返回的结果回话。"
+    "同时，你拥有长程记忆档案本：当博士向你介绍个人姓名称呼、职业身份、习惯偏好、"
+    "阶段目标或提及重要事情时，请主动调用 update_doctor_profile 或 remember_doctor_fact "
+    "记入档案；当博士询问你记得他什么时，可调用 query_doctor_profile。"
+    "在交谈中，请自然地体现你对博士档案与长程记忆的了解，不必生硬背诵，保持亲切自然。"
 )
 
 # Built-in replies used when no API key is configured (offline fallback).
@@ -77,6 +81,17 @@ class AmiyaBrain:
             return ""
         return ("\n\n以下是博士的课程资料片段（回答时请优先参考；"
                 "若与问题无关可忽略）：\n" + ctx)
+
+    def _profile_context(self):
+        """获取博士档案本与长程记忆上下文（或空串）。"""
+        try:
+            from .profile import get_doctor_profile
+            ctx = get_doctor_profile().render_prompt_context()
+            if not ctx:
+                return ""
+            return "\n\n" + ctx
+        except Exception:
+            return ""
 
     @property
     def online(self):
@@ -161,7 +176,7 @@ class AmiyaBrain:
         """Chat with an optional tool-call loop (max 4 tool rounds)."""
         use_tools = self.cfg.get("allow_actions", True)
         system = {"role": "system",
-                  "content": self.persona + self._knowledge_context()}
+                  "content": self.persona + self._knowledge_context() + self._profile_context()}
         msgs = [system] + list(self.history)
         for _ in range(4):
             msg = self._post(msgs, use_tools)
@@ -202,7 +217,7 @@ class AmiyaBrain:
         """
         use_tools = self.cfg.get("allow_actions", True)
         system = {"role": "system",
-                  "content": self.persona + self._knowledge_context()}
+                  "content": self.persona + self._knowledge_context() + self._profile_context()}
         msgs = [system] + list(self.history)
         for _ in range(4):
             msg = self._post_stream(msgs, use_tools, on_delta)

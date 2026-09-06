@@ -73,6 +73,7 @@ class PetContextMenuBuilder(QtCore.QObject):
         m.addAction("和%s聊天…" % w.char.display_name + hint, w.open_chat)
         m.addAction("翻译剪贴板（Alt+T）", w._translate_clipboard)
         m.addAction("忘记对话", self.forget_chat)
+        m.addAction("博士档案本…", self.open_doctor_profile)
         m.addAction("模型配置…", self.open_ai_settings)
         m.addAction("应用白名单…", self.open_app_whitelist)
         m.addAction("设置…", self.open_settings)
@@ -309,6 +310,11 @@ class PetContextMenuBuilder(QtCore.QObject):
         from .settings_ui import SettingsDialog
         SettingsDialog(self.window).exec_()
         QtCore.QTimer.singleShot(0, self.window._apply_hotkey_overrides)
+
+    def open_doctor_profile(self):
+        """打开博士档案本与长程记忆管理对话框。"""
+        from .profile_ui import DoctorProfileDialog
+        DoctorProfileDialog(self.window).exec_()
 
     def apply_ai_settings(self, cfg):
         """应用新保存的模型配置。"""

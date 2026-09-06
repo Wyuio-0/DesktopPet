@@ -28,6 +28,7 @@ from .translate import TranslationPopup, TranslateWorker
 from .tray import PetTrayCoordinator
 from .voice import VoicePlayer
 from .wander import PetWanderCoordinator
+from .weather import PetWeatherCoordinator
 from . import actions, knowledge, logging as petlog, memory, theme, tts
 from . import single_instance, updater
 
@@ -230,6 +231,8 @@ class PetWindow(QtWidgets.QWidget):
         self.menu_builder = PetContextMenuBuilder(self)
         self.wander_coord = PetWanderCoordinator(self)
         self.sedentary_coord = PetSedentaryCareCoordinator(self)
+        self._dim_factor = 1.0
+        self.weather_coord = PetWeatherCoordinator(self)
 
         # AI 定时提醒路由
         self.reminder_requested.connect(
@@ -793,13 +796,17 @@ class PetWindow(QtWidgets.QWidget):
         self._caching = action.loop
         self._cache_full = False        # reset budget tracker for this clip
         self._skip_count = 0            # reset frame-skip counter
-        # 按视频原生帧率播放（保持原始速度）；QTimer 0ms 未定义且吃 CPU，下限 1ms。
+        # 按视频原生帧率播放（保持原始速度）；QTimer 0ms 未定义且吃 CPU，下限 10ms。
+        # 注意：部分 WebM 文件（如 Spine/Unity 导出的素材）未写入真实帧率元数据时，
+        # OpenCV 会返回容器默认的 1000.0 fps；若直接 1000/fps 会得到 1ms 的极端高频刷新，
+        # 导致坐下/睡眠等动作以 25~30 倍速疯狂快进。
+        # 因此只有 1 < fps <= 120 才是合理的视频原生帧率，超出范围必须回退到 action.interval。
         fps = self._cap.get(cv2.CAP_PROP_FPS)
-        if fps and fps > 1:
+        if fps and 1 < fps <= 120:
             interval = round(1000 / fps)
         else:
             interval = action.interval
-        self._timer.start(max(1, interval))
+        self._timer.start(max(10, interval))
         self._schedule_rest(action_name)
 
     # ------------------------------------------------------------------ #
@@ -960,6 +967,11 @@ class PetWindow(QtWidgets.QWidget):
     def _show(self, bgra):
         if getattr(self, "_facing_left", False):
             bgra = cv2.flip(bgra, 1)
+        dim = getattr(self, "_dim_factor", 1.0)
+        if dim < 0.99:
+            import numpy as np
+            bgra = bgra.copy()
+            bgra[:, :, :3] = (bgra[:, :, :3] * dim).astype(np.uint8)
         ph, pw = bgra.shape[:2]                 # physical pixels
         self._alpha = bgra[:, :, 3]
         self._bbox = None                       # frame changed -> recompute lazily
@@ -1253,6 +1265,8 @@ class PetWindow(QtWidgets.QWidget):
             self.wander_coord.close()
         if hasattr(self, "sedentary_coord"):
             self.sedentary_coord.close()
+        if hasattr(self, "weather_coord"):
+            self.weather_coord.close()
 
         for w in (self._tts_worker, self._trans_worker, self._ocr_worker):
             if w is not None and w.isRunning():

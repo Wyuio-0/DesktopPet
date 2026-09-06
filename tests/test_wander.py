@@ -170,7 +170,7 @@ class TestPetWanderCoordinator:
 
     def test_check_taskbar_snap_success(self, mock_window):
         coord = PetWanderCoordinator(mock_window)
-        # Taskbar bottom at 1040, body bottom at 1020 -> gap = 20 (within -25..50)
+        # Taskbar bottom at 1040, body bottom at 1020 -> gap = 20 (within -140..180)
         mock_window._body_rect.return_value = QtCore.QRect(500, 870, 100, 150)
         mock_window.y.return_value = 870
 
@@ -181,9 +181,33 @@ class TestPetWanderCoordinator:
         mock_window._save_pet_position.assert_called_once()
         coord.close()
 
+    def test_check_taskbar_snap_sunk_in_taskbar(self, mock_window):
+        coord = PetWanderCoordinator(mock_window)
+        # Taskbar bottom at 1040, body bottom at 1120 -> gap = -80 (dragged onto taskbar, within -140..180)
+        mock_window._body_rect.return_value = QtCore.QRect(500, 970, 100, 150)
+        mock_window.y.return_value = 970
+
+        res = coord.check_taskbar_snap(moved=True)
+        assert res is True
+        mock_window.move.assert_called_once()
+        mock_window.play.assert_called_with("sit")
+        coord.close()
+
+    def test_check_taskbar_snap_hover_above(self, mock_window):
+        coord = PetWanderCoordinator(mock_window)
+        # Taskbar bottom at 1040, body bottom at 900 -> gap = 140 (comfortable suction zone, within -140..180)
+        mock_window._body_rect.return_value = QtCore.QRect(500, 750, 100, 150)
+        mock_window.y.return_value = 750
+
+        res = coord.check_taskbar_snap(moved=True)
+        assert res is True
+        mock_window.move.assert_called_once()
+        mock_window.play.assert_called_with("sit")
+        coord.close()
+
     def test_check_taskbar_snap_too_far(self, mock_window):
         coord = PetWanderCoordinator(mock_window)
-        # Taskbar bottom at 1040, body bottom at 750 -> gap = 290 (far away)
+        # Taskbar bottom at 1040, body bottom at 750 -> gap = 290 (far away, > 180)
         mock_window._body_rect.return_value = QtCore.QRect(500, 600, 100, 150)
         mock_window.y.return_value = 600
 

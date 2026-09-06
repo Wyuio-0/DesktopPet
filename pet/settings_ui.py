@@ -169,6 +169,27 @@ class SettingsDialog(QtWidgets.QDialog):
         gl.addRow("", self.cb_wandering)
         gl.addRow("", self.cb_taskbar_dock)
         gl.addRow("", sed_row)
+
+        profile_row = QtWidgets.QHBoxLayout()
+        profile_lbl = QtWidgets.QLabel("记录专属称呼、偏好习惯与长程记忆", g)
+        profile_lbl.setStyleSheet("color:%s;font-size:13px;" % theme.FLOAT_TEXT_DIM)
+        self.btn_profile = QtWidgets.QPushButton("博士档案本…", g)
+        self.btn_profile.clicked.connect(self._open_profile)
+        profile_row.addWidget(profile_lbl)
+        profile_row.addStretch(1)
+        profile_row.addWidget(self.btn_profile)
+        gl.addRow("长程记忆", profile_row)
+
+        self.cb_weather_care = QtWidgets.QCheckBox("开启天气感知与雨雪关怀提醒", g)
+        self.cb_night_dim = QtWidgets.QCheckBox("深夜自动护眼调光（23:00~06:00 调暗亮度）", g)
+        self.edit_weather_city = QtWidgets.QLineEdit(g)
+        self.edit_weather_city.setPlaceholderText("留空根据IP自动定位，或填城市如 北京/上海")
+        weather_row = QtWidgets.QHBoxLayout()
+        weather_row.addWidget(self.edit_weather_city)
+        gl.addRow("", self.cb_weather_care)
+        gl.addRow("", self.cb_night_dim)
+        gl.addRow("天气城市", weather_row)
+
         gl.addRow("", self.cb_check_updates)
         gl.addRow("", self.cb_knowledge_embed)
         self.ver_label = QtWidgets.QLabel(
@@ -224,6 +245,9 @@ class SettingsDialog(QtWidgets.QDialog):
         sed_idx = self.combo_sedentary.findData(sed_ival)
         if sed_idx >= 0:
             self.combo_sedentary.setCurrentIndex(sed_idx)
+        self.cb_weather_care.setChecked(o.prefs.get("weather_care_enabled", True))
+        self.cb_night_dim.setChecked(o.prefs.get("night_dim_enabled", True))
+        self.edit_weather_city.setText(o.prefs.get("weather_city", ""))
         self.cb_check_updates.setChecked(o.prefs.get("check_updates", True))
         self.cb_knowledge_embed.setChecked(
             o.prefs.get("knowledge_embed", True))
@@ -272,6 +296,11 @@ class SettingsDialog(QtWidgets.QDialog):
             o.prefs.set("sedentary_interval_min", int(self.combo_sedentary.currentData()))
             if hasattr(o, "sedentary_coord"):
                 o.sedentary_coord.reload_config()
+            o.prefs.set("weather_care_enabled", self.cb_weather_care.isChecked())
+            o.prefs.set("night_dim_enabled", self.cb_night_dim.isChecked())
+            o.prefs.set("weather_city", self.edit_weather_city.text().strip())
+            if hasattr(o, "weather_coord"):
+                o.weather_coord.reload_config()
             o.prefs.set("check_updates", self.cb_check_updates.isChecked())
             o.prefs.set("knowledge_embed", self.cb_knowledge_embed.isChecked())
             o._apply_knowledge_prefs()
@@ -283,3 +312,8 @@ class SettingsDialog(QtWidgets.QDialog):
                 self, "保存失败", "保存设置时出错，已记录到 pet.log。")
             return
         self.accept()
+
+    def _open_profile(self):
+        """打开博士档案本管理对话框。"""
+        from .profile_ui import DoctorProfileDialog
+        DoctorProfileDialog(self).exec_()

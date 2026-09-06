@@ -182,7 +182,20 @@ class PetWanderCoordinator(QtCore.QObject):
         if not w.prefs.get("taskbar_dock_enabled", True):
             return False
 
-        screen = w.screen() or QtWidgets.QApplication.primaryScreen()
+        center = None
+        if hasattr(w, "frameGeometry"):
+            try:
+                fg = w.frameGeometry()
+                if hasattr(fg, "center"):
+                    c = fg.center()
+                    if isinstance(c, QtCore.QPoint):
+                        center = c
+            except Exception:
+                pass
+
+        screen = (QtWidgets.QApplication.screenAt(center) if center else None) or (
+            w.screen() if hasattr(w, "screen") and callable(w.screen) else None
+        ) or QtWidgets.QApplication.primaryScreen()
         if not screen:
             return False
 
@@ -193,8 +206,10 @@ class PetWanderCoordinator(QtCore.QObject):
         # gap > 0 表示在任务栏上方悬空，gap < 0 表示已超出任务栏下沿
         gap = taskbar_top - body.bottom()
 
-        # 吸附阈值范围：距离任务栏上方 50px 内，或稍微沉入任务栏 25px 内
-        if -25 <= gap <= 50:
+        # 大幅放宽吸附识别区：
+        # 上方识别区：脚底距离任务栏上沿 180px 内（从大半个身位外拖近即可轻松吸附）
+        # 下方识别区：即使拖放到了任务栏内部甚至沉入底边（140px 内），也自动上浮吸附精准贴合任务栏
+        if -140 <= gap <= 180:
             new_y = w.y() + gap
             w.move(w.x(), new_y)
             w._reposition_popups()

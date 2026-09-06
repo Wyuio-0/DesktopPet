@@ -760,6 +760,81 @@ def add_task(title, due, course="", kind="homework"):
         label, title, dt.strftime("%Y-%m-%d %H:%M"))
 
 
+def update_doctor_profile(field=None, value=None):
+    """更新博士的基础个人档案（称呼/身份/喜好/习惯/目标）。"""
+    from .profile import get_doctor_profile
+    profile = get_doctor_profile()
+    if not field or not value:
+        return "请告诉我要更新的档案项目（如称呼、身份、喜好、习惯、目标）和具体内容。"
+    ok = profile.update_field(str(field), str(value))
+    if ok:
+        return f"已将博士的「{field}」更新为「{value}」，阿米娅会牢牢记在档案本里。"
+    return f"未能识别档案字段「{field}」，支持更新：称呼、身份、喜好、习惯、目标。"
+
+
+def remember_doctor_fact(fact=None):
+    """记录一条关于博士的长程随记或重要事项。"""
+    from .profile import get_doctor_profile
+    profile = get_doctor_profile()
+    fact_str = str(fact or "").strip()
+    if not fact_str:
+        return "请告诉我希望阿米娅长久记住的具体内容。"
+    item_id = profile.add_memory(fact_str)
+    if item_id:
+        return f"已将这件事情记在博士档案本中了：「{fact_str}」，阿米娅以后都会记得的。"
+    return "记录失败了，请稍后再试。"
+
+
+def query_doctor_profile(field=None):
+    """查询阿米娅记住的博士档案与记忆。"""
+    from .profile import get_doctor_profile
+    profile = get_doctor_profile()
+    fld = str(field or "").strip().lower()
+    if fld in ("nickname", "称呼", "名字"):
+        return f"博士希望被称呼为：「{profile.nickname}」。"
+    if fld in ("identity", "身份", "阶段", "职业"):
+        return f"博士的身份/阶段是：{profile.identity or '尚未记录'}。"
+    if fld in ("preferences", "喜好", "偏好"):
+        return f"博士的喜好偏好是：{profile.preferences or '尚未记录'}。"
+    if fld in ("habits", "习惯", "作息"):
+        return f"博士的习惯作息是：{profile.habits or '尚未记录'}。"
+    if fld in ("goals", "目标", "重心"):
+        return f"博士当前的目标重心是：{profile.goals or '尚未记录'}。"
+
+    ctx = profile.render_prompt_context()
+    if not ctx:
+        return "阿米娅的博士档案本目前还是空白的，博士可以在平时多跟我聊聊您的喜好和目标哦。"
+    return "博士档案本内容如下：\n" + ctx
+
+
+def get_weather(city=None):
+    """查询本地或指定城市的实时天气。"""
+    try:
+        from .weather import fetch_weather_sync
+        res = fetch_weather_sync(city or "", timeout=5)
+        if not res:
+            return "抱歉博士，暂时没能获取到天气信息，请稍后再试。"
+        city_name = (city or "").strip() or res.get("city", "本地")
+        desc = res.get("desc", "晴")
+        temp = res.get("temp_c", "--")
+        humidity = res.get("humidity", "--")
+        wind = res.get("wind_kmph", "--")
+
+        tip = "天气晴朗，适宜出行。"
+        if "雨" in desc or "雷" in desc:
+            tip = "外面有雨，出门记得带伞。"
+        elif "雪" in desc:
+            tip = "外面有雪，注意保暖防滑。"
+        elif isinstance(temp, int) and temp <= 5:
+            tip = "天气寒冷，注意添衣防寒。"
+        elif isinstance(temp, int) and temp >= 32:
+            tip = "天气炎热，注意防暑降温与补水。"
+
+        return f"【{city_name}天气】状况：{desc}，当前气温：{temp}°C，湿度：{humidity}%，风速：{wind}km/h。{tip}"
+    except Exception as e:
+        return f"获取天气出错了：{type(e).__name__}"
+
+
 # name -> handler
 _HANDLERS = {
     "open_app": open_app, "open_url": open_url, "web_search": web_search,
@@ -770,6 +845,10 @@ _HANDLERS = {
     "add_task": add_task, "today_summary": today_summary,
     "system_status": system_status, "type_text": type_text,
     "clipboard": clipboard, "window_control": window_control,
+    "update_doctor_profile": update_doctor_profile,
+    "remember_doctor_fact": remember_doctor_fact,
+    "query_doctor_profile": query_doctor_profile,
+    "get_weather": get_weather,
 }
 
 # 敏感操作：执行前需用户确认（内容可能离开本机或被注入到前台窗口）。
@@ -901,4 +980,22 @@ TOOLS = [
                                    "topmost_off 需要 name 指定窗口标题关键词"},
          "name": {"type": "string", "description": "窗口标题关键词（list/switch 不需要）"}},
         ["action"]),
+    _fn("update_doctor_profile",
+        "更新博士的基础个人档案（称呼、身份/阶段、喜好、作息习惯、当前目标），永久保存在博士档案本中",
+        {"field": {"type": "string", "enum": ["称呼", "身份", "喜好", "习惯", "目标"],
+                   "description": "要更新的档案字段"},
+         "value": {"type": "string", "description": "具体内容，如「文博博士」「喜欢喝黑咖啡」「备考408」"}},
+        ["field", "value"]),
+    _fn("remember_doctor_fact",
+        "把关于博士的一件重要事情、偏好细节或随记记入长程记忆档案本（如重要答辩、家人生日、特殊喜好、生活习惯等）",
+        {"fact": {"type": "string", "description": "要长久记住的事实内容"}},
+        ["fact"]),
+    _fn("query_doctor_profile",
+        "查询阿米娅记下的博士档案信息与长程记忆随记",
+        {"field": {"type": "string", "description": "可选，具体查询的字段（称呼/身份/喜好/习惯/目标），留空查询整本档案"}},
+        []),
+    _fn("get_weather",
+        "查询本地或指定城市（如北京/上海/广州等）的实时天气状况、气温、湿度与出行提醒",
+        {"city": {"type": "string", "description": "城市名称，留空查询本地天气"}},
+        []),
 ]

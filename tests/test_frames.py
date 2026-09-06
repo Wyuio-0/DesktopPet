@@ -62,3 +62,26 @@ def test_scale_resize():
     img[50:] = (200, 200, 200)
     out = key_frame(img, 0.5)
     assert out.shape[:2] == (50, 50)
+
+
+def test_action_interval_bogus_fps():
+    """Verify that abnormal container fps (like 1000.0 in WebM) falls back to action.interval."""
+    def calc_interval(fps, action_interval):
+        if fps and 1 < fps <= 120:
+            interval = round(1000 / fps)
+        else:
+            interval = action_interval
+        return max(10, interval)
+
+    # 1. Normal 60 fps -> 17 ms
+    assert calc_interval(60.0, 25) == 17
+    # 2. Normal 30 fps -> 33 ms
+    assert calc_interval(30.0, 25) == 33
+    # 3. Bogus 1000.0 fps (WebM container default) -> fallback to action.interval (25 ms)
+    assert calc_interval(1000.0, 25) == 25
+    # 4. Zero or negative fps -> fallback to action.interval (30 ms)
+    assert calc_interval(0.0, 30) == 30
+    assert calc_interval(-1.0, 30) == 30
+    # 5. Low bound clamp >= 10 ms
+    assert calc_interval(120.0, 25) == 10
+
