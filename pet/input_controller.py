@@ -57,7 +57,10 @@ class PetInputController(QtCore.QObject):
             return
         if hasattr(self.window, "_rest_timer"):
             self.window._rest_timer.stop()
-        self.window._wake()
+        # 坐姿下直接开始对话，不强制打断坐姿；若在睡觉，则唤醒角色
+        cur = getattr(self.window, "_cur_action", None)
+        if cur and cur.name == "sleep":
+            self.window._wake()
         self.window.trans_popup.hide()
         self.input.pop_up(self.window._body_rect())
 
@@ -125,7 +128,12 @@ class PetInputController(QtCore.QObject):
         self._type_target = text or self._type_target
         self._type_final = True
         w = self.window
-        w.play(w.char.interaction("on_double_click") or "greet")
+        if self._chat_anchor is None and hasattr(w, "_body_rect"):
+            self._chat_anchor = w._body_rect()
+        # 若当前角色正在坐着，保持优雅坐姿，不播放站立打招呼动作（greet）打破坐姿
+        cur = getattr(w, "_cur_action", None)
+        if not (cur and cur.name == "sit"):
+            w.play(w.char.interaction("on_double_click") or "greet")
         w._speak(text)
         if not self._type_timer.isActive():
             self.type_tick()

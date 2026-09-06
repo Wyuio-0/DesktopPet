@@ -8,8 +8,8 @@ import json
 import re
 import urllib.request
 
-# 与仓库发布 tag 保持一致（如发 v1.4.0 时这里就是 "1.4.0"）。
-APP_VERSION = "1.4.0"
+# 与仓库发布 tag 保持一致（如发 v1.5.0 时这里就是 "1.5.0"）。
+APP_VERSION = "1.5.0"
 
 REPO = "Wyuio-0/AmiyaDesktopPet"
 _LATEST_API = "https://api.github.com/repos/%s/releases/latest" % REPO

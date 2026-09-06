@@ -835,6 +835,84 @@ def get_weather(city=None):
         return f"获取天气出错了：{type(e).__name__}"
 
 
+def get_current_music():
+    """查询博士当前电脑上正在播放的歌曲名、歌手与音乐状态。"""
+    try:
+        from .music import PetMusicCoordinator
+        coord = PetMusicCoordinator.get_active_instance()
+        if coord:
+            info = coord.get_current_music_info()
+        else:
+            from .music import MusicTrackDetector, WindowsAudioMeter
+            meter = WindowsAudioMeter()
+            peak = meter.get_peak()
+            track = MusicTrackDetector.get_active_media_track()
+            meter.release()
+            info = dict(track)
+            info["has_audio"] = peak > 0.015
+            info["peak_volume"] = round(peak, 2)
+
+        has_audio = info.get("has_audio", False)
+        title = info.get("title", "")
+        artist = info.get("artist", "")
+        player = info.get("player", "")
+
+        if not has_audio and not title:
+            return "博士的电脑目前似乎没有在播放音乐或音频哦~"
+
+        resp = []
+        if title:
+            track_str = f"《{title}》"
+            if artist:
+                track_str += f" - {artist}"
+            if player:
+                track_str += f"（来自 {player}）"
+            resp.append(f"正在播放：{track_str}")
+        elif has_audio:
+            resp.append("检测到系统正在播放声音/音乐，但暂未识别到曲目标题")
+
+        if has_audio:
+            resp.append("音符正在随音乐节拍律动跳跃呢~")
+
+        return "，".join(resp) + "。"
+    except Exception as e:
+        return f"查询音乐出错了：{type(e).__name__}"
+
+
+def create_sticky_note(content, title=""):
+    """在博士的桌面灵感便签本中创建一条新便签。"""
+    content = str(content or "").strip()
+    if not content:
+        return "便签内容不能为空哦，博士想记录什么呢？"
+    try:
+        from .notes import get_notes_manager
+        mgr = get_notes_manager()
+        note = mgr.create_note(title=title, content=content)
+        return f"已帮博士记入灵感便签「{note.title}」：\n{note.content}"
+    except Exception as e:
+        return f"创建便签出错了：{type(e).__name__}"
+
+
+def read_sticky_notes():
+    """读取博士当前便签本中的便签内容。"""
+    try:
+        from .notes import get_notes_manager
+        mgr = get_notes_manager()
+        notes = mgr.list_notes()
+        if not notes:
+            return "博士当前便签本里还没有记录任何便签哦~"
+        lines = ["【博士的灵感便签】"]
+        for n in notes[:5]:
+            pin_mark = "📌 " if n.pinned else ""
+            snippet = n.content.strip().replace("\n", " ")
+            if len(snippet) > 60:
+                snippet = snippet[:60] + "…"
+            lines.append(f"- {pin_mark}{n.title}（{n.updated_at}）：{snippet}")
+        return "\n".join(lines)
+    except Exception as e:
+        return f"读取便签出错了：{type(e).__name__}"
+
+
 # name -> handler
 _HANDLERS = {
     "open_app": open_app, "open_url": open_url, "web_search": web_search,
@@ -849,6 +927,9 @@ _HANDLERS = {
     "remember_doctor_fact": remember_doctor_fact,
     "query_doctor_profile": query_doctor_profile,
     "get_weather": get_weather,
+    "get_current_music": get_current_music,
+    "create_sticky_note": create_sticky_note,
+    "read_sticky_notes": read_sticky_notes,
 }
 
 # 敏感操作：执行前需用户确认（内容可能离开本机或被注入到前台窗口）。
@@ -998,4 +1079,15 @@ TOOLS = [
         "查询本地或指定城市（如北京/上海/广州等）的实时天气状况、气温、湿度与出行提醒",
         {"city": {"type": "string", "description": "城市名称，留空查询本地天气"}},
         []),
+    _fn("get_current_music",
+        "查询博士当前电脑上正在播放的歌曲名、歌手与音乐播放状态（网易云/QQ音乐/Spotify/B站等）",
+        {}, []),
+    _fn("create_sticky_note",
+        "在桌面灵感便签本中记录一条新便签/备忘（支持指定标题与正文）",
+        {"content": {"type": "string", "description": "便签正文内容"},
+         "title": {"type": "string", "description": "便签标题（可选，默认自动根据正文生成）"}},
+        ["content"]),
+    _fn("read_sticky_notes",
+        "读取博士桌面灵感便签本中已记录的便签列表与摘要",
+        {}, []),
 ]

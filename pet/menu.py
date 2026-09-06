@@ -59,7 +59,7 @@ class PetContextMenuBuilder(QtCore.QObject):
         return chars
 
     def show_menu(self, pos):
-        """构建并在指定物理位置弹出完整的右键主菜单。"""
+        """构建并在指定物理位置弹出清晰优雅的右键主菜单。"""
         w = self.window
         m = QtWidgets.QMenu(w)
         m.setStyleSheet(theme.MENU_QSS)
@@ -70,53 +70,52 @@ class PetContextMenuBuilder(QtCore.QObject):
         if hk and hk.active and hasattr(w, "_hotkey_spec"):
             hint = "（%s）" % w._hotkey_spec.title()
 
+        note_hint = ""
+        nhk = getattr(w, "_note_hotkey", None)
+        if nhk and nhk.active and hasattr(w, "_note_hotkey_spec"):
+            note_hint = "（%s）" % w._note_hotkey_spec.title()
+
+        # ── 1. 日常互动 ──────────────────────────────────────────────
         m.addAction("和%s聊天…" % w.char.display_name + hint, w.open_chat)
-        m.addAction("翻译剪贴板（Alt+T）", w._translate_clipboard)
-        m.addAction("忘记对话", self.forget_chat)
-        m.addAction("博士档案本…", self.open_doctor_profile)
-        m.addAction("模型配置…", self.open_ai_settings)
-        m.addAction("应用白名单…", self.open_app_whitelist)
-        m.addAction("设置…", self.open_settings)
-
-        if not w.brain.online:
-            status = "AI 离线（用内置台词）"
-        elif w.brain.cfg.get("allow_actions", True):
-            status = "AI 在线 · 可操作电脑"
-        else:
-            status = "AI 在线"
-        act = m.addAction(status)
-        act.setEnabled(False)
+        m.addAction("灵感便签…" + note_hint, w.toggle_notes)
+        self.add_action_menu(m)
         m.addSeparator()
 
-        self.add_character_menu(m)
-        m.addSeparator()
-
+        # ── 2. 学业与效率工具 ────────────────────────────────────────
         self.add_schedule_menu(m)
-        m.addSeparator()
-
         self.add_tasks_menu(m)
-        m.addSeparator()
-
-        self.add_ocr_menu(m)
-        m.addSeparator()
-
         self.add_focus_menu(m)
+        self.add_trans_ocr_menu(m)
         m.addSeparator()
 
-        m.addAction("打招呼", lambda: w._act_voice("greet", "greet"))
-        m.addAction("施放技能", lambda: w._act_voice("skill_begin", "skill"))
-        m.addAction("休息一下", lambda: w._act_voice("sit", "sit"))
+        # ── 3. 智能与角色 ────────────────────────────────────────────
+        self.add_ai_menu(m)
+        self.add_character_menu(m)
+        self.add_audio_menu(m)
         m.addSeparator()
 
-        self.add_clone_menu(m)
-        m.addSeparator()
-
-        self.add_volume_menu(m)
+        # ── 4. 系统 ──────────────────────────────────────────────────
+        m.addAction("设置…", self.open_settings)
         m.addAction("退出", w._quit)
 
         m.exec_(w.mapToGlobal(pos))
 
     # ── 子菜单装配 ───────────────────────────────────────────────────
+
+    def add_action_menu(self, parent):
+        """动作互动子菜单（打招呼、施放技能、坐下休息/站起身来）。"""
+        w = self.window
+        sub = parent.addMenu("动作互动")
+        sub.addAction("打招呼", lambda: w._act_voice("greet", "greet"))
+        sub.addAction("施放技能", lambda: w._act_voice("skill_begin", "skill"))
+        is_sitting = (
+            getattr(w, "_cur_action", None) is not None
+            and getattr(w._cur_action, "name", "") == "sit"
+        )
+        if is_sitting:
+            sub.addAction("站起身来", lambda: w.play("idle"))
+        else:
+            sub.addAction("坐下休息", lambda: w._act_voice("sit", "sit"))
 
     def add_character_menu(self, parent):
         """切换人物子菜单（aboutToShow 懒加载，防磁盘卡顿）。"""
@@ -219,14 +218,31 @@ class PetContextMenuBuilder(QtCore.QObject):
             badge_act.setChecked(self.window.prefs.get("exam_badge", True))
             badge_act.toggled.connect(self.window._toggle_exam_badge)
 
-    def add_ocr_menu(self, parent):
-        """OCR 截图子菜单。"""
+    def add_trans_ocr_menu(self, parent):
+        """翻译与识图子菜单（截图翻译、剪贴板翻译、截图总结、知识库）。"""
         w = self.window
-        sub = parent.addMenu("OCR 截图")
-        sub.addAction("截图翻译（Alt+S）", lambda: w._ocr_flow("translate"))
+        sub = parent.addMenu("翻译与识图")
+
+        ocr_hint = ""
+        ohk = getattr(w, "_ocr_hotkey", None)
+        if ohk and ohk.active and hasattr(w, "_ocr_hotkey_spec"):
+            ocr_hint = "（%s）" % w._ocr_hotkey_spec.title()
+        else:
+            ocr_hint = "（Alt+S）"
+        sub.addAction("截图翻译" + ocr_hint, lambda: w._ocr_flow("translate"))
+
+        trans_hint = ""
+        thk = getattr(w, "_translate_hotkey", None)
+        if thk and thk.active and hasattr(w, "_translate_hotkey_spec"):
+            trans_hint = "（%s）" % w._translate_hotkey_spec.title()
+        else:
+            trans_hint = "（Alt+T）"
+        sub.addAction("翻译剪贴板" + trans_hint, w._translate_clipboard)
         sub.addAction("截图总结", lambda: w._ocr_flow("summarize"))
         sub.addSeparator()
-        sub.addAction("重新加载知识库", self.reload_knowledge)
+        sub.addAction("重新加载讲义知识库", self.reload_knowledge)
+
+    add_ocr_menu = add_trans_ocr_menu
 
     def add_focus_menu(self, parent):
         """专注小工具子菜单。"""
@@ -250,23 +266,29 @@ class PetContextMenuBuilder(QtCore.QObject):
                 running = "番茄钟" if getattr(self.window, "_pomo", None) else "倒计时"
                 sub.addAction("停止%s" % running, self.window._stop_focus)
 
-    def add_clone_menu(self, parent):
-        """语音克隆服务启停控制项。"""
-        if not getattr(self.window, "_use_clone", False):
-            return
-        state = tts.clone_state()
-        if state == "running":
-            parent.addAction("停止语音克隆服务（释放显存）", self.window._stop_clone)
-        elif state == "starting":
-            act = parent.addAction("语音克隆服务加载中…")
-            act.setEnabled(False)
-        else:
-            parent.addAction("启动语音克隆服务（AI 声线）", self.window._start_clone)
-
-    def add_volume_menu(self, parent):
-        """语音音量子菜单：静音复选框、音量滑动条、TTS 开关。"""
+    def add_ai_menu(self, parent):
+        """AI 与档案子菜单（博士档案本、模型配置、应用白名单、会话重置、在线状态）。"""
         w = self.window
-        sub = parent.addMenu("语音音量")
+        sub = parent.addMenu("AI 与档案")
+        sub.addAction("博士档案本…", self.open_doctor_profile)
+        sub.addAction("忘记当前对话", self.forget_chat)
+        sub.addSeparator()
+        sub.addAction("模型配置…", self.open_ai_settings)
+        sub.addAction("应用白名单…", self.open_app_whitelist)
+        sub.addSeparator()
+        if not w.brain.online:
+            status = "AI 离线（用内置台词）"
+        elif w.brain.cfg.get("allow_actions", True):
+            status = "AI 在线 · 可操作电脑"
+        else:
+            status = "AI 在线"
+        act = sub.addAction(status)
+        act.setEnabled(False)
+
+    def add_audio_menu(self, parent):
+        """声音与克隆子菜单：静音复选框、音量滑动条、TTS 开关、语音克隆。"""
+        w = self.window
+        sub = parent.addMenu("声音与克隆")
         mute = sub.addAction("静音")
         mute.setCheckable(True)
         mute.setChecked(not w.voice.enabled)
@@ -277,7 +299,7 @@ class PetContextMenuBuilder(QtCore.QObject):
         slider.setMinimum(0)
         slider.setMaximum(100)
         slider.setValue(int(round(w.voice.volume * 100)))
-        slider.setFixedWidth(300)
+        slider.setFixedWidth(240)
         slider.valueChanged.connect(w._on_volume_slider)
         wa = QtWidgets.QWidgetAction(sub)
         wa.setDefaultWidget(slider)
@@ -291,6 +313,22 @@ class PetContextMenuBuilder(QtCore.QObject):
         tts_act.setEnabled(tts_supported and tts.available())
         tts_act.setChecked(tts_on)
         tts_act.toggled.connect(w._set_tts)
+
+        if getattr(w, "_use_clone", False):
+            sub.addSeparator()
+            state = tts.clone_state()
+            if state == "running":
+                sub.addAction("停止语音克隆服务（释放显存）", w._stop_clone)
+            elif state == "starting":
+                loading = sub.addAction("语音克隆服务加载中…")
+                loading.setEnabled(False)
+            else:
+                sub.addAction("启动语音克隆服务（AI 声线）", w._start_clone)
+
+    add_volume_menu = add_audio_menu
+
+    def add_clone_menu(self, parent):
+        pass
 
     # ── 对话框与业务动作 ─────────────────────────────────────────────
 

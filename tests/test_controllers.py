@@ -70,6 +70,28 @@ class TestPetContextMenuBuilder:
         builder.invalidate_characters_cache()
         assert builder._chars_cache is None
 
+    def test_menu_structure(self, mock_window):
+        builder = PetContextMenuBuilder(mock_window)
+        m = QtWidgets.QMenu()
+        builder.add_action_menu(m)
+        builder.add_schedule_menu(m)
+        builder.add_tasks_menu(m)
+        builder.add_focus_menu(m)
+        builder.add_trans_ocr_menu(m)
+        builder.add_ai_menu(m)
+        builder.add_character_menu(m)
+        builder.add_audio_menu(m)
+
+        titles = [action.text() for action in m.actions()]
+        assert "动作互动" in titles
+        assert "课程表" in titles
+        assert "待办与考试" in titles
+        assert "专注小工具" in titles
+        assert "翻译与识图" in titles
+        assert "AI 与档案" in titles
+        assert "切换人物" in titles
+        assert "声音与克隆" in titles
+
 
 class TestPetFocusToolsManager:
     def test_hhmm_parsing(self):
@@ -125,3 +147,53 @@ class TestPetInputController:
         ctrl.type_tick()
         assert ctrl._type_shown >= TYPE_STEP
         ctrl.close()
+
+    def test_open_chat_preserves_sitting(self, mock_window):
+        ctrl = PetInputController(mock_window)
+        mock_window._first_frame_shown = True
+        mock_window._cur_action = MagicMock()
+        mock_window._cur_action.name = "sit"
+        mock_window._wake = MagicMock()
+
+        ctrl.open_chat()
+        # Should not wake/force to idle if sitting
+        mock_window._wake.assert_not_called()
+        ctrl.close()
+
+    def test_open_chat_wakes_from_sleep(self, mock_window):
+        ctrl = PetInputController(mock_window)
+        mock_window._first_frame_shown = True
+        mock_window._cur_action = MagicMock()
+        mock_window._cur_action.name = "sleep"
+        mock_window._wake = MagicMock()
+
+        ctrl.open_chat()
+        # Should wake if sleeping
+        mock_window._wake.assert_called_once()
+        ctrl.close()
+
+    def test_on_reply_preserves_sitting(self, mock_window):
+        ctrl = PetInputController(mock_window)
+        ctrl._chat_anchor = QtCore.QRect(0, 0, 100, 100)
+        mock_window._cur_action = MagicMock()
+        mock_window._cur_action.name = "sit"
+        mock_window.play = MagicMock()
+
+        ctrl.on_reply("这是博士的回复")
+        # Should NOT play standing greet if sitting
+        mock_window.play.assert_not_called()
+        ctrl.close()
+
+    def test_on_reply_plays_greet_when_standing(self, mock_window):
+        ctrl = PetInputController(mock_window)
+        ctrl._chat_anchor = QtCore.QRect(0, 0, 100, 100)
+        mock_window._cur_action = MagicMock()
+        mock_window._cur_action.name = "idle"
+        mock_window.char.interaction.return_value = "greet"
+        mock_window.play = MagicMock()
+
+        ctrl.on_reply("这是博士的回复")
+        # Should play greet when standing
+        mock_window.play.assert_called_with("greet")
+        ctrl.close()
+

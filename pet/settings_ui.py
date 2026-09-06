@@ -127,9 +127,11 @@ class SettingsDialog(QtWidgets.QDialog):
         hl.setHorizontalSpacing(12)
         hl.setVerticalSpacing(12)
         self.hk_chat = QtWidgets.QKeySequenceEdit(h)
+        self.hk_note = QtWidgets.QKeySequenceEdit(h)
         self.hk_translate = QtWidgets.QKeySequenceEdit(h)
         self.hk_ocr = QtWidgets.QKeySequenceEdit(h)
         hl.addRow("聊天", self.hk_chat)
+        hl.addRow("灵感便签", self.hk_note)
         hl.addRow("翻译剪贴板", self.hk_translate)
         hl.addRow("OCR 截图", self.hk_ocr)
         note = QtWidgets.QLabel(
@@ -190,6 +192,9 @@ class SettingsDialog(QtWidgets.QDialog):
         gl.addRow("", self.cb_night_dim)
         gl.addRow("天气城市", weather_row)
 
+        self.cb_music_vis = QtWidgets.QCheckBox("开启听歌感知与音乐音符律动（随系统音乐跳动）", g)
+        gl.addRow("", self.cb_music_vis)
+
         gl.addRow("", self.cb_check_updates)
         gl.addRow("", self.cb_knowledge_embed)
         self.ver_label = QtWidgets.QLabel(
@@ -230,6 +235,8 @@ class SettingsDialog(QtWidgets.QDialog):
         ov = o.prefs.get("hotkeys_" + o.char.key, {}) or {}
         self.hk_chat.setKeySequence(_spec_to_ks(
             ov.get("chat") or o.char.cfg.get("hotkey", "alt+a")))
+        self.hk_note.setKeySequence(_spec_to_ks(
+            ov.get("note") or o.char.cfg.get("hotkey_note", "alt+n")))
         self.hk_translate.setKeySequence(_spec_to_ks(
             ov.get("translate") or o.char.cfg.get("hotkey_translate", "alt+t")))
         self.hk_ocr.setKeySequence(_spec_to_ks(
@@ -248,6 +255,7 @@ class SettingsDialog(QtWidgets.QDialog):
         self.cb_weather_care.setChecked(o.prefs.get("weather_care_enabled", True))
         self.cb_night_dim.setChecked(o.prefs.get("night_dim_enabled", True))
         self.edit_weather_city.setText(o.prefs.get("weather_city", ""))
+        self.cb_music_vis.setChecked(o.prefs.get("music_visualizer_enabled", True))
         self.cb_check_updates.setChecked(o.prefs.get("check_updates", True))
         self.cb_knowledge_embed.setChecked(
             o.prefs.get("knowledge_embed", True))
@@ -265,6 +273,7 @@ class SettingsDialog(QtWidgets.QDialog):
         try:
             # 校验热键格式（至少一个修饰键 + 一个键，否则全局注册会失败）
             specs = {"chat": _ks_to_spec(self.hk_chat.keySequence()),
+                     "note": _ks_to_spec(self.hk_note.keySequence()),
                      "translate": _ks_to_spec(self.hk_translate.keySequence()),
                      "ocr": _ks_to_spec(self.hk_ocr.keySequence())}
             bad = [k for k, s in specs.items() if s and parse_hotkey(s) is None]
@@ -301,6 +310,9 @@ class SettingsDialog(QtWidgets.QDialog):
             o.prefs.set("weather_city", self.edit_weather_city.text().strip())
             if hasattr(o, "weather_coord"):
                 o.weather_coord.reload_config()
+            o.prefs.set("music_visualizer_enabled", self.cb_music_vis.isChecked())
+            if hasattr(o, "music_coord"):
+                o.music_coord.reload_config()
             o.prefs.set("check_updates", self.cb_check_updates.isChecked())
             o.prefs.set("knowledge_embed", self.cb_knowledge_embed.isChecked())
             o._apply_knowledge_prefs()

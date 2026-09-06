@@ -20,6 +20,7 @@ from .hotkey import GlobalHotkey
 from .info_panel import InfoPanel, PAGE_OCR, PAGE_SCHEDULE, PAGE_TASKS
 from .input_controller import PetInputController
 from .menu import PetContextMenuBuilder
+from .music import PetMusicCoordinator
 from .ocr import OcrError, ocr_image, summarize_ai
 from .region_select import RegionSelect
 from .sedentary import PetSedentaryCareCoordinator
@@ -215,6 +216,7 @@ class PetWindow(QtWidgets.QWidget):
         self._trans_worker = None
         self._ocr_worker = None
         self._info_panel_widget = None
+        self.notes_window = None
 
         # 托盘模式与生命周期
         self._quitting = False
@@ -233,6 +235,7 @@ class PetWindow(QtWidgets.QWidget):
         self.sedentary_coord = PetSedentaryCareCoordinator(self)
         self._dim_factor = 1.0
         self.weather_coord = PetWeatherCoordinator(self)
+        self.music_coord = PetMusicCoordinator(self)
 
         # AI 定时提醒路由
         self.reminder_requested.connect(
@@ -413,6 +416,23 @@ class PetWindow(QtWidgets.QWidget):
             self._info_panel_widget = InfoPanel(self)
         return self._info_panel_widget
 
+    def open_notes(self):
+        """打开或激活桌面灵感便签窗口。"""
+        if self.notes_window is None:
+            from .notes_ui import StickyNoteWindow
+            self.notes_window = StickyNoteWindow(owner_window=self)
+        self.notes_window.ensure_visible_on_screen()
+        self.notes_window.show()
+        self.notes_window.raise_()
+        self.notes_window.activateWindow()
+
+    def toggle_notes(self):
+        """切换灵感便签窗口的显示与隐藏。"""
+        if self.notes_window is not None and self.notes_window.isVisible():
+            self.notes_window.hide()
+        else:
+            self.open_notes()
+
     def _show_text(self, text):
         """长文本用翻译浮窗展示（可点击关闭、自动隐藏），避免气泡过高。"""
         self.trans_popup.hide()
@@ -469,9 +489,11 @@ class PetWindow(QtWidgets.QWidget):
         fn()
 
     def _announce(self, text, use_tts=False):
-        """统一通知外显：唤醒宠物、播放问候动作、浮窗置顶、弹气泡并可选用 TTS 播报。"""
-        self._wake()
-        self.play("greet")
+        """统一通知外显：唤醒睡眠角色、浮窗置顶、弹气泡并可选用 TTS 播报（坐姿下保持坐姿）。"""
+        if self._cur_action and self._cur_action.name == "sleep":
+            self.play("sit" if self.char.action("sit") else "idle")
+        elif not (self._cur_action and self._cur_action.name == "sit"):
+            self.play("greet")
         self.raise_()
         self.trans_popup.hide()
         self.bubble.say(text, self._body_rect(),
@@ -486,7 +508,7 @@ class PetWindow(QtWidgets.QWidget):
     # ------------------------------------------------------------------ #
 
     def _setup_hotkey(self):
-        """注册全局快捷键（聊天 / 翻译 / OCR）。"""
+        """注册全局快捷键（聊天 / 灵感便签 / 翻译 / OCR）。"""
         _ov = self.prefs.get("hotkeys_" + self.char.key, {}) or {}
         self._hotkey_spec = _ov.get("chat") or self.char.cfg.get(
             "hotkey", "alt+a")
@@ -494,13 +516,17 @@ class PetWindow(QtWidgets.QWidget):
             "hotkey_translate", "alt+t")
         self._ocr_hotkey_spec = _ov.get("ocr") or self.char.cfg.get(
             "hotkey_ocr", "alt+s")
+        self._note_hotkey_spec = _ov.get("note") or self.char.cfg.get(
+            "hotkey_note", "alt+n")
         self.hotkey = None
         self._translate_hotkey = None
         self._ocr_hotkey = None
+        self._note_hotkey = None
         hwnd = int(self.winId())
         seen = set()
         for spec, attr, slot in (
                 (self._hotkey_spec, "hotkey", self._toggle_chat),
+                (self._note_hotkey_spec, "_note_hotkey", self.toggle_notes),
                 (self._translate_hotkey_spec, "_translate_hotkey",
                  self._translate_clipboard),
                 (self._ocr_hotkey_spec, "_ocr_hotkey",
@@ -517,11 +543,12 @@ class PetWindow(QtWidgets.QWidget):
                        and getattr(self, attr).active)
             for spec, attr, _s in (
                 (self._hotkey_spec, "hotkey", None),
+                (self._note_hotkey_spec, "_note_hotkey", None),
                 (self._translate_hotkey_spec, "_translate_hotkey", None),
                 (self._ocr_hotkey_spec, "_ocr_hotkey", None))))
 
     def _unregister_hotkeys(self):
-        for attr in ("hotkey", "_translate_hotkey", "_ocr_hotkey"):
+        for attr in ("hotkey", "_note_hotkey", "_translate_hotkey", "_ocr_hotkey"):
             h = getattr(self, attr, None)
             if h is not None:
                 try:
@@ -741,6 +768,8 @@ class PetWindow(QtWidgets.QWidget):
         self.focus_mgr.reposition_badges(rect)
         if self.trans_popup.isVisible():
             self.trans_popup.reposition(rect)
+        if hasattr(self, "music_coord"):
+            self.music_coord.reposition()
 
     def moveEvent(self, e):
         # Moving across monitors can change the device-pixel-ratio; keep our
@@ -846,9 +875,12 @@ class PetWindow(QtWidgets.QWidget):
             self.play("sleep")
 
     def _wake(self):
-        """Return to idle if she's currently sitting or sleeping."""
-        if self._cur_action and self._cur_action.name in ("sit", "sleep"):
-            self.play("idle")
+        """唤醒处于 sleep 状态的角色（优先唤醒为坐姿，无坐姿则为站立）；若当前已是坐姿则保持坐姿。"""
+        if self._cur_action and self._cur_action.name == "sleep":
+            if self.char.action("sit"):
+                self.play("sit")
+            else:
+                self.play("idle")
             return True
         return False
 
@@ -1131,7 +1163,9 @@ class PetWindow(QtWidgets.QWidget):
                 self.play("idle")
             self._save_pet_position()   # 记住停靠位置
         elif was_dragging and self._opaque_at(e.pos()):
-            self.play(self.char.interaction("on_click") or "click")
+            # 若当前处于坐下状态，点击不强制打断坐姿切为站立，仅播放点击语音反馈
+            if not (self._cur_action and self._cur_action.name == "sit"):
+                self.play(self.char.interaction("on_click") or "click")
             self.voice.play("click")
 
     def mouseDoubleClickEvent(self, e):
@@ -1230,7 +1264,10 @@ class PetWindow(QtWidgets.QWidget):
         self._note("语音克隆服务已停止，显存已释放。")
 
     def _note(self, text):
-        self._wake()
+        if self._cur_action and self._cur_action.name == "sleep":
+            self.play("sit" if self.char.action("sit") else "idle")
+        elif not (self._cur_action and self._cur_action.name == "sit"):
+            self.play("greet")
         self.raise_()
         self.trans_popup.hide()
         self.bubble.say(text, self._body_rect(), auto_ms=max(4000, 10000))
@@ -1267,6 +1304,8 @@ class PetWindow(QtWidgets.QWidget):
             self.sedentary_coord.close()
         if hasattr(self, "weather_coord"):
             self.weather_coord.close()
+        if hasattr(self, "music_coord"):
+            self.music_coord.close()
 
         for w in (self._tts_worker, self._trans_worker, self._ocr_worker):
             if w is not None and w.isRunning():
@@ -1283,6 +1322,8 @@ class PetWindow(QtWidgets.QWidget):
         self.trans_popup.close()
         if self._info_panel_widget is not None:
             self._info_panel_widget.close()
+        if hasattr(self, "notes_window") and self.notes_window is not None:
+            self.notes_window.close()
         QtWidgets.QApplication.quit()
 
     def closeEvent(self, event):
