@@ -9,6 +9,7 @@ import kotlin.random.Random
 interface PetStateListener {
     fun onActionStarted(action: Action, clipPath: String)
     fun onBubbleMessage(text: String)
+    fun onUserInteraction(type: String)
 }
 
 class PetStateMachine(
@@ -70,6 +71,7 @@ class PetStateMachine(
         if (character.actions.containsKey(target)) {
             play(target)
         }
+        listener.onUserInteraction("click")
     }
 
     fun onUserDoubleClick() {
@@ -82,6 +84,7 @@ class PetStateMachine(
                 listener.onBubbleMessage(line)
             }
         }
+        listener.onUserInteraction("double_click")
     }
 
     fun onUserDragStart() {

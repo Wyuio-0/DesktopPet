@@ -29,6 +29,10 @@ import com.amiya.pet.ui.PetBubbleView
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
+import com.amiya.pet.core.focus.PomodoroMode
+import com.amiya.pet.core.focus.PomodoroTimer
+import com.amiya.pet.core.voice.VoicePlayer
+
 class PetFloatingService : Service(), PetStateListener {
 
     companion object {
@@ -37,9 +41,13 @@ class PetFloatingService : Service(), PetStateListener {
         const val ACTION_SWITCH_CHARACTER = "com.amiya.pet.ACTION_SWITCH_CHARACTER"
         const val ACTION_SET_SPEED = "com.amiya.pet.ACTION_SET_SPEED"
         const val ACTION_CYCLE_CHARACTER = "com.amiya.pet.ACTION_CYCLE_CHARACTER"
+        const val ACTION_SET_VOLUME = "com.amiya.pet.ACTION_SET_VOLUME"
+        const val ACTION_SET_MUTE = "com.amiya.pet.ACTION_SET_MUTE"
 
         const val EXTRA_CHAR_KEY = "extra_char_key"
         const val EXTRA_SPEED = "extra_speed"
+        const val EXTRA_VOLUME = "extra_volume"
+        const val EXTRA_MUTE = "extra_mute"
 
         private const val NOTIFICATION_ID = 1001
         private const val CHANNEL_ID = "pet_floating_channel"
@@ -52,6 +60,12 @@ class PetFloatingService : Service(), PetStateListener {
 
         private val _currentSpeed = MutableStateFlow(1.15f)
         val currentSpeed = _currentSpeed.asStateFlow()
+
+        private val _voiceVolume = MutableStateFlow(0.8f)
+        val voiceVolume = _voiceVolume.asStateFlow()
+
+        private val _isVoiceMuted = MutableStateFlow(false)
+        val isVoiceMuted = _isVoiceMuted.asStateFlow()
     }
 
     private var windowManager: WindowManager? = null
@@ -61,6 +75,7 @@ class PetFloatingService : Service(), PetStateListener {
     private var stateMachine: PetStateMachine? = null
     private var touchHandler: PetTouchHandler? = null
     private var layoutParams: WindowManager.LayoutParams? = null
+    private var voicePlayer: VoicePlayer? = null
 
     private var screenReceiver: BroadcastReceiver? = null
 
@@ -72,6 +87,22 @@ class PetFloatingService : Service(), PetStateListener {
         createNotificationChannel()
         startForeground(NOTIFICATION_ID, buildNotification())
         registerScreenReceiver()
+
+        voicePlayer = VoicePlayer(this).apply {
+            volume = _voiceVolume.value
+            isMuted = _isVoiceMuted.value
+        }
+
+        PomodoroTimer.onTimerFinished = { mode ->
+            val msg = if (mode == PomodoroMode.WORK) {
+                "博士，本次专注时间结束！表现太出色了，请好好休息一下吧！"
+            } else {
+                "博士，休息时间到了，打起精神准备下一个目标吧！"
+            }
+            bubbleView?.showBubble(msg, 6000L)
+            voicePlayer?.playGreetVoice()
+        }
+
         _isRunning.value = true
     }
 
@@ -97,6 +128,18 @@ class PetFloatingService : Service(), PetStateListener {
                 val speed = intent.getFloatExtra(EXTRA_SPEED, 1.15f)
                 _currentSpeed.value = speed
                 glSurfaceView?.setSpeed(speed)
+            }
+
+            ACTION_SET_VOLUME -> {
+                val vol = intent.getFloatExtra(EXTRA_VOLUME, 0.8f)
+                _voiceVolume.value = vol
+                voicePlayer?.volume = vol
+            }
+
+            ACTION_SET_MUTE -> {
+                val mute = intent.getBooleanExtra(EXTRA_MUTE, false)
+                _isVoiceMuted.value = mute
+                voicePlayer?.isMuted = mute
             }
 
             ACTION_START, null -> {
@@ -225,6 +268,7 @@ class PetFloatingService : Service(), PetStateListener {
         }
 
         stateMachine?.start()
+        voicePlayer?.loadCharacterVoices(character.key)
     }
 
     private fun cycleNextCharacter() {
@@ -241,6 +285,13 @@ class PetFloatingService : Service(), PetStateListener {
 
     override fun onBubbleMessage(text: String) {
         bubbleView?.showBubble(text)
+    }
+
+    override fun onUserInteraction(type: String) {
+        when (type) {
+            "click" -> voicePlayer?.playClickVoice()
+            "double_click" -> voicePlayer?.playGreetVoice()
+        }
     }
 
     private fun registerScreenReceiver() {
@@ -331,6 +382,9 @@ class PetFloatingService : Service(), PetStateListener {
 
         glSurfaceView?.release()
         glSurfaceView = null
+
+        voicePlayer?.release()
+        voicePlayer = null
 
         rootContainer?.let {
             try {
