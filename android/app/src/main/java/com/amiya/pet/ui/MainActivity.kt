@@ -8,6 +8,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -24,7 +25,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -32,7 +32,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.amiya.pet.core.parser.CharacterParser
+import com.amiya.pet.core.update.ReleaseInfo
+import com.amiya.pet.core.update.UpdateManager
 import com.amiya.pet.service.PetFloatingService
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
 
@@ -81,6 +84,7 @@ fun AmiyaPetTheme(content: @Composable () -> Unit) {
 @Composable
 fun MainScreen() {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val prefs = remember { context.getSharedPreferences("amiya_pet_prefs", Context.MODE_PRIVATE) }
 
     // 观察服务运行状态
@@ -99,19 +103,36 @@ fun MainScreen() {
         mutableStateOf(Settings.canDrawOverlays(context))
     }
 
+    // 版本检查更新状态
+    var isCheckingUpdate by remember { mutableStateOf(false) }
+    var updateResult by remember { mutableStateOf<ReleaseInfo?>(null) }
+    var updateStatusText by remember { mutableStateOf<String?>(null) }
+    var showUpdateDialog by remember { mutableStateOf(false) }
+
     // 页面唤醒时重新检测悬浮窗权限
     DisposableEffect(Unit) {
         hasOverlayPermission = Settings.canDrawOverlays(context)
         onDispose { }
     }
 
+    // 动态解析角色列表与规范名称（确保予愿安洁莉娜、圣聆初雪准确命名）
     val availableChars = remember {
-        listOf(
+        val list = CharacterParser.listCharacters(context).map { key ->
+            val char = CharacterParser.loadCharacter(context, key)
+            key to (char?.displayName ?: when (key) {
+                "yuyuananjielina" -> "予愿安洁莉娜"
+                "shenglinchuxue" -> "圣聆初雪"
+                else -> "阿米娅"
+            })
+        }
+        if (list.isNotEmpty()) list else listOf(
             "amiya" to "阿米娅",
-            "yuyuananjielina" to "安洁莉娜 (泳装)",
-            "shenglinchuxue" to "初雪 (泳装)"
+            "yuyuananjielina" to "予愿安洁莉娜",
+            "shenglinchuxue" to "圣聆初雪"
         )
     }
+
+    val currentVersionName = remember { UpdateManager.getCurrentVersion(context) }
 
     Scaffold(
         topBar = {
@@ -125,7 +146,7 @@ fun MainScreen() {
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "v1.0 Android",
+                            text = "v$currentVersionName",
                             fontSize = 12.sp,
                             color = MaterialTheme.colorScheme.primary
                         )
@@ -312,7 +333,7 @@ fun MainScreen() {
                 }
             }
 
-            // 动作速率调节（满足用户随心调整帧率与动作流程度的需求）
+            // 动作速率调节
             Card(
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                 shape = RoundedCornerShape(16.dp),
@@ -366,6 +387,91 @@ fun MainScreen() {
                 }
             }
 
+            // 检查更新装置模块
+            Card(
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text(
+                                text = "版本检查与更新",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 16.sp
+                            )
+                            Text(
+                                text = "当前版本：v$currentVersionName",
+                                fontSize = 13.sp,
+                                color = Color.Gray
+                            )
+                        }
+                        Button(
+                            onClick = {
+                                if (isCheckingUpdate) return@Button
+                                isCheckingUpdate = true
+                                updateStatusText = "正在连接 GitHub..."
+                                scope.launch {
+                                    val res = UpdateManager.checkUpdate(context)
+                                    isCheckingUpdate = false
+                                    res.fold(
+                                        onSuccess = { info ->
+                                            updateResult = info
+                                            if (info.hasUpdate) {
+                                                updateStatusText = "发现新版本：${info.tagName}"
+                                                showUpdateDialog = true
+                                            } else {
+                                                updateStatusText = "已是最新版本 (v${info.versionName})"
+                                                Toast.makeText(context, "当前已是最新版本！", Toast.LENGTH_SHORT).show()
+                                            }
+                                        },
+                                        onFailure = { err ->
+                                            updateStatusText = "检查更新失败: ${err.localizedMessage}"
+                                            Toast.makeText(context, "检查更新失败，请检查网络", Toast.LENGTH_SHORT).show()
+                                        }
+                                    )
+                                }
+                            },
+                            enabled = !isCheckingUpdate,
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                        ) {
+                            if (isCheckingUpdate) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(16.dp),
+                                    color = Color.Black,
+                                    strokeWidth = 2.dp
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("检查中...", color = Color.Black, fontSize = 13.sp)
+                            } else {
+                                Icon(
+                                    imageVector = Icons.Default.Refresh,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp),
+                                    tint = Color.Black
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("检查更新", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            }
+                        }
+                    }
+
+                    if (updateStatusText != null) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = updateStatusText!!,
+                            fontSize = 12.sp,
+                            color = if (updateStatusText?.contains("失败") == true) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.secondary
+                        )
+                    }
+                }
+            }
+
             // 手机端交互操作指南
             Card(
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -387,6 +493,69 @@ fun MainScreen() {
                 }
             }
         }
+    }
+
+    // 新版本弹窗提醒
+    if (showUpdateDialog && updateResult != null) {
+        val info = updateResult!!
+        AlertDialog(
+            onDismissRequest = { showUpdateDialog = false },
+            containerColor = MaterialTheme.colorScheme.surface,
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.SystemUpdate,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "发现新版本 ${info.tagName}",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 18.sp,
+                        color = Color.White
+                    )
+                }
+            },
+            text = {
+                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                    Text(
+                        text = "更新说明：",
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontSize = 13.sp
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = info.releaseNotes,
+                        fontSize = 13.sp,
+                        color = Color.LightGray
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val targetUrl = info.apkDownloadUrl ?: info.htmlUrl
+                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(targetUrl))
+                        context.startActivity(intent)
+                        showUpdateDialog = false
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                ) {
+                    Text(
+                        if (info.apkDownloadUrl != null) "立即下载 APK" else "前往 GitHub 查看",
+                        color = Color.Black,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showUpdateDialog = false }) {
+                    Text("稍后再说", color = Color.Gray)
+                }
+            }
+        )
     }
 }
 
