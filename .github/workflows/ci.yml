@@ -91,6 +91,18 @@ jobs:
           $flag = if ($head -match "Inno Setup 7") { "-dMyAppVersion=" } else { "/DMyAppVersion=" }
           Write-Host "Using $iscc :: $head"
           & $iscc "installer\DesktopPet.iss" "$flag$env:MY_APP_VERSION"
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+      - name: Build Android APK
+        shell: pwsh
+        run: |
+          cd android
+          .\gradlew.bat assembleDebug --no-daemon
+          if (-not (Test-Path ..\dist)) { New-Item -ItemType Directory -Path ..\dist }
+          Copy-Item app\build\outputs\apk\debug\app-debug.apk "..\dist\AmiyaPet-Android-dev.apk" -Force
+          cd ..
       - name: Upload artifacts
         uses: actions/upload-artifact@v6
         with:
@@ -98,7 +110,9 @@ jobs:
           path: |
             DesktopPet-onedir.zip
             dist/DesktopPet-Setup-*.exe
+            dist/AmiyaPet-Android-*.apk
           if-no-files-found: error
+
 
   release:
     name: Release (tag)
@@ -146,6 +160,19 @@ jobs:
           $flag = if ($head -match "Inno Setup 7") { "-dMyAppVersion=" } else { "/DMyAppVersion=" }
           Write-Host "Using $iscc :: $head"
           & $iscc "installer\DesktopPet.iss" "$flag$env:MY_APP_VERSION"
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+      - name: Build Android APK
+        shell: pwsh
+        run: |
+          cd android
+          $version = $env:GITHUB_REF_NAME
+          .\gradlew.bat assembleDebug --no-daemon
+          if (-not (Test-Path ..\dist)) { New-Item -ItemType Directory -Path ..\dist }
+          Copy-Item app\build\outputs\apk\debug\app-debug.apk "..\dist\AmiyaPet-Android-$version.apk" -Force
+          cd ..
       - name: Prepare release notes
         shell: pwsh
         run: |
@@ -173,6 +200,8 @@ jobs:
           files: |
             dist/DesktopPet-Setup-*.exe
             DesktopPet-onedir.zip
+            dist/AmiyaPet-Android-*.apk
           body_path: release_body.md
           generate_release_notes: false
           # v3 默认支持更新已存在的 Release（重跑会刷新正文/附件），无需 allowUpdates
+
