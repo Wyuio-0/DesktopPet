@@ -35,9 +35,11 @@ BANNED = (
 
 # --all 模式跳过的大目录
 _SKIP_DIRS = (".git", "voiceclone", "installer_staging", "dist", "build",
-              "__pycache__", ".claude", ".agents", ".pytest_cache", "node_modules")
+              "__pycache__", ".claude", ".agents", ".pytest_cache", "node_modules",
+              ".gradle", ".idea")
 _BINARY_EXTS = (".webm", ".wav", ".png", ".jpg", ".jpeg", ".ico", ".pyc",
                 ".exe", ".7z", ".gz", ".pdf")
+
 
 # 占位符特征：README/示例里的 "sk-你的key"、"your_key" 等不是真实密钥。
 _PLACEHOLDER_MARKERS = ("你的", "您的", "your", "xxx", "placeholder",
