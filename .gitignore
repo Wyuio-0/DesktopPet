@@ -45,3 +45,15 @@ scratch_*.json
 # Local AI/IDE tool state (may contain session data — never commit)
 **/.agents/
 **/.claude/
+
+# Android Build & Cache
+android/.gradle/
+android/build/
+android/**/build/
+android/local.properties
+android/.idea/
+android/.cxx/
+android/dist/
+android/*.iml
+android/**/*.iml
+

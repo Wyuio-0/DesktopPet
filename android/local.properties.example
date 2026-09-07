@@ -1,0 +1,4 @@
+## Location of the Android SDK for local building.
+# Copy this file to local.properties and update sdk.dir if needed:
+# sdk.dir=C\:\\Users\\<username>\\AppData\\Local\\Android\\Sdk
+sdk.dir=D\:\\Dev\\project\\RepeatAPP\\.tools\\android-sdk

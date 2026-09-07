@@ -1,0 +1,420 @@
+package com.amiya.pet.ui
+
+import android.Manifest
+import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.Build
+import android.os.Bundle
+import android.provider.Settings
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
+import com.amiya.pet.core.parser.CharacterParser
+import com.amiya.pet.service.PetFloatingService
+
+class MainActivity : ComponentActivity() {
+
+    private val notificationPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { /* granted or denied */ }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+
+        // 请求 Android 13+ 通知权限
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
+                != PackageManager.PERMISSION_GRANTED) {
+                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+            }
+        }
+
+        setContent {
+            AmiyaPetTheme {
+                MainScreen()
+            }
+        }
+    }
+}
+
+@Composable
+fun AmiyaPetTheme(content: @Composable () -> Unit) {
+    MaterialTheme(
+        colorScheme = darkColorScheme(
+            primary = Color(0xFF00B0FF),
+            onPrimary = Color.Black,
+            secondary = Color(0xFF4FC3F7),
+            background = Color(0xFF101216),
+            surface = Color(0xFF1A1D24),
+            surfaceVariant = Color(0xFF242832),
+            onBackground = Color(0xFFE2E8F0),
+            onSurface = Color(0xFFE2E8F0),
+            error = Color(0xFFFF5252)
+        ),
+        content = content
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun MainScreen() {
+    val context = LocalContext.current
+    val prefs = remember { context.getSharedPreferences("amiya_pet_prefs", Context.MODE_PRIVATE) }
+
+    // 观察服务运行状态
+    val isRunning by PetFloatingService.isRunning.collectAsState()
+    val activeCharKey by PetFloatingService.currentCharKey.collectAsState()
+    val activeSpeed by PetFloatingService.currentSpeed.collectAsState()
+
+    var selectedChar by remember {
+        mutableStateOf(prefs.getString("pref_character", activeCharKey) ?: "amiya")
+    }
+    var currentSpeed by remember {
+        mutableFloatStateOf(prefs.getFloat("pref_speed", activeSpeed))
+    }
+
+    var hasOverlayPermission by remember {
+        mutableStateOf(Settings.canDrawOverlays(context))
+    }
+
+    // 页面唤醒时重新检测悬浮窗权限
+    DisposableEffect(Unit) {
+        hasOverlayPermission = Settings.canDrawOverlays(context)
+        onDispose { }
+    }
+
+    val availableChars = remember {
+        listOf(
+            "amiya" to "阿米娅",
+            "yuyuananjielina" to "安洁莉娜 (泳装)",
+            "shenglinchuxue" to "初雪 (泳装)"
+        )
+    }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = "阿米娅桌宠",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 20.sp
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "v1.0 Android",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.surface
+                )
+            )
+        }
+    ) { innerPadding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(MaterialTheme.colorScheme.background)
+                .padding(innerPadding)
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            // 权限提示卡片（未授权时显示）
+            if (!hasOverlayPermission) {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFF332015)),
+                    shape = RoundedCornerShape(16.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.Warning,
+                                contentDescription = null,
+                                tint = Color(0xFFFFB74D)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "需要开启悬浮窗权限",
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFFFFB74D),
+                                fontSize = 16.sp
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "为了让阿米娅能够在其他应用上层陪伴您，请前往系统设置授予“显示在其他应用上层”权限。",
+                            color = Color(0xFFE0E0E0),
+                            fontSize = 13.sp
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Button(
+                            onClick = {
+                                val intent = Intent(
+                                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                    Uri.parse("package:${context.packageName}")
+                                )
+                                context.startActivity(intent)
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF9800)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("前往系统授权", color = Color.Black, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+
+            // 桌宠主控开关卡片
+            Card(
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column {
+                            Text(
+                                text = "桌宠状态",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 16.sp
+                            )
+                            Text(
+                                text = if (isRunning) "阿米娅正在桌面上陪伴您" else "桌宠当前处于收回状态",
+                                fontSize = 13.sp,
+                                color = if (isRunning) Color(0xFF4CAF50) else Color.Gray
+                            )
+                        }
+                        Switch(
+                            checked = isRunning,
+                            onCheckedChange = { enable ->
+                                hasOverlayPermission = Settings.canDrawOverlays(context)
+                                if (!hasOverlayPermission) {
+                                    val intent = Intent(
+                                        Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                        Uri.parse("package:${context.packageName}")
+                                    )
+                                    context.startActivity(intent)
+                                    return@Switch
+                                }
+
+                                val serviceIntent = Intent(context, PetFloatingService::class.java).apply {
+                                    if (enable) {
+                                        action = PetFloatingService.ACTION_START
+                                        putExtra(PetFloatingService.EXTRA_CHAR_KEY, selectedChar)
+                                        putExtra(PetFloatingService.EXTRA_SPEED, currentSpeed)
+                                    } else {
+                                        action = PetFloatingService.ACTION_STOP
+                                    }
+                                }
+
+                                if (enable) {
+                                    ContextCompat.startForegroundService(context, serviceIntent)
+                                } else {
+                                    context.stopService(serviceIntent)
+                                }
+                            }
+                        )
+                    }
+                }
+            }
+
+            // 角色选择卡片
+            Card(
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        text = "角色选择",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 16.sp
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    availableChars.forEach { (key, name) ->
+                        val isSelected = (key == selectedChar)
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(
+                                    if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
+                                    else MaterialTheme.colorScheme.surfaceVariant
+                                )
+                                .clickable {
+                                    selectedChar = key
+                                    prefs.edit().putString("pref_character", key).apply()
+                                    if (isRunning) {
+                                        val intent = Intent(context, PetFloatingService::class.java).apply {
+                                            action = PetFloatingService.ACTION_SWITCH_CHARACTER
+                                            putExtra(PetFloatingService.EXTRA_CHAR_KEY, key)
+                                        }
+                                        context.startService(intent)
+                                    }
+                                }
+                                .padding(horizontal = 16.dp, vertical = 14.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = name,
+                                    fontSize = 15.sp,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                    color = if (isSelected) MaterialTheme.colorScheme.primary else Color.White
+                                )
+                                if (isSelected) {
+                                    Icon(
+                                        imageVector = Icons.Default.Check,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 动作速率调节（满足用户随心调整帧率与动作流程度的需求）
+            Card(
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "动作播放速度",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 16.sp
+                        )
+                        Text(
+                            text = "%.2fx".format(currentSpeed),
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Slider(
+                        value = currentSpeed,
+                        onValueChange = { speed ->
+                            currentSpeed = speed
+                            prefs.edit().putFloat("pref_speed", speed).apply()
+                            if (isRunning) {
+                                val intent = Intent(context, PetFloatingService::class.java).apply {
+                                    action = PetFloatingService.ACTION_SET_SPEED
+                                    putExtra(PetFloatingService.EXTRA_SPEED, speed)
+                                }
+                                context.startService(intent)
+                            }
+                        },
+                        valueRange = 0.5f..2.0f,
+                        steps = 14
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text("0.5x (慢速)", fontSize = 11.sp, color = Color.Gray)
+                        Text("1.15x (推荐流畅)", fontSize = 11.sp, color = MaterialTheme.colorScheme.primary)
+                        Text("2.0x (极速)", fontSize = 11.sp, color = Color.Gray)
+                    }
+                }
+            }
+
+            // 手机端交互操作指南
+            Card(
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        text = "手机交互指南",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 16.sp
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    GuideItem(title = "单击角色", desc = "触发互动反应动作 (如羞涩、疑惑、得意)")
+                    GuideItem(title = "双击角色", desc = "向博士打招呼并弹出对话气泡台词")
+                    GuideItem(title = "手指拖拽", desc = "在屏幕任意位置拖拽，松手后自动贴附两侧边缘")
+                    GuideItem(title = "智能休息", desc = "静止一段时间后自动进入坐下与睡眠状态")
+                    GuideItem(title = "熄屏节能", desc = "手机熄屏/锁屏时自动挂起 GPU 渲染，0 耗电")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun GuideItem(title: String, desc: String) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        verticalAlignment = Alignment.Top
+    ) {
+        Text(
+            text = "• ",
+            color = MaterialTheme.colorScheme.primary,
+            fontWeight = FontWeight.Bold
+        )
+        Column {
+            Text(
+                text = title,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = Color.White
+            )
+            Text(
+                text = desc,
+                fontSize = 12.sp,
+                color = Color.LightGray
+            )
+        }
+    }
+}

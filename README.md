@@ -1,8 +1,11 @@
-# 🐾 桌面宠物 (Desktop Pet)
+# 🐾 桌面宠物 (Desktop Pet) & 📱 安卓手机桌宠 (AmiyaPet Android)
 
-一个基于 PyQt5 的桌面宠物程序——把《明日方舟》的阿米娅（或其他角色）放到你的桌面上。她会在屏幕底部播放动画，响应拖拽、点击、聊天，还能帮你翻译文字、操作电脑。
+一个跨平台的明日方舟桌宠应用——把阿米娅（或其他角色）放到你的电脑桌面或安卓手机屏幕上！
+- 💻 **Windows 电脑版**：基于 PyQt5，支持丰富的大模型 AI 智能体互动、知识库问答、课表管理、语音克隆与系统控制。
+- 📱 **Android 手机版**：原生 Kotlin + Jetpack Compose + OpenGL ES 实时着色器，支持系统级悬浮窗常驻、边缘磁吸、手势交互与熄屏零功耗。
 
 ![preview](app_preview.png)
+
 
 ## ✨ 功能
 
@@ -501,7 +504,30 @@ git config core.hooksPath .githooks   # 启用（克隆后执行一次）
 python tools/check_secrets.py --all   # 手动全量扫描整个工作区
 ```
 
-## 🔍 透明处理
+---
+
+## 📱 Android 原生手机版 (AmiyaPet Android)
+
+位于仓库子工程 [`android/`](android/)，专为 Android 移动平台从零打造的原生应用：
+
+- **系统顶层悬浮窗** — 基于 `WindowManager` 的全局交互层，在任意 App 上方陪伴博士。
+- **GPU 实时抠图着色器** — 自研 OpenGL ES 2.0 片元着色器（ChromaKeyShader），硬件解码 WebM 零拷贝直连 GPU 渲染，CPU 占用近乎 0%，告别手机发热与耗电。
+- **全手势触控与边缘磁吸** — 单击反应、双击问候、自由拖拽移动，松手后带弹性减速动画智能吸附到屏幕边缘。
+- **对话气泡卡片** — 罗德岛风格半透明气泡，支持台词显示与淡入淡出动画。
+- **熄屏零功耗** — 监听屏幕广播，在手机锁屏熄屏时自动挂起渲染引擎。
+- **调速模块** — Jetpack Compose 设置页内置 0.5x ~ 2.0x 动作速率滑块，动作流畅度随心调节。
+
+### 安卓端快速编译：
+```powershell
+# 进入 android 子目录
+cd android
+# 一键编译 Debug APK（产物位于 android/app/build/outputs/apk/debug/）
+.\tools\build.ps1
+```
+
+---
+
+## 🔍 透明处理 (PC 端)
 
 WebM 源文件是黑色背景（无 alpha 通道）。程序先把「近黑 **且** 低色度」的像素判为背景候选（这样带色相的深色衣物、紫蓝色描边不会被误判），再做两次筛选：
 
