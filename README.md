@@ -192,16 +192,26 @@ set PET_AI_MODEL=deepseek-chat                # 可选
 
 ### 导入
 
+**💻 Windows 电脑版：**
+
 两种方式任选：
 
-- **命令行**（推荐，一步到位）：
+- **右键菜单**（最方便）：在桌宠上右键 →「学业与效率工具 ▶」->「导入课表 (强智)…」，选择刚才保存的 JSON 文件，按提示填开学第一周周一的日期。
+- **命令行**：
   ```bash
   python tools/import_schedule.py kebiao.json --term-start 2026-08-31
   ```
   `--term-start` 是**第 1 周周一**的日期，不传则默认今天所在周的周一。
-- **右键菜单**：桌宠上右键 →「课程表 → 导入课表…」，选择 JSON 文件，按提示填开学日期。
 
-数据保存在 `%APPDATA%\AmiyaPet\schedule.json`（原始 JSON 留档为 `schedule_raw.json`），重装程序不丢失。
+电脑版数据保存在 `%APPDATA%\AmiyaPet\schedule.json`（原始 JSON 留档为 `schedule_raw.json`），重装程序不丢失。
+
+**📱 Android 手机版：**
+
+1. 将刚才复制的 JSON 文本内容（不需要存文件）发送到手机上并复制。
+2. 打开手机 App，点击底部导航栏进入**「课表」**页面。
+3. 点击右上角的**「导入课表」**按钮。
+4. 在弹窗中粘贴完整的 JSON 代码，并填写这学期第一周周一的日期。
+5. 点击**「开始导入」**即可自动生成原生课表视图并开启上课提醒。
 
 ### 使用
 
