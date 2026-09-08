@@ -23,6 +23,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import com.amiya.pet.core.update.UpdateManager
+import androidx.compose.ui.platform.LocalContext
+import kotlinx.coroutines.launch
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -135,51 +138,11 @@ fun ChatScreen() {
         },
         containerColor = MaterialTheme.colorScheme.background
     ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-        ) {
-            // Pet rendering area
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(220.dp)
-                    .background(Color(0xFF161920))
-                    .pointerInput(Unit) {
-                        detectTapGestures(
-                            onTap = { 
-                                stateMachine?.onUserClick()
-                                voicePlayer.playClickVoice()
-                            },
-                            onDoubleTap = { 
-                                stateMachine?.onUserDoubleClick()
-                                voicePlayer.playGreetVoice()
-                            }
-                        )
-                    },
-                contentAlignment = Alignment.Center
+        Box(modifier = Modifier.fillMaxSize().padding(padding)) {
+            Column(
+                modifier = Modifier.fillMaxSize()
             ) {
-                AndroidView(
-                    factory = { ctx ->
-                        PetGlSurfaceView(ctx).apply {
-                            layoutParams = FrameLayout.LayoutParams(
-                                ViewGroup.LayoutParams.MATCH_PARENT,
-                                ViewGroup.LayoutParams.MATCH_PARENT
-                            )
-                            onPlaybackEnded = {
-                                stateMachine?.onClipPlaybackEnded()
-                            }
-                            petView = this
-                        }
-                    },
-                    modifier = Modifier.fillMaxHeight().aspectRatio(1f)
-                )
-            }
-            
-            Spacer(modifier = Modifier.height(1.dp).fillMaxWidth().background(Color(0xFF2A2E38)))
-
-            // Chat messages
+                // Chat messages
             Box(modifier = Modifier.weight(1f)) {
                 if (chatList.isEmpty()) {
                     Column(
@@ -196,7 +159,7 @@ fun ChatScreen() {
                 } else {
                     LazyColumn(
                         state = listState,
-                        contentPadding = PaddingValues(16.dp),
+                        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 146.dp, bottom = 16.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp),
                         modifier = Modifier.fillMaxSize()
                     ) {
@@ -254,6 +217,43 @@ fun ChatScreen() {
                         Icon(Icons.Default.Send, "发送", tint = if (inputText.isNotBlank()) Color.Black else Color.Gray)
                     }
                 }
+            }
+        }
+            // Floating Pet Overlay
+            Box(
+                modifier = Modifier
+                    .padding(8.dp)
+                    .size(130.dp)
+                    .align(Alignment.TopStart)
+                    .pointerInput(Unit) {
+                        detectTapGestures(
+                            onTap = { 
+                                stateMachine?.onUserClick()
+                                voicePlayer.playClickVoice()
+                            },
+                            onDoubleTap = { 
+                                stateMachine?.onUserDoubleClick()
+                                voicePlayer.playGreetVoice()
+                            }
+                        )
+                    },
+                contentAlignment = Alignment.Center
+            ) {
+                AndroidView(
+                    factory = { ctx ->
+                        PetGlSurfaceView(ctx).apply {
+                            layoutParams = FrameLayout.LayoutParams(
+                                ViewGroup.LayoutParams.MATCH_PARENT,
+                                ViewGroup.LayoutParams.MATCH_PARENT
+                            )
+                            onPlaybackEnded = {
+                                stateMachine?.onClipPlaybackEnded()
+                            }
+                            petView = this
+                        }
+                    },
+                    modifier = Modifier.fillMaxSize()
+                )
             }
         }
     }
@@ -336,6 +336,34 @@ fun ChatScreen() {
                         currentSpeed = it
                         prefs.edit().putFloat("pref_speed", it).apply()
                     }, valueRange = 0.5f..2f, steps = 14)
+                    
+                    Spacer(modifier = Modifier.height(16.dp))
+                    
+                    val context = LocalContext.current
+                    var isChecking by remember { mutableStateOf(false) }
+                    
+                    Button(
+                        onClick = {
+                            isChecking = true
+                            scope.launch {
+                                val res = UpdateManager.checkUpdate(context)
+                                isChecking = false
+                                if (res.isSuccess && UpdateManager.hasUpdate) {
+                                    android.widget.Toast.makeText(context, "有新版本！请重启 App 触发更新弹窗", android.widget.Toast.LENGTH_SHORT).show()
+                                } else {
+                                    android.widget.Toast.makeText(context, "当前已是最新版本", android.widget.Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF242832))
+                    ) {
+                        if (isChecking) {
+                            CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
+                            Spacer(Modifier.width(8.dp))
+                        }
+                        Text(if (isChecking) "检查中..." else "检查版本更新", color = Color.White)
+                    }
                 }
             },
             confirmButton = {
