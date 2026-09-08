@@ -162,5 +162,6 @@ jobs:
             dist/AmiyaPet-Android-*.apk
           body_path: release_body.md
           generate_release_notes: false
+          draft: false
           # v3 默认支持更新已存在的 Release（重跑会刷新正文/附件），无需 allowUpdates
 
