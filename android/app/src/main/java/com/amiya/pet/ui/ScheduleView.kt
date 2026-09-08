@@ -175,10 +175,27 @@ fun TimetableGrid(weekNo: Int, refreshTrigger: Int) {
                                 .align(Alignment.CenterStart),
                             contentAlignment = Alignment.Center
                         ) {
+                            val rawTime = ScheduleManager.sections[i.toString()] ?: "$i"
+                            val displayTime = if (!showTime) i.toString() else {
+                                if (rawTime.contains("-") || rawTime.contains("\n")) {
+                                    rawTime.replace("-", "\n")
+                                } else if (rawTime.contains(":")) {
+                                    try {
+                                        val parts = rawTime.split(":")
+                                        val h = parts[0].toInt()
+                                        val m = parts[1].toInt()
+                                        val endM = h * 60 + m + 45
+                                        val eH = endM / 60
+                                        val eM = endM % 60
+                                        "$rawTime\n${String.format(Locale.getDefault(), "%02d:%02d", eH, eM)}"
+                                    } catch(e: Exception) { rawTime }
+                                } else rawTime
+                            }
                             Text(
-                                text = if (showTime) ScheduleManager.sections[i.toString()] ?: "$i" else i.toString(),
+                                text = displayTime,
                                 color = Color.Gray,
-                                fontSize = if (showTime) 10.sp else 11.sp,
+                                fontSize = if (showTime) 9.sp else 11.sp,
+                                lineHeight = 11.sp,
                                 textAlign = TextAlign.Center
                             )
                         }
