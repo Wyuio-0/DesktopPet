@@ -12,14 +12,29 @@ android {
         applicationId = "com.amiya.pet"
         minSdk = 26
         targetSdk = 35
-        versionCode = 6
-        versionName = "1.6.6"
+        versionCode = 7
+        versionName = "1.6.7"
+    }
+
+    signingConfigs {
+        create("release") {
+            storeFile = file("keystore/release.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+            enableV1Signing = true
+            enableV2Signing = true
+        }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("release")
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+        }
+        debug {
+            signingConfig = signingConfigs.getByName("release")
         }
     }
 
