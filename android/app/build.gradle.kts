@@ -12,8 +12,8 @@ android {
         applicationId = "com.amiya.pet"
         minSdk = 26
         targetSdk = 35
-        versionCode = 4
-        versionName = "1.6.4"
+        versionCode = 5
+        versionName = "1.6.5"
     }
 
     buildTypes {

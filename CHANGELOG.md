@@ -7,6 +7,15 @@
 
 ## [Unreleased]
 
+## [v1.6.5] - 2026-09-08
+
+### 修复
+
+- **彻底解决 Android 手机端桌面图标显示为白底方盘的问题（全适配 Adaptive Icons）**：
+  - **恢复与规范 Adaptive Icon 配置**：补全 `mipmap-anydpi-v26/ic_launcher.xml` 与 `ic_launcher_round.xml`，防止 Android 8.0+（API 26~35）将应用识别为旧版 Legacy 图标而强制合成白底圆盘/方盘遮罩
+  - **分密度自适应前台立绘图层（ic_launcher_foreground）**：规范生成 mdpi（108px）至 xxxhdpi（432px）全套前台高清图层，精准内缩至 72dp 核心安全区，避免异形桌面遮罩裁切角色
+  - **全透明背景层生效**：通过 `#00000000` 背景与独立前台立绘结合，在手机主屏幕上呈现真正的透明纯立绘效果，消除任何突兀的白底矩形
+
 ## [v1.6.4] - 2026-09-08
 
 ### 新增
