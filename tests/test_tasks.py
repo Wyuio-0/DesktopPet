@@ -66,15 +66,17 @@ class TestTasks:
 
     def test_upcoming_sorted_excludes_done(self, tmp_path):
         ts = Tasks(path=str(tmp_path / "tasks.json"))
-        a = ts.add("早", "homework", datetime(2026, 9, 8, 10, 0))
-        b = ts.add("晚", "homework", datetime(2026, 9, 9, 10, 0))
+        base = datetime.now()
+        a = ts.add("早", "homework", base + timedelta(days=1))
+        b = ts.add("晚", "homework", base + timedelta(days=2))
         ts.set_done(b.id)
         up = ts.upcoming()
         assert [t.id for t in up] == [a.id]
 
     def test_dump_text(self, tmp_path):
         ts = Tasks(path=str(tmp_path / "tasks.json"))
-        ts.add("高数作业", "homework", datetime(2026, 9, 10, 23, 59),
+        base = datetime.now()
+        ts.add("高数作业", "homework", base + timedelta(days=2),
                course="高等数学")
         text = ts.dump_text()
         assert "高数作业" in text

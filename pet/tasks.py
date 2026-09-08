@@ -225,16 +225,16 @@ class Tasks:
                 break
         self.save()
 
-    def upcoming(self, limit=None, include_done=False):
+    def upcoming(self, limit=None, include_done=False, now=None):
         """按到期时间升序的未完成任务。"""
         out = [t for t in self.items if (include_done or not t.done)
-               and not t.expired()]
+               and not t.expired(now=now)]
         out.sort(key=lambda t: t.due)
         return out[:limit] if limit else out
 
-    def exams(self):
+    def exams(self, now=None):
         return sorted([t for t in self.items
-                       if t.kind == "exam" and not t.done and not t.expired()],
+                       if t.kind == "exam" and not t.done and not t.expired(now=now)],
                       key=lambda t: t.due)
 
     def due_soon(self, now=None, remind_key=None):
@@ -248,11 +248,11 @@ class Tasks:
                 out.append(t)
         return out
 
-    def dump_text(self, limit=10):
+    def dump_text(self, limit=10, now=None):
         """即将到期清单文本（浮窗展示）。"""
         lines = []
-        now = datetime.now()
-        up = self.upcoming(limit=limit)
+        now = now or datetime.now()
+        up = self.upcoming(limit=limit, now=now)
         if not up:
             return "当前没有待办任务。"
         for t in up:
