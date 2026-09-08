@@ -33,10 +33,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.amiya.pet.core.parser.CharacterParser
+import com.amiya.pet.core.update.DownloadProgress
 import com.amiya.pet.core.update.ReleaseInfo
 import com.amiya.pet.core.update.UpdateManager
 import com.amiya.pet.service.PetFloatingService
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import java.io.File
 
 class MainActivity : ComponentActivity() {
 
@@ -165,6 +168,12 @@ fun PetDashboardTab() {
     var updateResult by remember { mutableStateOf<ReleaseInfo?>(null) }
     var updateStatusText by remember { mutableStateOf<String?>(null) }
     var showUpdateDialog by remember { mutableStateOf(false) }
+
+    // 应用内下载状态
+    var isDownloading by remember { mutableStateOf(false) }
+    var downloadProgress by remember { mutableStateOf<DownloadProgress?>(null) }
+    var downloadedApkFile by remember { mutableStateOf<File?>(null) }
+    var downloadJob by remember { mutableStateOf<Job?>(null) }
 
     DisposableEffect(Unit) {
         hasOverlayPermission = Settings.canDrawOverlays(context)
@@ -526,7 +535,7 @@ fun PetDashboardTab() {
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Column {
+                    Column(modifier = Modifier.weight(1f)) {
                         Text(
                             text = "版本检查与更新",
                             fontWeight = FontWeight.Bold,
@@ -539,57 +548,120 @@ fun PetDashboardTab() {
                             color = Color.Gray
                         )
                     }
-                    Button(
-                        onClick = {
-                            if (isCheckingUpdate) return@Button
-                            isCheckingUpdate = true
-                            updateStatusText = "正在连接 GitHub..."
-                            scope.launch {
-                                val res = UpdateManager.checkUpdate(context)
-                                isCheckingUpdate = false
-                                res.fold(
-                                    onSuccess = { info ->
-                                        updateResult = info
-                                        if (info.hasUpdate) {
-                                            updateStatusText = "发现新版本：${info.tagName}"
-                                            showUpdateDialog = true
-                                        } else {
-                                            updateStatusText = "已是最新版本 (v${info.versionName})"
-                                            Toast.makeText(context, "当前已是最新版本！", Toast.LENGTH_SHORT).show()
-                                        }
-                                    },
-                                    onFailure = { err ->
-                                        updateStatusText = "检查更新失败: ${err.localizedMessage}"
-                                        Toast.makeText(context, "检查更新失败，请检查网络", Toast.LENGTH_SHORT).show()
-                                    }
-                                )
-                            }
-                        },
-                        enabled = !isCheckingUpdate,
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
-                    ) {
-                        if (isCheckingUpdate) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(16.dp),
-                                color = Color.Black,
-                                strokeWidth = 2.dp
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("检查中...", color = Color.Black, fontSize = 13.sp)
-                        } else {
+                    Spacer(modifier = Modifier.width(8.dp))
+
+                    if (downloadedApkFile != null && downloadedApkFile!!.exists()) {
+                        Button(
+                            onClick = {
+                                UpdateManager.installApk(context, downloadedApkFile!!)
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4CAF50))
+                        ) {
                             Icon(
-                                imageVector = Icons.Default.Refresh,
+                                imageVector = Icons.Default.CheckCircle,
                                 contentDescription = null,
                                 modifier = Modifier.size(16.dp),
                                 tint = Color.Black
                             )
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text("检查更新", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            Text("立即安装", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        }
+                    } else if (isDownloading) {
+                        Button(
+                            onClick = {
+                                downloadJob?.cancel()
+                                isDownloading = false
+                                updateStatusText = "已取消下载"
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                        ) {
+                            Text("取消", color = Color.White, fontSize = 13.sp)
+                        }
+                    } else {
+                        Button(
+                            onClick = {
+                                if (isCheckingUpdate) return@Button
+                                isCheckingUpdate = true
+                                updateStatusText = "正在连接 GitHub..."
+                                scope.launch {
+                                    val res = UpdateManager.checkUpdate(context)
+                                    isCheckingUpdate = false
+                                    res.fold(
+                                        onSuccess = { info ->
+                                            updateResult = info
+                                            if (info.hasUpdate) {
+                                                updateStatusText = "发现新版本：${info.tagName}"
+                                                showUpdateDialog = true
+                                            } else {
+                                                updateStatusText = "已是最新版本 (v${info.versionName})"
+                                                Toast.makeText(context, "当前已是最新版本！", Toast.LENGTH_SHORT).show()
+                                            }
+                                        },
+                                        onFailure = { err ->
+                                            updateStatusText = "检查更新失败: ${err.localizedMessage}"
+                                            Toast.makeText(context, "检查更新失败，请检查网络", Toast.LENGTH_SHORT).show()
+                                        }
+                                    )
+                                }
+                            },
+                            enabled = !isCheckingUpdate,
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                        ) {
+                            if (isCheckingUpdate) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(16.dp),
+                                    color = Color.Black,
+                                    strokeWidth = 2.dp
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("检查中...", color = Color.Black, fontSize = 13.sp)
+                            } else {
+                                Icon(
+                                    imageVector = Icons.Default.Refresh,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp),
+                                    tint = Color.Black
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("检查更新", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            }
                         }
                     }
                 }
 
-                if (updateStatusText != null) {
+                // 正在下载时的应用内实时进度条
+                if (isDownloading && downloadProgress != null) {
+                    val p = downloadProgress!!
+                    Spacer(modifier = Modifier.height(12.dp))
+                    LinearProgressIndicator(
+                        progress = { p.progress },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(8.dp)
+                            .clip(RoundedCornerShape(4.dp)),
+                        color = MaterialTheme.colorScheme.primary,
+                        trackColor = MaterialTheme.colorScheme.surfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = "${p.formattedDownloaded()} / ${p.formattedTotal()} (${(p.progress * 100).toInt()}%)",
+                            fontSize = 12.sp,
+                            color = Color.LightGray
+                        )
+                        Text(
+                            text = p.formattedSpeed(),
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
+
+                if (updateStatusText != null && !isDownloading) {
                     Spacer(modifier = Modifier.height(8.dp))
                     Text(
                         text = updateStatusText!!,
@@ -623,22 +695,27 @@ fun PetDashboardTab() {
         }
     }
 
-    // 新版本弹窗提醒
+    // 新版本弹窗提醒 / 应用内下载进度窗口
     if (showUpdateDialog && updateResult != null) {
         val info = updateResult!!
         AlertDialog(
-            onDismissRequest = { showUpdateDialog = false },
+            onDismissRequest = {
+                // 如果正在下载，点击外部允许隐藏弹窗（后台继续下载，主卡片仍会显示实时进度）
+                showUpdateDialog = false
+            },
             containerColor = MaterialTheme.colorScheme.surface,
             title = {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
-                        imageVector = Icons.Default.SystemUpdate,
+                        imageVector = if (downloadedApkFile != null && downloadedApkFile!!.exists()) Icons.Default.CheckCircle else Icons.Default.SystemUpdate,
                         contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary
+                        tint = if (downloadedApkFile != null && downloadedApkFile!!.exists()) Color(0xFF4CAF50) else MaterialTheme.colorScheme.primary
                     )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = "发现新版本 ${info.tagName}",
+                        text = if (isDownloading) "正在下载更新 ${info.tagName}"
+                               else if (downloadedApkFile != null && downloadedApkFile!!.exists()) "更新包已就绪"
+                               else "发现新版本 ${info.tagName}",
                         fontWeight = FontWeight.Bold,
                         fontSize = 18.sp,
                         color = Color.White
@@ -647,40 +724,137 @@ fun PetDashboardTab() {
             },
             text = {
                 Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
-                    Text(
-                        text = "更新说明：",
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.primary,
-                        fontSize = 13.sp
-                    )
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Text(
-                        text = info.releaseNotes,
-                        fontSize = 13.sp,
-                        color = Color.LightGray
-                    )
+                    if (isDownloading) {
+                        val p = downloadProgress ?: DownloadProgress()
+                        Text(
+                            text = "正在应用内高速下载，无需跳转浏览器：",
+                            fontSize = 13.sp,
+                            color = Color.LightGray
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        LinearProgressIndicator(
+                            progress = { p.progress },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(10.dp)
+                                .clip(RoundedCornerShape(5.dp)),
+                            color = MaterialTheme.colorScheme.primary,
+                            trackColor = MaterialTheme.colorScheme.surfaceVariant
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                text = "${p.formattedDownloaded()} / ${p.formattedTotal()} (${(p.progress * 100).toInt()}%)",
+                                fontSize = 12.sp,
+                                color = Color.White,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Text(
+                                text = p.formattedSpeed(),
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                        if (p.error != null) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text("下载中断: ${p.error}", color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+                        }
+                    } else if (downloadedApkFile != null && downloadedApkFile!!.exists()) {
+                        Text(
+                            text = "新版本 ${info.tagName} 安装包已下载完成！\n点击下方按钮将直接调起系统安装程序，无缝完成覆盖升级：",
+                            fontSize = 13.sp,
+                            color = Color.White
+                        )
+                    } else {
+                        Text(
+                            text = "更新说明：",
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontSize = 13.sp
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = info.releaseNotes,
+                            fontSize = 13.sp,
+                            color = Color.LightGray
+                        )
+                    }
                 }
             },
             confirmButton = {
-                Button(
-                    onClick = {
-                        val targetUrl = info.apkDownloadUrl ?: info.htmlUrl
-                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(targetUrl))
-                        context.startActivity(intent)
-                        showUpdateDialog = false
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
-                ) {
-                    Text(
-                        if (info.apkDownloadUrl != null) "立即下载 APK" else "前往 GitHub 查看",
-                        color = Color.Black,
-                        fontWeight = FontWeight.Bold
-                    )
+                if (downloadedApkFile != null && downloadedApkFile!!.exists()) {
+                    Button(
+                        onClick = {
+                            UpdateManager.installApk(context, downloadedApkFile!!)
+                            showUpdateDialog = false
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4CAF50))
+                    ) {
+                        Text("立即安装", color = Color.Black, fontWeight = FontWeight.Bold)
+                    }
+                } else if (isDownloading) {
+                    TextButton(
+                        onClick = {
+                            downloadJob?.cancel()
+                            isDownloading = false
+                            updateStatusText = "已取消下载"
+                        }
+                    ) {
+                        Text("取消下载", color = MaterialTheme.colorScheme.error)
+                    }
+                } else {
+                    Button(
+                        onClick = {
+                            val apkUrl = info.apkDownloadUrl
+                            if (apkUrl != null) {
+                                isDownloading = true
+                                downloadProgress = DownloadProgress()
+                                downloadJob = scope.launch {
+                                    val result = UpdateManager.downloadApk(context, apkUrl) { prog ->
+                                        downloadProgress = prog
+                                    }
+                                    isDownloading = false
+                                    result.fold(
+                                        onSuccess = { file ->
+                                            downloadedApkFile = file
+                                            updateStatusText = "下载完成，正在调起安装..."
+                                            UpdateManager.installApk(context, file)
+                                        },
+                                        onFailure = { err ->
+                                            updateStatusText = "下载失败: ${err.localizedMessage}"
+                                            Toast.makeText(context, "下载失败，请重试", Toast.LENGTH_SHORT).show()
+                                        }
+                                    )
+                                }
+                            } else {
+                                val intent = Intent(Intent.ACTION_VIEW, Uri.parse(info.htmlUrl))
+                                context.startActivity(intent)
+                                showUpdateDialog = false
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                    ) {
+                        Text(
+                            if (info.apkDownloadUrl != null) "立即更新 (应用内下载)" else "前往 GitHub 查看",
+                            color = Color.Black,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showUpdateDialog = false }) {
-                    Text("稍后再说", color = Color.Gray)
+                if (isDownloading) {
+                    TextButton(onClick = { showUpdateDialog = false }) {
+                        Text("后台下载", color = Color.Gray)
+                    }
+                } else {
+                    TextButton(onClick = { showUpdateDialog = false }) {
+                        Text("稍后再说", color = Color.Gray)
+                    }
                 }
             }
         )
