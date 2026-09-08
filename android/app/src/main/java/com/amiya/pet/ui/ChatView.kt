@@ -144,7 +144,7 @@ fun ChatScreen() {
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(200.dp)
+                    .height(220.dp)
                     .background(Color(0xFF161920))
                     .pointerInput(Unit) {
                         detectTapGestures(
@@ -173,7 +173,7 @@ fun ChatScreen() {
                             petView = this
                         }
                     },
-                    modifier = Modifier.fillMaxSize()
+                    modifier = Modifier.fillMaxHeight().aspectRatio(1f)
                 )
             }
             
