@@ -86,6 +86,7 @@ fun AmiyaPetTheme(content: @Composable () -> Unit) {
 
 enum class MainTab(val title: String, val icon: ImageVector) {
     PET("桌宠", Icons.Default.Pets),
+    SCHEDULE("课表", Icons.Default.DateRange),
     NOTES("便签", Icons.Default.EditNote),
     CHAT("对话", Icons.Default.Chat),
     FOCUS("专注", Icons.Default.Timer)
@@ -124,6 +125,7 @@ fun MainScreen() {
         Box(modifier = Modifier.padding(padding)) {
             when (selectedTab) {
                 MainTab.PET -> PetDashboardTab()
+                MainTab.SCHEDULE -> ScheduleScreen()
                 MainTab.NOTES -> NotesScreen()
                 MainTab.CHAT -> ChatScreen()
                 MainTab.FOCUS -> PomodoroScreen()

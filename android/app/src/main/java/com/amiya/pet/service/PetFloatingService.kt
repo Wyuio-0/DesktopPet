@@ -28,6 +28,13 @@ import com.amiya.pet.ui.MainActivity
 import com.amiya.pet.ui.PetBubbleView
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import java.util.Date
+import com.amiya.pet.core.schedule.ScheduleManager
 
 import com.amiya.pet.core.focus.PomodoroMode
 import com.amiya.pet.core.focus.PomodoroTimer
@@ -76,6 +83,8 @@ class PetFloatingService : Service(), PetStateListener {
     private var touchHandler: PetTouchHandler? = null
     private var layoutParams: WindowManager.LayoutParams? = null
     private var voicePlayer: VoicePlayer? = null
+    private var reminderJob: Job? = null
+    private var lastRemindedClass: String? = null
 
     private var screenReceiver: BroadcastReceiver? = null
 
@@ -104,6 +113,7 @@ class PetFloatingService : Service(), PetStateListener {
         }
 
         _isRunning.value = true
+        startClassReminderLoop()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -366,6 +376,7 @@ class PetFloatingService : Service(), PetStateListener {
     }
 
     override fun onDestroy() {
+        reminderJob?.cancel()
         super.onDestroy()
         _isRunning.value = false
         stateMachine?.destroy()
@@ -394,5 +405,43 @@ class PetFloatingService : Service(), PetStateListener {
             }
         }
         rootContainer = null
+    }
+
+
+    private fun startClassReminderLoop() {
+        ScheduleManager.load(this)
+        reminderJob = CoroutineScope(Dispatchers.Main + Job()).launch {
+            while (true) {
+                delay(60_000L) // check every minute
+                try {
+                    val next = ScheduleManager.nextClass(Date())
+                    if (next != null) {
+                        val diffMillis = next.startTime.time - Date().time
+                        val diffMinutes = diffMillis / 60000
+                        if (diffMinutes in 0..ScheduleManager.remindMinutes.toLong()) {
+                            val classId = "${next.course.name}_${next.startTime.time}"
+                            if (lastRemindedClass != classId) {
+                                lastRemindedClass = classId
+                                val msg = "博士，即将上课：${next.course.name} (在 ${next.course.room})。请做好准备哦！"
+                                bubbleView?.showBubble(msg, 8000L)
+                                voicePlayer?.playGreetVoice()
+                                
+                                val manager = getSystemService(NotificationManager::class.java)
+                                val notif = NotificationCompat.Builder(this@PetFloatingService, CHANNEL_ID)
+                                    .setContentTitle("上课提醒")
+                                    .setContentText(msg)
+                                    .setSmallIcon(R.mipmap.ic_launcher)
+                                    .setPriority(NotificationCompat.PRIORITY_HIGH)
+                                    .setAutoCancel(true)
+                                    .build()
+                                manager.notify(1002, notif)
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+        }
     }
 }
