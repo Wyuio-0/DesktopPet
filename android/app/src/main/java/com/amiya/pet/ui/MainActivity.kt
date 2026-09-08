@@ -113,7 +113,7 @@ fun MainScreen() {
         val result = UpdateManager.checkUpdate(context)
         if (result.isSuccess) {
             val info = result.getOrNull()
-            if (UpdateManager.hasUpdate && info != null) {
+            if (info != null && info.hasUpdate) {
                 releaseInfo = info
                 showUpdateDialog = true
             }
@@ -124,10 +124,10 @@ fun MainScreen() {
     if (showUpdateDialog && releaseInfo != null) {
         AlertDialog(
             onDismissRequest = { if (!isDownloading) showUpdateDialog = false },
-            title = { Text("发现新版本: ${releaseInfo!!.version}", color = Color.White) },
+            title = { Text("发现新版本: ${releaseInfo!!.versionName}", color = Color.White) },
             text = {
                 Column {
-                    Text(releaseInfo!!.notes, fontSize = 14.sp, color = Color.LightGray)
+                    Text(releaseInfo!!.releaseNotes, fontSize = 14.sp, color = Color.LightGray)
                     Spacer(Modifier.height(16.dp))
                     if (isDownloading && downloadProgress != null) {
                         LinearProgressIndicator(
@@ -148,19 +148,23 @@ fun MainScreen() {
                     Button(onClick = {
                         isDownloading = true
                         downloadJob = coroutineScope.launch {
-                            UpdateManager.downloadUpdate(
-                                releaseInfo!!.downloadUrl,
+                            val apkUrl = releaseInfo!!.apkDownloadUrl
+                            if (apkUrl.isNullOrEmpty()) {
+                                isDownloading = false
+                                return@launch
+                            }
+                            val res = UpdateManager.downloadUpdate(
                                 context,
-                                onProgress = { downloadProgress = it },
-                                onSuccess = { file ->
-                                    isDownloading = false
-                                    showUpdateDialog = false
-                                    UpdateManager.installApk(context, file)
-                                },
-                                onError = { _ ->
-                                    isDownloading = false
-                                }
+                                apkUrl,
+                                onProgress = { downloadProgress = it }
                             )
+                            if (res.isSuccess) {
+                                isDownloading = false
+                                showUpdateDialog = false
+                                UpdateManager.installApk(context, res.getOrThrow())
+                            } else {
+                                isDownloading = false
+                            }
                         }
                     }) {
                         Text("立即更新")
