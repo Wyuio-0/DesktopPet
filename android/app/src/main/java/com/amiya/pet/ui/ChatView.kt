@@ -149,11 +149,11 @@ fun ChatScreen() {
                     .pointerInput(Unit) {
                         detectTapGestures(
                             onTap = { 
-                                stateMachine?.onUserInteraction("click")
+                                stateMachine?.onUserClick()
                                 voicePlayer.playClickVoice()
                             },
                             onDoubleTap = { 
-                                stateMachine?.onUserInteraction("double_click")
+                                stateMachine?.onUserDoubleClick()
                                 voicePlayer.playGreetVoice()
                             }
                         )
