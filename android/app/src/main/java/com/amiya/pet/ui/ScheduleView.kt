@@ -152,30 +152,46 @@ fun TimetableGrid(weekNo: Int, refreshTrigger: Int) {
         map
     }
 
+    var showTime by remember { mutableStateOf(false) }
+
     Column(modifier = Modifier.fillMaxSize()) {
-        Row(modifier = Modifier.fillMaxWidth().padding(start = 30.dp, end = 8.dp)) {
+        Row(modifier = Modifier.fillMaxWidth().padding(start = 38.dp, end = 8.dp)) {
             weekDays.forEach {
                 Text(it, modifier = Modifier.weight(1f), color = Color.LightGray, fontSize = 12.sp, textAlign = TextAlign.Center)
             }
         }
         Spacer(Modifier.height(4.dp))
-        Box(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(end = 8.dp, bottom = 16.dp)) {
-            val rowH = 60.dp
+        BoxWithConstraints(modifier = Modifier.weight(1f).fillMaxWidth().padding(end = 8.dp, bottom = 16.dp)) {
+            val rowH = maxHeight / 13
             // Background grid lines and row numbers
-            Column {
+            Column(modifier = Modifier.fillMaxSize()) {
                 for (i in 1..13) {
                     Box(modifier = Modifier.fillMaxWidth().height(rowH)) {
-                        Text(i.toString(), modifier = Modifier.width(30.dp).align(Alignment.CenterStart), color = Color.Gray, fontSize = 11.sp, textAlign = TextAlign.Center)
-                        Box(modifier = Modifier.fillMaxSize().padding(start = 30.dp)) {
+                        Box(
+                            modifier = Modifier
+                                .width(38.dp)
+                                .fillMaxHeight()
+                                .clickable { showTime = !showTime }
+                                .align(Alignment.CenterStart),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = if (showTime) ScheduleManager.sections[i.toString()] ?: "$i" else i.toString(),
+                                color = Color.Gray,
+                                fontSize = if (showTime) 10.sp else 11.sp,
+                                textAlign = TextAlign.Center
+                            )
+                        }
+                        Box(modifier = Modifier.fillMaxSize().padding(start = 38.dp)) {
                             Spacer(modifier = Modifier.fillMaxWidth().height(1.dp).background(Color(0xFF333333)).align(Alignment.TopCenter))
                         }
                     }
                 }
             }
             // Courses overlay
-            Row(modifier = Modifier.matchParentSize().padding(start = 30.dp)) {
+            Row(modifier = Modifier.matchParentSize().padding(start = 38.dp)) {
                 for (wd in 1..7) {
-                    Box(modifier = Modifier.weight(1f).height(rowH * 13)) {
+                    Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
                         val dayCourses = ScheduleManager.getCoursesOn(wd, weekNo)
                         for (c in dayCourses) {
                             CourseBlock(c, colorMap[c.name] ?: Color.Gray, rowH)
