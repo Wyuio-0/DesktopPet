@@ -138,7 +138,7 @@ fun ScheduleScreen() {
 
 @Composable
 fun TimetableGrid(weekNo: Int, refreshTrigger: Int) {
-    val weekDays = listOf("一", "二", "三", "四", "五", "六", "日")
+    val weekDays = listOf("日", "一", "二", "三", "四", "五", "六")
     val courses = ScheduleManager.courses
     val colorMap = remember(refreshTrigger) {
         val map = mutableMapOf<String, Color>()
@@ -207,7 +207,7 @@ fun TimetableGrid(weekNo: Int, refreshTrigger: Int) {
             }
             // Courses overlay
             Row(modifier = Modifier.matchParentSize().padding(start = 38.dp)) {
-                for (wd in 1..7) {
+                for (wd in listOf(7, 1, 2, 3, 4, 5, 6)) {
                     Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
                         val dayCourses = ScheduleManager.getCoursesOn(wd, weekNo)
                         for (c in dayCourses) {
