@@ -1,4 +1,10 @@
-package com.amiya.pet.ui
+
+import re
+with open("app/src/main/java/com/amiya/pet/ui/ChatView.kt", "r", encoding="utf-8") as f:
+    text = f.read()
+
+# We need to completely rewrite the file content.
+new_content = """package com.amiya.pet.ui
 
 import android.content.Context
 import android.content.Intent
@@ -374,3 +380,8 @@ fun ChatBubbleItem(message: ChatMessage) {
         }
     }
 }
+"""
+
+with open("app/src/main/java/com/amiya/pet/ui/ChatView.kt", "w", encoding="utf-8") as f:
+    f.write(new_content)
+
