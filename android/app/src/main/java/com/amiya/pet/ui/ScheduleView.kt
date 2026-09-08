@@ -6,6 +6,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
@@ -75,7 +77,7 @@ fun ScheduleScreen() {
                 Text("暂无课表数据，请点击右上角导入", color = Color.Gray)
             }
         } else {
-            TimetableGrid(currentWeek, refreshTrigger)
+            TimetableGrid(currentWeek, refreshTrigger, { if (currentWeek > 1) currentWeek-- }, { currentWeek++ })
         }
     }
     
@@ -137,7 +139,7 @@ fun ScheduleScreen() {
 }
 
 @Composable
-fun TimetableGrid(weekNo: Int, refreshTrigger: Int) {
+fun TimetableGrid(weekNo: Int, refreshTrigger: Int, onPrevWeek: () -> Unit, onNextWeek: () -> Unit) {
     val weekDays = listOf("日", "一", "二", "三", "四", "五", "六")
     val courses = ScheduleManager.courses
     val colorMap = remember(refreshTrigger) {
@@ -152,50 +154,103 @@ fun TimetableGrid(weekNo: Int, refreshTrigger: Int) {
         map
     }
 
+
     var showTime by remember { mutableStateOf(false) }
+
+    val realWeekNo = ScheduleManager.getWeekNo() ?: 1
+    val cal = Calendar.getInstance()
+    val todayIdx = cal.get(Calendar.DAY_OF_WEEK)
+    val currentIsoWeekday = if (todayIdx == Calendar.SUNDAY) 7 else todayIdx - 1
+    val isCurrentWeek = (weekNo == realWeekNo)
+    val currentMins = cal.get(Calendar.HOUR_OF_DAY) * 60 + cal.get(Calendar.MINUTE)
+    val dayOrder = listOf(7, 1, 2, 3, 4, 5, 6)
+
+    // Gesture state
+    var dragAccumulator by remember { mutableFloatStateOf(0f) }
+
 
     Column(modifier = Modifier.fillMaxSize()) {
         Row(modifier = Modifier.fillMaxWidth().padding(start = 38.dp, end = 8.dp)) {
-            weekDays.forEach {
-                Text(it, modifier = Modifier.weight(1f), color = Color.LightGray, fontSize = 12.sp, textAlign = TextAlign.Center)
+            weekDays.forEachIndexed { idx, it ->
+                val isToday = isCurrentWeek && currentIsoWeekday == dayOrder[idx]
+                Text(
+                    text = it,
+                    modifier = Modifier.weight(1f).clip(RoundedCornerShape(4.dp)).background(if (isToday) MaterialTheme.colorScheme.primary.copy(alpha=0.3f) else Color.Transparent),
+                    color = if (isToday) MaterialTheme.colorScheme.primary else Color.LightGray,
+                    fontSize = 12.sp,
+                    fontWeight = if (isToday) FontWeight.Bold else FontWeight.Normal,
+                    textAlign = TextAlign.Center
+                )
             }
         }
         Spacer(Modifier.height(4.dp))
-        BoxWithConstraints(modifier = Modifier.weight(1f).fillMaxWidth().padding(end = 8.dp, bottom = 16.dp)) {
+        BoxWithConstraints(modifier = Modifier.weight(1f).fillMaxWidth().padding(end = 8.dp, bottom = 16.dp)
+            .pointerInput(Unit) {
+                detectHorizontalDragGestures(
+                    onDragEnd = { dragAccumulator = 0f },
+                    onDragCancel = { dragAccumulator = 0f }
+                ) { change, dragAmount ->
+                    change.consume()
+                    dragAccumulator += dragAmount
+                    if (dragAccumulator > 150f) {
+                        onPrevWeek()
+                        dragAccumulator = 0f
+                    } else if (dragAccumulator < -150f) {
+                        onNextWeek()
+                        dragAccumulator = 0f
+                    }
+                }
+            }
+        ) {
             val rowH = maxHeight / 13
             // Background grid lines and row numbers
             Column(modifier = Modifier.fillMaxSize()) {
                 for (i in 1..13) {
-                    Box(modifier = Modifier.fillMaxWidth().height(rowH)) {
+                    val rawTimeInfo = ScheduleManager.sections[i.toString()] ?: ""
+                    var isCurrentSlot = false
+                    if (isCurrentWeek && rawTimeInfo.contains(":")) {
+                        try {
+                            val timePart = rawTimeInfo.split("\n").first().split("-").first().trim()
+                            val parts = timePart.split(":")
+                            val startMins = parts[0].toInt() * 60 + parts[1].toInt()
+                            if (currentMins in startMins..(startMins + 45)) {
+                                isCurrentSlot = true
+                            }
+                        } catch(e: Exception){}
+                    }
+
+                    Box(modifier = Modifier.fillMaxWidth().height(rowH).background(if (isCurrentSlot) MaterialTheme.colorScheme.primary.copy(alpha=0.15f) else Color.Transparent)) {
                         Box(
                             modifier = Modifier
                                 .width(38.dp)
                                 .fillMaxHeight()
                                 .clickable { showTime = !showTime }
+                                .background(if (isCurrentSlot) MaterialTheme.colorScheme.primary.copy(alpha=0.3f) else Color.Transparent)
                                 .align(Alignment.CenterStart),
                             contentAlignment = Alignment.Center
                         ) {
-                            val rawTime = ScheduleManager.sections[i.toString()] ?: "$i"
+                            val rawTimeText = ScheduleManager.sections[i.toString()] ?: "$i"
                             val displayTime = if (!showTime) i.toString() else {
-                                if (rawTime.contains("-") || rawTime.contains("\n")) {
-                                    rawTime.replace("-", "\n")
-                                } else if (rawTime.contains(":")) {
+                                if (rawTimeText.contains("-") || rawTimeText.contains("\n")) {
+                                    rawTimeText.replace("-", "\n")
+                                } else if (rawTimeText.contains(":")) {
                                     try {
-                                        val parts = rawTime.split(":")
+                                        val parts = rawTimeText.split(":")
                                         val h = parts[0].toInt()
                                         val m = parts[1].toInt()
                                         val endM = h * 60 + m + 45
                                         val eH = endM / 60
                                         val eM = endM % 60
-                                        "$rawTime\n${String.format(Locale.getDefault(), "%02d:%02d", eH, eM)}"
-                                    } catch(e: Exception) { rawTime }
-                                } else rawTime
+                                        "$rawTimeText\n${String.format(Locale.getDefault(), "%02d:%02d", eH, eM)}"
+                                    } catch(e: Exception) { rawTimeText }
+                                } else rawTimeText
                             }
                             Text(
                                 text = displayTime,
-                                color = Color.Gray,
+                                color = if (isCurrentSlot) MaterialTheme.colorScheme.primary else Color.Gray,
                                 fontSize = if (showTime) 9.sp else 11.sp,
                                 lineHeight = 11.sp,
+                                fontWeight = if (isCurrentSlot) FontWeight.Bold else FontWeight.Normal,
                                 textAlign = TextAlign.Center
                             )
                         }
