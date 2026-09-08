@@ -153,7 +153,7 @@ fun MainScreen() {
                                 isDownloading = false
                                 return@launch
                             }
-                            val res = UpdateManager.downloadUpdate(
+                            val res = UpdateManager.downloadApk(
                                 context,
                                 apkUrl,
                                 onProgress = { downloadProgress = it }
