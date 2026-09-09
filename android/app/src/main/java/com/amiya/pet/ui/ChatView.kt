@@ -348,8 +348,8 @@ fun ChatScreen() {
                             scope.launch {
                                 val res = UpdateManager.checkUpdate(context)
                                 isChecking = false
-                                if (res.isSuccess && UpdateManager.hasUpdate) {
-                                    android.widget.Toast.makeText(context, "有新版本！请重启 App 触发更新弹窗", android.widget.Toast.LENGTH_SHORT).show()
+                                if (res.isSuccess && res.getOrNull()?.hasUpdate == true) {
+                                    android.widget.Toast.makeText(context, "发现新版本，请在App主页更新", android.widget.Toast.LENGTH_SHORT).show()
                                 } else {
                                     android.widget.Toast.makeText(context, "当前已是最新版本", android.widget.Toast.LENGTH_SHORT).show()
                                 }
