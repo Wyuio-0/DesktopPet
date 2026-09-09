@@ -31,6 +31,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.core.content.ContextCompat
 import com.amiya.pet.core.parser.CharacterParser
 import com.amiya.pet.core.update.DownloadProgress
@@ -71,8 +72,9 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun AmiyaPetTheme(content: @Composable () -> Unit) {
-    MaterialTheme(
-        colorScheme = darkColorScheme(
+    val darkTheme = isSystemInDarkTheme()
+    val colorScheme = if (darkTheme) {
+        darkColorScheme(
             primary = Color(0xFF00B0FF),
             onPrimary = Color.Black,
             secondary = Color(0xFF4FC3F7),
@@ -82,7 +84,22 @@ fun AmiyaPetTheme(content: @Composable () -> Unit) {
             onBackground = Color(0xFFE2E8F0),
             onSurface = Color(0xFFE2E8F0),
             error = Color(0xFFFF5252)
-        ),
+        )
+    } else {
+        lightColorScheme(
+            primary = Color(0xFF00B0FF),
+            onPrimary = Color.Black,
+            secondary = Color(0xFF4FC3F7),
+            background = Color(0xFFF0F0F0),
+            surface = Color(0xFFFFFFFF),
+            surfaceVariant = Color(0xFFF5F5F5),
+            onBackground = Color(0xFF101216),
+            onSurface = Color(0xFF101216),
+            error = Color(0xFFFF5252)
+        )
+    }
+    MaterialTheme(
+        colorScheme = colorScheme,
         content = content
     )
 }
