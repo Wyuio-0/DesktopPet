@@ -245,18 +245,10 @@ fun ChatScreen() {
                     .padding(8.dp)
                     .size(130.dp)
                     .align(Alignment.TopStart)
-                    .pointerInput(Unit) {
-                        detectTapGestures(
-                            onTap = { 
-                                stateMachine?.onUserClick()
-                                voicePlayer.playClickVoice()
-                            },
-                            onDoubleTap = { 
-                                stateMachine?.onUserDoubleClick()
-                                voicePlayer.playGreetVoice()
-                            }
-                        )
-                    },
+                                    modifier = Modifier
+                    .padding(8.dp)
+                    .size(130.dp)
+                    .align(Alignment.TopStart),
                 contentAlignment = Alignment.Center
             ) {
                 AndroidView(
