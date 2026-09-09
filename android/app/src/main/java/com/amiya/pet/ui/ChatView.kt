@@ -244,10 +244,6 @@ fun ChatScreen() {
                 modifier = Modifier
                     .padding(8.dp)
                     .size(130.dp)
-                    .align(Alignment.TopStart)
-                                    modifier = Modifier
-                    .padding(8.dp)
-                    .size(130.dp)
                     .align(Alignment.TopStart),
                 contentAlignment = Alignment.Center
             ) {
