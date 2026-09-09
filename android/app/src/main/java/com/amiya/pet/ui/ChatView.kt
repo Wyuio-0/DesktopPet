@@ -225,8 +225,10 @@ fun ChatScreen() {
                     modifier = Modifier.weight(1f),
                     shape = RoundedCornerShape(24.dp),
                     colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                        unfocusedTextColor = MaterialTheme.colorScheme.onSurface,
                         focusedBorderColor = MaterialTheme.colorScheme.primary,
-                        unfocusedBorderColor = Color(0xFF3A4050)
+                        unfocusedBorderColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f)
                     ),
                     maxLines = 3
                 )
@@ -237,7 +239,7 @@ fun ChatScreen() {
                     modifier = Modifier
                         .size(48.dp)
                         .clip(RoundedCornerShape(24.dp))
-                        .background(if (inputText.isNotBlank()) MaterialTheme.colorScheme.primary else Color(0xFF2A2E38))
+                        .background(if (inputText.isNotBlank()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant)
                 ) {
                     if (isSending) {
                         CircularProgressIndicator(modifier = Modifier.size(20.dp), color = Color.Black, strokeWidth = 2.dp)
@@ -286,7 +288,7 @@ fun ChatScreen() {
         AlertDialog(
             onDismissRequest = { showCharDialog = false },
             containerColor = MaterialTheme.colorScheme.surface,
-            title = { Text("切换角色", color = Color.White) },
+            title = { Text("切换角色", color = MaterialTheme.colorScheme.onSurface) },
             text = {
                 Column {
                     availableChars.forEach { (key, name) ->
@@ -304,7 +306,7 @@ fun ChatScreen() {
                                 }
                                 .padding(12.dp)
                         ) {
-                            Text(name, color = if (isSelected) MaterialTheme.colorScheme.primary else Color.White)
+                            Text(name, color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
                         }
                     }
                 }
@@ -321,7 +323,7 @@ fun ChatScreen() {
         AlertDialog(
             onDismissRequest = { showSettingsDialog = false },
             containerColor = MaterialTheme.colorScheme.surface,
-            title = { Text("桌宠综合设置", fontWeight = FontWeight.Bold, color = Color.White) },
+            title = { Text("桌宠综合设置", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text("AI 模型配置", color = MaterialTheme.colorScheme.primary, fontSize = 14.sp, fontWeight = FontWeight.Bold)
@@ -333,7 +335,7 @@ fun ChatScreen() {
                     Text("桌宠声音与速度", color = MaterialTheme.colorScheme.primary, fontSize = 14.sp, fontWeight = FontWeight.Bold)
                     
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-                        Text("静音台词语音", color = Color.White, fontSize = 14.sp)
+                        Text("静音台词语音", color = MaterialTheme.colorScheme.onSurface, fontSize = 14.sp)
                         Switch(checked = isVoiceMuted, onCheckedChange = { 
                             isVoiceMuted = it
                             prefs.edit().putBoolean("pref_voice_muted", it).apply()
@@ -373,13 +375,14 @@ fun ChatScreen() {
     if (showUpdateDialog && releaseInfo != null) {
         AlertDialog(
             onDismissRequest = { if (!isDownloading) showUpdateDialog = false },
+            containerColor = MaterialTheme.colorScheme.surface,
             title = {
                 val currentVer = UpdateManager.getCurrentVersion(context)
-                Text("发现新版本: ${releaseInfo!!.versionName} (当前: v$currentVer)", color = Color.White)
+                Text("发现新版本: ${releaseInfo!!.versionName} (当前: v$currentVer)", color = MaterialTheme.colorScheme.onSurface)
             },
             text = {
                 Column {
-                    Text(releaseInfo!!.releaseNotes, fontSize = 14.sp, color = Color.LightGray)
+                    Text(releaseInfo!!.releaseNotes, fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f))
                     Spacer(Modifier.height(16.dp))
                     if (isDownloading && downloadProgress != null) {
                         LinearProgressIndicator(
@@ -444,8 +447,8 @@ fun ChatScreen() {
 
 @Composable
 fun QuickPromptChip(text: String, onClick: () -> Unit) {
-    Box(modifier = Modifier.clip(RoundedCornerShape(12.dp)).background(Color(0xFF252A36)).clickable(onClick = onClick).padding(horizontal = 10.dp, vertical = 5.dp)) {
-        Text(text = text, fontSize = 11.sp, color = Color(0xFF80D8FF))
+    Box(modifier = Modifier.clip(RoundedCornerShape(12.dp)).background(MaterialTheme.colorScheme.surfaceVariant).clickable(onClick = onClick).padding(horizontal = 10.dp, vertical = 5.dp)) {
+        Text(text = text, fontSize = 11.sp, color = MaterialTheme.colorScheme.primary)
     }
 }
 
@@ -456,10 +459,10 @@ fun ChatBubbleItem(message: ChatMessage) {
         Box(
             modifier = Modifier.widthIn(max = 280.dp)
                 .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp, bottomStart = if (isUser) 16.dp else 2.dp, bottomEnd = if (isUser) 2.dp else 16.dp))
-                .background(if (isUser) MaterialTheme.colorScheme.primary else Color(0xFF222632))
+                .background(if (isUser) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant)
                 .padding(horizontal = 14.dp, vertical = 10.dp)
         ) {
-            Text(text = message.content, fontSize = 14.sp, color = if (isUser) Color.Black else Color(0xFFECEFF1))
+            Text(text = message.content, fontSize = 14.sp, color = if (isUser) Color.Black else MaterialTheme.colorScheme.onSurface)
         }
     }
 }

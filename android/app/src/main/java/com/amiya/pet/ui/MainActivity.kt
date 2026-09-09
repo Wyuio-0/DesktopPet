@@ -270,7 +270,7 @@ fun AmiyaPetTheme(forceDark: Boolean? = null, content: @Composable () -> Unit) {
             secondary = Color(0xFF4FC3F7),
             background = Color(0xFFF0F0F0),
             surface = Color(0xFFFFFFFF),
-            surfaceVariant = Color(0xFFF5F5F5),
+            surfaceVariant = Color(0xFFE2E8F0),
             onBackground = Color(0xFF101216),
             onSurface = Color(0xFF101216),
             error = Color(0xFFFF5252)
@@ -296,8 +296,8 @@ fun GuideItem(title: String, desc: String) {
     ) {
         Text("• ", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
         Column {
-            Text(title, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
-            Text(desc, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface)
+            Text(title, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
+            Text(desc, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
         }
     }
 }

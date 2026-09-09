@@ -37,13 +37,13 @@ fun PomodoroScreen() {
                 text = "阿米娅专注番茄钟",
                 fontSize = 20.sp,
                 fontWeight = FontWeight.Bold,
-                color = Color.White
+                color = MaterialTheme.colorScheme.onBackground
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
                 text = "让阿米娅陪伴博士高效工作与沉浸学习",
                 fontSize = 12.sp,
-                color = Color.Gray
+                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
             )
         }
 
@@ -61,7 +61,9 @@ fun PomodoroScreen() {
                 label = { Text("25分钟 专注") },
                 colors = FilterChipDefaults.filterChipColors(
                     selectedContainerColor = MaterialTheme.colorScheme.primary,
-                    selectedLabelColor = Color.Black
+                    selectedLabelColor = Color.Black,
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                    labelColor = MaterialTheme.colorScheme.onSurface
                 )
             )
             FilterChip(
@@ -70,7 +72,9 @@ fun PomodoroScreen() {
                 label = { Text("5分钟 小憩") },
                 colors = FilterChipDefaults.filterChipColors(
                     selectedContainerColor = MaterialTheme.colorScheme.primary,
-                    selectedLabelColor = Color.Black
+                    selectedLabelColor = Color.Black,
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                    labelColor = MaterialTheme.colorScheme.onSurface
                 )
             )
         }
@@ -85,14 +89,14 @@ fun PomodoroScreen() {
                 modifier = Modifier.fillMaxSize(),
                 strokeWidth = 10.dp,
                 color = if (status.mode == PomodoroMode.WORK) MaterialTheme.colorScheme.primary else Color(0xFF4CAF50),
-                trackColor = Color(0xFF222834)
+                trackColor = MaterialTheme.colorScheme.surfaceVariant
             )
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(
                     text = status.formattedTime,
                     fontSize = 44.sp,
                     fontWeight = FontWeight.ExtraBold,
-                    color = Color.White
+                    color = MaterialTheme.colorScheme.onBackground
                 )
                 Text(
                     text = when (status.state) {
@@ -131,7 +135,7 @@ fun PomodoroScreen() {
                         else -> "开始一段专注旅程吧，博士。罗德岛期待您的高光时刻。"
                     },
                     fontSize = 12.sp,
-                    color = Color(0xFFECEFF1)
+                    color = MaterialTheme.colorScheme.onSurface
                 )
             }
         }

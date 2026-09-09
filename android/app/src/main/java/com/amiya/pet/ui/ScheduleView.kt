@@ -55,11 +55,11 @@ fun ScheduleScreen() {
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = { if (currentWeek > 1) currentWeek-- }) {
-                    Icon(Icons.Default.ChevronLeft, "上一周", tint = Color.White)
+                    Icon(Icons.Default.ChevronLeft, "上一周", tint = MaterialTheme.colorScheme.onBackground)
                 }
-                Text("第 $currentWeek 周", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                Text("第 $currentWeek 周", color = MaterialTheme.colorScheme.onBackground, fontWeight = FontWeight.Bold, fontSize = 18.sp)
                 IconButton(onClick = { currentWeek++ }) {
-                    Icon(Icons.Default.ChevronRight, "下一周", tint = Color.White)
+                    Icon(Icons.Default.ChevronRight, "下一周", tint = MaterialTheme.colorScheme.onBackground)
                 }
             }
             Button(
@@ -74,7 +74,7 @@ fun ScheduleScreen() {
 
         if (ScheduleManager.courses.isEmpty()) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text("暂无课表数据，请点击右上角导入", color = Color.Gray)
+                Text("暂无课表数据，请点击右上角导入", color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f))
             }
         } else {
             TimetableGrid(currentWeek, refreshTrigger, { if (currentWeek > 1) currentWeek-- }, { currentWeek++ })
@@ -89,7 +89,7 @@ fun ScheduleScreen() {
         AlertDialog(
             onDismissRequest = { showImportDialog = false },
             containerColor = MaterialTheme.colorScheme.surface,
-            title = { Text("导入强智教务课表", color = Color.White) },
+            title = { Text("导入强智教务课表", color = MaterialTheme.colorScheme.onSurface) },
             text = {
                 Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
                     Text("请在下方粘贴抓包得到的课表 JSON 数据：", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface)
@@ -98,7 +98,7 @@ fun ScheduleScreen() {
                         value = jsonInput,
                         onValueChange = { jsonInput = it },
                         modifier = Modifier.fillMaxWidth().height(150.dp),
-                        textStyle = LocalTextStyle.current.copy(color = Color.White)
+                        textStyle = LocalTextStyle.current.copy(color = MaterialTheme.colorScheme.onSurface)
                     )
                     Spacer(Modifier.height(12.dp))
                     Text("开学日期 (第一周周一，格式 YYYY-MM-DD)：", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface)
@@ -107,7 +107,7 @@ fun ScheduleScreen() {
                         value = dateInput,
                         onValueChange = { dateInput = it },
                         modifier = Modifier.fillMaxWidth(),
-                        textStyle = LocalTextStyle.current.copy(color = Color.White)
+                        textStyle = LocalTextStyle.current.copy(color = MaterialTheme.colorScheme.onSurface)
                     )
                     if (resultMsg.isNotEmpty()) {
                         Spacer(Modifier.height(8.dp))
@@ -281,7 +281,7 @@ fun TimetableGrid(weekNo: Int, refreshTrigger: Int, onPrevWeek: () -> Unit, onNe
                             }
                             Text(
                                 text = displayTime,
-                                color = if (isCurrentSlot) MaterialTheme.colorScheme.primary else Color.Gray,
+                                color = if (isCurrentSlot) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onBackground.copy(alpha = 0.65f),
                                 fontSize = if (showTime) 9.sp else 11.sp,
                                 lineHeight = 11.sp,
                                 fontWeight = if (isCurrentSlot) FontWeight.Bold else FontWeight.Normal,
@@ -289,7 +289,7 @@ fun TimetableGrid(weekNo: Int, refreshTrigger: Int, onPrevWeek: () -> Unit, onNe
                             )
                         }
                         Box(modifier = Modifier.fillMaxSize().padding(start = 38.dp)) {
-                            Spacer(modifier = Modifier.fillMaxWidth().height(1.dp).background(Color(0xFF333333)).align(Alignment.TopCenter))
+                            Spacer(modifier = Modifier.fillMaxWidth().height(1.dp).background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f)).align(Alignment.TopCenter))
                         }
                     }
                 }
@@ -339,16 +339,16 @@ fun CourseBlock(course: Course, color: Color, rowH: androidx.compose.ui.unit.Dp)
         AlertDialog(
             onDismissRequest = { showDetail = false },
             containerColor = MaterialTheme.colorScheme.surface,
-            title = { Text("课程详情", color = Color.White) },
+            title = { Text("课程详情", color = MaterialTheme.colorScheme.onSurface) },
             text = {
                 Column {
                     Text(course.name, color = color, fontWeight = FontWeight.Bold, fontSize = 16.sp)
                     Spacer(Modifier.height(8.dp))
-                    Text("节次: ${course.secStart} - ${course.secEnd}节", color = Color.LightGray, fontSize = 14.sp)
-                    Text("周次: ${course.weekStart} - ${course.weekEnd}周 (${course.parity})", color = Color.LightGray, fontSize = 14.sp)
-                    if (course.teacher.isNotEmpty()) Text("教师: ${course.teacher}", color = Color.LightGray, fontSize = 14.sp)
-                    if (course.room.isNotEmpty()) Text("教室: ${course.room}", color = Color.LightGray, fontSize = 14.sp)
-                    if (course.note.isNotEmpty()) Text("备注: ${course.note}", color = Color.LightGray, fontSize = 14.sp)
+                    Text("节次: ${course.secStart} - ${course.secEnd}节", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f), fontSize = 14.sp)
+                    Text("周次: ${course.weekStart} - ${course.weekEnd}周 (${course.parity})", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f), fontSize = 14.sp)
+                    if (course.teacher.isNotEmpty()) Text("教师: ${course.teacher}", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f), fontSize = 14.sp)
+                    if (course.room.isNotEmpty()) Text("教室: ${course.room}", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f), fontSize = 14.sp)
+                    if (course.note.isNotEmpty()) Text("备注: ${course.note}", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f), fontSize = 14.sp)
                 }
             },
             confirmButton = {

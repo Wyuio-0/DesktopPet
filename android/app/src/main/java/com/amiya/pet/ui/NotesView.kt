@@ -78,12 +78,12 @@ fun NotesScreen() {
                     text = "灵感便签本",
                     fontSize = 20.sp,
                     fontWeight = FontWeight.Bold,
-                    color = Color.White
+                    color = MaterialTheme.colorScheme.onBackground
                 )
                 Text(
                     text = "共 ${notesList.size} 篇随记 · 输入实时自动防抖存盘",
                     fontSize = 12.sp,
-                    color = Color.Gray
+                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
                 )
                 Spacer(modifier = Modifier.height(12.dp))
 
@@ -92,7 +92,7 @@ fun NotesScreen() {
                         modifier = Modifier.fillMaxSize(),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text("点击右下角 ➕ 创建第一条灵感随记", color = Color.Gray, fontSize = 14.sp)
+                        Text("点击右下角 ➕ 创建第一条灵感随记", color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f), fontSize = 14.sp)
                     }
                 } else {
                     LazyColumn(
@@ -149,7 +149,7 @@ fun NoteCard(
                         text = note.title,
                         fontWeight = FontWeight.Bold,
                         fontSize = 15.sp,
-                        color = Color.White
+                        color = MaterialTheme.colorScheme.onSurface
                     )
                 }
 
@@ -160,7 +160,7 @@ fun NoteCard(
                     Icon(
                         imageVector = if (note.pinned) Icons.Default.PushPin else Icons.Default.PushPin,
                         contentDescription = null,
-                        tint = if (note.pinned) Color(0xFFFFD54F) else Color.Gray,
+                        tint = if (note.pinned) Color(0xFFFFD54F) else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f),
                         modifier = Modifier.size(16.dp)
                     )
                 }
@@ -171,7 +171,7 @@ fun NoteCard(
             Text(
                 text = previewText,
                 fontSize = 13.sp,
-                color = Color.LightGray,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
                 maxLines = 2
             )
 
@@ -183,12 +183,12 @@ fun NoteCard(
                 Text(
                     text = "${note.content.length} 字",
                     fontSize = 11.sp,
-                    color = Color.Gray
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
                 )
                 Text(
                     text = "更新于 ${note.updatedAt}",
                     fontSize = 11.sp,
-                    color = Color.Gray
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
                 )
             }
         }
@@ -256,6 +256,8 @@ fun NoteEditorView(
             onValueChange = { textContent = it },
             placeholder = { Text("在此输入便签内容，支持输入即存...", color = Color.Gray) },
             colors = TextFieldDefaults.colors(
+                focusedTextColor = MaterialTheme.colorScheme.onBackground,
+                unfocusedTextColor = MaterialTheme.colorScheme.onBackground,
                 focusedContainerColor = MaterialTheme.colorScheme.background,
                 unfocusedContainerColor = MaterialTheme.colorScheme.background,
                 focusedIndicatorColor = Color.Transparent,
