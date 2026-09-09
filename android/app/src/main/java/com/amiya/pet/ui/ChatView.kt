@@ -52,6 +52,13 @@ fun ChatScreen() {
     var showSettingsDialog by remember { mutableStateOf(false) }
     var showCharDialog by remember { mutableStateOf(false) }
 
+    // Update States
+    var showUpdateDialog by remember { mutableStateOf(false) }
+    var releaseInfo by remember { mutableStateOf<com.amiya.pet.core.update.ReleaseInfo?>(null) }
+    var isDownloading by remember { mutableStateOf(false) }
+    var downloadProgress by remember { mutableStateOf<com.amiya.pet.core.update.DownloadProgress?>(null) }
+    var downloadJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+
     var selectedChar by remember { mutableStateOf(prefs.getString("pref_character", "amiya") ?: "amiya") }
     var currentSpeed by remember { mutableFloatStateOf(prefs.getFloat("pref_speed", 1.15f)) }
     var currentVolume by remember { mutableFloatStateOf(prefs.getFloat("pref_voice_volume", 0.8f)) }
