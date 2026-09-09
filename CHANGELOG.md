@@ -1,3 +1,6 @@
+## [v1.8.1]
+- 修改下午课程默认时间，第六节课调整为14:05开始。
+
 # Changelog
 
 本项目更新日志。格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 风格。
