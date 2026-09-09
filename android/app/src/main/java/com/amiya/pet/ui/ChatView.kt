@@ -1,12 +1,7 @@
 package com.amiya.pet.ui
 
-import android.content.Context
-import android.content.Intent
-import android.view.ViewGroup
-import android.widget.FrameLayout
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -20,21 +15,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import com.amiya.pet.core.update.UpdateManager
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.viewinterop.AndroidView
 import com.amiya.pet.core.ai.AmiyaBrain
 import com.amiya.pet.core.ai.ChatMessage
-import com.amiya.pet.core.parser.CharacterParser
-import com.amiya.pet.core.state.PetStateListener
-import com.amiya.pet.core.state.PetStateMachine
-import com.amiya.pet.core.model.Action
-import com.amiya.pet.core.voice.VoicePlayer
-import com.amiya.pet.render.PetGlSurfaceView
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -46,57 +32,13 @@ fun ChatScreen(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val prefs = remember { context.getSharedPreferences("amiya_pet_prefs", Context.MODE_PRIVATE) }
     val brain = remember { AmiyaBrain.getInstance(context) }
     var chatList by remember { mutableStateOf(brain.chatHistory) }
     var inputText by remember { mutableStateOf("") }
     var isSending by remember { mutableStateOf(false) }
     var showSettingsDialog by remember { mutableStateOf(false) }
-    var showCharDialog by remember { mutableStateOf(false) }
-
-    var selectedChar by remember { mutableStateOf(prefs.getString("pref_character", "amiya") ?: "amiya") }
-    var currentSpeed by remember { mutableFloatStateOf(prefs.getFloat("pref_speed", 1.15f)) }
-    var currentVolume by remember { mutableFloatStateOf(prefs.getFloat("pref_voice_volume", 0.8f)) }
-    var isVoiceMuted by remember { mutableStateOf(prefs.getBoolean("pref_voice_muted", false)) }
 
     val listState = rememberLazyListState()
-
-    // Setup Pet
-    val voicePlayer = remember { VoicePlayer(context) }
-    var stateMachine by remember { mutableStateOf<PetStateMachine?>(null) }
-    var petView by remember { mutableStateOf<PetGlSurfaceView?>(null) }
-
-    DisposableEffect(selectedChar, currentSpeed, isVoiceMuted, currentVolume) {
-        voicePlayer.isMuted = isVoiceMuted
-        voicePlayer.volume = currentVolume
-        voicePlayer.loadCharacterVoices(selectedChar)
-        
-        onDispose { }
-    }
-
-    DisposableEffect(selectedChar) {
-        val character = CharacterParser.loadCharacter(context, selectedChar) ?: CharacterParser.loadCharacter(context, "amiya")!!
-        val listener = object : PetStateListener {
-            override fun onActionStarted(action: Action, clipPath: String) {
-                petView?.playAsset(clipPath, action.loop, currentSpeed)
-            }
-            override fun onBubbleMessage(text: String) {}
-            override fun onUserInteraction(type: String) {}
-        }
-        stateMachine?.destroy()
-        val machine = PetStateMachine(character, listener)
-        stateMachine = machine
-        machine.start()
-        
-        onDispose {
-            machine.destroy()
-        }
-    }
-    
-    DisposableEffect(currentSpeed) {
-        petView?.setSpeed(currentSpeed)
-        onDispose {}
-    }
 
     fun sendMessage(msg: String) {
         val trimmed = msg.trim()
@@ -122,9 +64,6 @@ fun ChatScreen(
                     }
                 },
                 actions = {
-                    IconButton(onClick = { showCharDialog = true }) {
-                        Icon(Icons.Default.Person, contentDescription = "切换角色", tint = MaterialTheme.colorScheme.onSurface)
-                    }
                     IconButton(onClick = {
                         brain.clearHistory()
                         chatList = emptyList()
@@ -150,11 +89,12 @@ fun ChatScreen(
         },
         containerColor = MaterialTheme.colorScheme.background
     ) { padding ->
-        Box(modifier = Modifier.fillMaxSize().padding(padding)) {
-            Column(
-                modifier = Modifier.fillMaxSize()
-            ) {
-                // Chat messages
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+        ) {
+            // Chat messages
             Box(modifier = Modifier.weight(1f)) {
                 if (chatList.isEmpty()) {
                     Column(
@@ -171,7 +111,7 @@ fun ChatScreen(
                 } else {
                     LazyColumn(
                         state = listState,
-                        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 146.dp, bottom = 16.dp),
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 16.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp),
                         modifier = Modifier.fillMaxSize()
                     ) {
@@ -233,70 +173,6 @@ fun ChatScreen(
                 }
             }
         }
-            // Floating Pet Overlay
-            Box(
-                modifier = Modifier
-                    .padding(8.dp)
-                    .size(130.dp)
-                    .align(Alignment.TopStart),
-                contentAlignment = Alignment.Center
-            ) {
-                AndroidView(
-                    factory = { ctx ->
-                        PetGlSurfaceView(ctx).apply {
-                            layoutParams = FrameLayout.LayoutParams(
-                                ViewGroup.LayoutParams.MATCH_PARENT,
-                                ViewGroup.LayoutParams.MATCH_PARENT
-                            )
-                            onPlaybackEnded = {
-                                stateMachine?.onClipPlaybackEnded()
-                            }
-                            petView = this
-                        }
-                    },
-                    modifier = Modifier.fillMaxSize()
-                )
-            }
-        }
-    }
-
-    if (showCharDialog) {
-        val availableChars = remember {
-            val list = CharacterParser.listCharacters(context).map { key ->
-                val char = CharacterParser.loadCharacter(context, key)
-                key to (char?.displayName ?: key)
-            }
-            if (list.isNotEmpty()) list else listOf("amiya" to "阿米娅")
-        }
-        
-        AlertDialog(
-            onDismissRequest = { showCharDialog = false },
-            containerColor = MaterialTheme.colorScheme.surface,
-            title = { Text("切换角色", color = MaterialTheme.colorScheme.onSurface) },
-            text = {
-                Column {
-                    availableChars.forEach { (key, name) ->
-                        val isSelected = (key == selectedChar)
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 4.dp)
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.2f) else Color.Transparent)
-                                .clickable {
-                                    selectedChar = key
-                                    prefs.edit().putString("pref_character", key).apply()
-                                    showCharDialog = false
-                                }
-                                .padding(12.dp)
-                        ) {
-                            Text(name, color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
-                        }
-                    }
-                }
-            },
-            confirmButton = { TextButton(onClick = { showCharDialog = false }) { Text("关闭") } }
-        )
     }
 
     if (showSettingsDialog) {
@@ -307,37 +183,43 @@ fun ChatScreen(
         AlertDialog(
             onDismissRequest = { showSettingsDialog = false },
             containerColor = MaterialTheme.colorScheme.surface,
-            title = { Text("桌宠综合设置", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface) },
+            title = { Text("综合设置", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text("AI 模型配置", color = MaterialTheme.colorScheme.primary, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                    OutlinedTextField(value = baseUrl, onValueChange = { baseUrl = it }, label = { Text("API Base URL") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                    OutlinedTextField(value = apiKey, onValueChange = { apiKey = it }, label = { Text("API Key") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                    OutlinedTextField(value = model, onValueChange = { model = it }, label = { Text("Model") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                    
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text("桌宠声音与速度", color = MaterialTheme.colorScheme.primary, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                    
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-                        Text("静音台词语音", color = MaterialTheme.colorScheme.onSurface, fontSize = 14.sp)
-                        Switch(checked = isVoiceMuted, onCheckedChange = { 
-                            isVoiceMuted = it
-                            prefs.edit().putBoolean("pref_voice_muted", it).apply()
-                        })
-                    }
-                    if (!isVoiceMuted) {
-                        Text("音量", color = Color.Gray, fontSize = 12.sp)
-                        Slider(value = currentVolume, onValueChange = { 
-                            currentVolume = it
-                            prefs.edit().putFloat("pref_voice_volume", it).apply()
-                        }, valueRange = 0f..1f)
-                    }
-                    
-                    Text("动作速度 (%.2fx)".format(currentSpeed), color = Color.Gray, fontSize = 12.sp)
-                    Slider(value = currentSpeed, onValueChange = { 
-                        currentSpeed = it
-                        prefs.edit().putFloat("pref_speed", it).apply()
-                    }, valueRange = 0.5f..2f, steps = 14)
+                    OutlinedTextField(
+                        value = baseUrl, 
+                        onValueChange = { baseUrl = it }, 
+                        label = { Text("API Base URL") }, 
+                        singleLine = true, 
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                            unfocusedTextColor = MaterialTheme.colorScheme.onSurface
+                        )
+                    )
+                    OutlinedTextField(
+                        value = apiKey, 
+                        onValueChange = { apiKey = it }, 
+                        label = { Text("API Key") }, 
+                        singleLine = true, 
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                            unfocusedTextColor = MaterialTheme.colorScheme.onSurface
+                        )
+                    )
+                    OutlinedTextField(
+                        value = model, 
+                        onValueChange = { model = it }, 
+                        label = { Text("Model") }, 
+                        singleLine = true, 
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                            unfocusedTextColor = MaterialTheme.colorScheme.onSurface
+                        )
+                    )
                     
                     Spacer(modifier = Modifier.height(10.dp))
                     OutlinedButton(
@@ -352,7 +234,7 @@ fun ChatScreen(
                         Text("检查应用更新", fontSize = 13.sp)
                     }
 
-                    Spacer(modifier = Modifier.height(16.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
                 }
             },
             confirmButton = {
@@ -368,7 +250,6 @@ fun ChatScreen(
             dismissButton = { TextButton(onClick = { showSettingsDialog = false }) { Text("取消", color = Color.Gray) } }
         )
     }
-
 }
 
 @Composable
