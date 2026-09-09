@@ -55,7 +55,7 @@ data class DownloadProgress(
 object UpdateManager {
 
     private const val GITHUB_API_LATEST =
-        "https://api.github.com/repos/Wyuio-0/AmiyaDesktopPet/releases/latest"
+        "https://api.github.com/repos/Wyuio-0/DesktopPet/releases/latest"
 
     suspend fun checkUpdate(context: Context): Result<ReleaseInfo> = withContext(Dispatchers.IO) {
         try {
@@ -78,7 +78,7 @@ object UpdateManager {
 
             val tagName = json.optString("tag_name", "")
             val body = json.optString("body", "暂无版本更新说明。")
-            val htmlUrl = json.optString("html_url", "https://github.com/Wyuio-0/AmiyaDesktopPet/releases")
+            val htmlUrl = json.optString("html_url", "https://github.com/Wyuio-0/DesktopPet/releases")
 
             var apkUrl: String? = null
             val assets = json.optJSONArray("assets")
