@@ -12,8 +12,8 @@ android {
         applicationId = "com.amiya.pet"
         minSdk = 26
         targetSdk = 35
-        versionCode = 188
-        versionName = "1.8.8"
+        versionCode = 189
+        versionName = "1.8.9"
     }
 
     signingConfigs {
