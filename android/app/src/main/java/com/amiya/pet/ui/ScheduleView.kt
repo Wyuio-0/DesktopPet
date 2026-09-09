@@ -104,15 +104,6 @@ fun ScheduleScreen() {
                     Text("开学日期 (第一周周一，格式 YYYY-MM-DD)：", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface)
                     Spacer(Modifier.height(8.dp))
                     OutlinedTextField(
-                        value = jsonInput,
-                        onValueChange = { jsonInput = it },
-                        modifier = Modifier.fillMaxWidth().height(150.dp),
-                        textStyle = LocalTextStyle.current.copy(color = Color.White)
-                    )
-                    Spacer(Modifier.height(12.dp))
-                    Text("开学日期 (第一周周一，格式 YYYY-MM-DD)：", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface)
-                    Spacer(Modifier.height(8.dp))
-                    OutlinedTextField(
                         value = dateInput,
                         onValueChange = { dateInput = it },
                         modifier = Modifier.fillMaxWidth(),
@@ -211,7 +202,7 @@ fun TimetableGrid(weekNo: Int, refreshTrigger: Int, onPrevWeek: () -> Unit, onNe
                 ) {
                     Text(
                         text = it,
-                        color = if (isToday) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                        color = if (isToday) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                         fontSize = 12.sp,
                         fontWeight = if (isToday) FontWeight.Bold else FontWeight.Normal
                     )
