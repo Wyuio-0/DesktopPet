@@ -1,5 +1,6 @@
 package com.amiya.pet.ui
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -14,11 +15,22 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Outline
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.amiya.pet.R
 import com.amiya.pet.core.ai.AmiyaBrain
 import com.amiya.pet.core.ai.ChatMessage
 import kotlinx.coroutines.launch
@@ -116,7 +128,7 @@ fun ChatScreen(
                         modifier = Modifier.fillMaxSize()
                     ) {
                         items(chatList) { message ->
-                            ChatBubbleItem(message = message)
+                            ChatBubbleItem(message = message, isDark = isDark)
                         }
                     }
                 }
@@ -259,17 +271,183 @@ fun QuickPromptChip(text: String, onClick: () -> Unit) {
     }
 }
 
+/**
+ * 45° 几何双向战术切角形状 (Rhodes PRTS Tactical Chamfer Shape)
+ * 阿米娅气泡：左上、右下切角
+ * 博士气泡：右上、左下切角
+ */
+class TacticalBubbleShape(
+    private val chamferDp: Float = 10f,
+    private val isUser: Boolean = false
+) : Shape {
+    override fun createOutline(
+        size: Size,
+        layoutDirection: LayoutDirection,
+        density: Density
+    ): Outline {
+        val c = chamferDp * density.density
+        val w = size.width
+        val h = size.height
+        val path = Path().apply {
+            if (!isUser) {
+                // 阿米娅气泡：左上、右下 45° 战术切角
+                moveTo(c, 0f)
+                lineTo(w, 0f)
+                lineTo(w, h - c)
+                lineTo(w - c, h)
+                lineTo(0f, h)
+                lineTo(0f, c)
+                close()
+            } else {
+                // 博士气泡：右上、左下 45° 战术切角
+                moveTo(0f, 0f)
+                lineTo(w - c, 0f)
+                lineTo(w, c)
+                lineTo(w, h)
+                lineTo(c, h)
+                lineTo(0f, h - c)
+                close()
+            }
+        }
+        return Outline.Generic(path)
+    }
+}
+
+/**
+ * 微信式左右对称排版 + 方案A【罗德岛战术终端】气泡 + 纯透明底浮动头像
+ */
 @Composable
-fun ChatBubbleItem(message: ChatMessage) {
+fun ChatBubbleItem(message: ChatMessage, isDark: Boolean = true) {
     val isUser = message.role == "user"
-    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start) {
-        Box(
-            modifier = Modifier.widthIn(max = 280.dp)
-                .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp, bottomStart = if (isUser) 16.dp else 2.dp, bottomEnd = if (isUser) 2.dp else 16.dp))
-                .background(if (isUser) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant)
-                .padding(horizontal = 14.dp, vertical = 10.dp)
+
+    // 方案A 配色自适应系统：
+    // 深色模式：阿米娅深炭灰(#161B22) + 荧光青引线(#00E5FF) + 柔白字(#F1F5F9)；博士夜海蓝(#0A2540) + 明青字(#E0F2FE)
+    // 浅色模式：阿米娅纯白卡片(#FFFFFF) + 墨青引线(#0284C7) + 深石板炭黑字(#0F172A)；博士清爽冰青蓝(#E0F2FE) + 深海蓝黑字(#082F49)
+    val amiyaBg = if (isDark) Color(0xFF161B22) else Color(0xFFFFFFFF)
+    val amiyaAccent = if (isDark) Color(0xFF00E5FF) else Color(0xFF0284C7)
+    val amiyaText = if (isDark) Color(0xFFF1F5F9) else Color(0xFF0F172A)
+    val amiyaBadge = if (isDark) Color(0xFF00E5FF) else Color(0xFF0369A1)
+
+    val doctorBg = if (isDark) Color(0xFF0A2540) else Color(0xFFE0F2FE)
+    val doctorAccent = if (isDark) Color(0xFF38BDF8) else Color(0xFF0284C7)
+    val doctorText = if (isDark) Color(0xFFE0F2FE) else Color(0xFF082F49)
+    val doctorBadge = if (isDark) Color(0xFF38BDF8) else Color(0xFF0369A1)
+
+    val bubbleBg = if (isUser) doctorBg else amiyaBg
+    val bubbleAccent = if (isUser) doctorAccent else amiyaAccent
+    val bubbleText = if (isUser) doctorText else amiyaText
+    val badgeColor = if (isUser) doctorBadge else amiyaBadge
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 3.dp),
+        horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start,
+        verticalAlignment = Alignment.Top
+    ) {
+        // 1. 左侧阿米娅头像：原画捧花笑颜 · 纯透明底自然浮动
+        if (!isUser) {
+            Image(
+                painter = painterResource(id = R.drawable.avatar_amiya),
+                contentDescription = "阿米娅",
+                modifier = Modifier.size(40.dp)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+        }
+
+        // 2. 对话气泡内容区域 (PRTS 战术终端标头 + 45° 几何 Chamfer 切角)
+        Column(
+            horizontalAlignment = if (isUser) Alignment.End else Alignment.Start
         ) {
-            Text(text = message.content, fontSize = 14.sp, color = if (isUser) Color.Black else MaterialTheme.colorScheme.onSurface)
+            // PRTS 战术标头小工牌
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(
+                    start = if (isUser) 0.dp else 4.dp,
+                    end = if (isUser) 4.dp else 0.dp,
+                    bottom = 2.dp
+                )
+            ) {
+                if (!isUser) {
+                    Text(
+                        text = "◆ ",
+                        fontSize = 9.sp,
+                        color = badgeColor,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = "AMIYA // PRTS LINK",
+                        fontSize = 9.sp,
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Bold,
+                        color = badgeColor
+                    )
+                } else {
+                    Text(
+                        text = "DOCTOR // ACCESS",
+                        fontSize = 9.sp,
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Bold,
+                        color = badgeColor
+                    )
+                    Text(
+                        text = " ◆",
+                        fontSize = 9.sp,
+                        color = badgeColor,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+
+            // 45° 切角战术气泡实体
+            Box(
+                modifier = Modifier
+                    .widthIn(max = 265.dp)
+                    .clip(TacticalBubbleShape(chamferDp = 10f, isUser = isUser))
+                    .background(bubbleBg)
+                    .drawBehind {
+                        // 绘制 2.5dp 战术引线：阿米娅在左侧，博士在右侧
+                        val strokeWidth = 2.5.dp.toPx()
+                        if (!isUser) {
+                            drawLine(
+                                color = bubbleAccent,
+                                start = Offset(strokeWidth / 2, 0f),
+                                end = Offset(strokeWidth / 2, size.height),
+                                strokeWidth = strokeWidth
+                            )
+                        } else {
+                            drawLine(
+                                color = bubbleAccent,
+                                start = Offset(size.width - strokeWidth / 2, 0f),
+                                end = Offset(size.width - strokeWidth / 2, size.height),
+                                strokeWidth = strokeWidth
+                            )
+                        }
+                    }
+                    .padding(
+                        start = if (!isUser) 14.dp else 12.dp,
+                        end = if (isUser) 14.dp else 12.dp,
+                        top = 9.dp,
+                        bottom = 9.dp
+                    )
+            ) {
+                Text(
+                    text = message.content,
+                    fontSize = 14.sp,
+                    lineHeight = 20.sp,
+                    color = bubbleText
+                )
+            }
+        }
+
+        // 3. 右侧博士头像：罗德岛战术兜帽 · 纯透明底自然浮动
+        if (isUser) {
+            Spacer(modifier = Modifier.width(8.dp))
+            Image(
+                painter = painterResource(id = R.drawable.avatar_doctor),
+                contentDescription = "博士",
+                modifier = Modifier.size(40.dp)
+            )
         }
     }
 }

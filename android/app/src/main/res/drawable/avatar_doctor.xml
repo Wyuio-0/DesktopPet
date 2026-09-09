@@ -1,0 +1,32 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="40dp"
+    android:height="40dp"
+    android:viewportWidth="100"
+    android:viewportHeight="100">
+    <!-- Tactical Hood Base -->
+    <path
+        android:fillColor="#0F172A"
+        android:pathData="M50,12 C30,12 22,28 22,55 C22,75 24,88 20,100 L80,100 C76,88 78,75 78,55 C78,28 70,12 50,12 Z" />
+    <!-- Inner Face Mask -->
+    <path
+        android:fillColor="#020617"
+        android:pathData="M50,25 C36,25 30,38 30,55 C30,70 36,78 50,78 C64,78 70,70 70,55 C70,38 64,25 50,25 Z" />
+    <!-- Glowing Visor (Cyan Bar) -->
+    <path
+        android:fillColor="#00E5FF"
+        android:pathData="M34,48 L66,48 L66,54 L34,54 Z" />
+    <!-- Glowing Highlight -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M42,49.5 L58,49.5 L58,52.5 L42,52.5 Z" />
+    <!-- Rhodes Island Diamond Crest on Collar -->
+    <path
+        android:fillColor="#38BDF8"
+        android:pathData="M50,82 L56,90 L50,98 L44,90 Z" />
+    <!-- Hood Outline Trim -->
+    <path
+        android:strokeColor="#38BDF8"
+        android:strokeWidth="2"
+        android:strokeAlpha="0.6"
+        android:pathData="M22,55 C22,28 30,12 50,12 C70,12 78,28 78,55" />
+</vector>
