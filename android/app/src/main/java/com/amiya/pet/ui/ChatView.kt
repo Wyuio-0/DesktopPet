@@ -129,12 +129,20 @@ fun ChatScreen() {
                 actions = {
                     TextButton(onClick = {
                         scope.launch {
+                            android.widget.Toast.makeText(context, "正在检查更新...", android.widget.Toast.LENGTH_SHORT).show()
                             val res = UpdateManager.checkUpdate(context)
-                            if (res.isSuccess && res.getOrNull()?.hasUpdate == true) {
-                                releaseInfo = res.getOrNull()
-                                showUpdateDialog = true
+                            val currentVer = UpdateManager.getCurrentVersion(context)
+                            if (res.isSuccess) {
+                                val info = res.getOrNull()
+                                if (info != null && info.hasUpdate) {
+                                    releaseInfo = info
+                                    showUpdateDialog = true
+                                } else {
+                                    android.widget.Toast.makeText(context, "当前已是最新版本 (v$currentVer)", android.widget.Toast.LENGTH_SHORT).show()
+                                }
                             } else {
-                                android.widget.Toast.makeText(context, "当前已是最新版本", android.widget.Toast.LENGTH_SHORT).show()
+                                val err = res.exceptionOrNull()?.localizedMessage ?: "网络异常"
+                                android.widget.Toast.makeText(context, "检查更新失败: $err", android.widget.Toast.LENGTH_SHORT).show()
                             }
                         }
                     }) {
@@ -365,7 +373,10 @@ fun ChatScreen() {
     if (showUpdateDialog && releaseInfo != null) {
         AlertDialog(
             onDismissRequest = { if (!isDownloading) showUpdateDialog = false },
-            title = { Text("发现新版本: ${releaseInfo!!.versionName}", color = Color.White) },
+            title = {
+                val currentVer = UpdateManager.getCurrentVersion(context)
+                Text("发现新版本: ${releaseInfo!!.versionName} (当前: v$currentVer)", color = Color.White)
+            },
             text = {
                 Column {
                     Text(releaseInfo!!.releaseNotes, fontSize = 14.sp, color = Color.LightGray)

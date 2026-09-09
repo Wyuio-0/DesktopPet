@@ -2,7 +2,9 @@ package com.amiya.pet.core.update
 
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import android.os.Environment
 import androidx.core.content.FileProvider
 import kotlinx.coroutines.Dispatchers
@@ -60,41 +62,83 @@ object UpdateManager {
     suspend fun checkUpdate(context: Context): Result<ReleaseInfo> = withContext(Dispatchers.IO) {
         try {
             val currentVersion = getCurrentVersion(context)
-            val url = URL(GITHUB_API_LATEST)
-            val conn = (url.openConnection() as HttpURLConnection).apply {
-                requestMethod = "GET"
-                connectTimeout = 8000
-                readTimeout = 8000
-                setRequestProperty("Accept", "application/vnd.github.v3+json")
-                setRequestProperty("User-Agent", "AmiyaPet-Android")
-            }
-
-            if (conn.responseCode != 200) {
-                return@withContext Result.failure(Exception("GitHub 响应错误 (${conn.responseCode})"))
-            }
-
-            val resp = conn.inputStream.bufferedReader().use { it.readText() }
-            val json = JSONObject(resp)
-
-            val tagName = json.optString("tag_name", "")
-            val body = json.optString("body", "暂无版本更新说明。")
-            val htmlUrl = json.optString("html_url", "https://github.com/Wyuio-0/DesktopPet/releases")
-
+            var tagName = ""
+            var body = "暂无版本更新说明。"
+            var htmlUrl = "https://github.com/Wyuio-0/DesktopPet/releases"
             var apkUrl: String? = null
-            val assets = json.optJSONArray("assets")
-            if (assets != null) {
-                for (i in 0 until assets.length()) {
-                    val asset = assets.getJSONObject(i)
-                    val name = asset.optString("name", "")
-                    if (name.endsWith(".apk", ignoreCase = true)) {
-                        apkUrl = asset.optString("browser_download_url")
-                        break
+            var apiSuccess = false
+
+            // 1. 优先尝试 GitHub REST API
+            try {
+                val url = URL(GITHUB_API_LATEST)
+                val conn = (url.openConnection() as HttpURLConnection).apply {
+                    requestMethod = "GET"
+                    connectTimeout = 8000
+                    readTimeout = 8000
+                    setRequestProperty("Accept", "application/vnd.github.v3+json")
+                    setRequestProperty("User-Agent", "AmiyaPet-Android")
+                }
+
+                if (conn.responseCode == 200) {
+                    val resp = conn.inputStream.bufferedReader().use { it.readText() }
+                    val json = JSONObject(resp)
+                    tagName = json.optString("tag_name", "").trim()
+                    body = json.optString("body", "暂无版本更新说明。")
+                    htmlUrl = json.optString("html_url", "https://github.com/Wyuio-0/DesktopPet/releases")
+
+                    val assets = json.optJSONArray("assets")
+                    if (assets != null) {
+                        for (i in 0 until assets.length()) {
+                            val asset = assets.getJSONObject(i)
+                            val name = asset.optString("name", "")
+                            if (name.endsWith(".apk", ignoreCase = true)) {
+                                apkUrl = asset.optString("browser_download_url")
+                                break
+                            }
+                        }
+                    }
+                    if (tagName.isNotEmpty()) {
+                        apiSuccess = true
                     }
                 }
+            } catch (_: Exception) {
+                // REST API 访问异常（网络限流或阻断），进入 fallback
+            }
+
+            // 2. Fallback：通过网页 302 重定向获取最新版本标签（不消耗 GitHub API 速率限制）
+            if (!apiSuccess || tagName.isEmpty()) {
+                try {
+                    val redirectUrl = URL("https://github.com/Wyuio-0/DesktopPet/releases/latest")
+                    val conn = (redirectUrl.openConnection() as HttpURLConnection).apply {
+                        instanceFollowRedirects = false
+                        connectTimeout = 8000
+                        readTimeout = 8000
+                        setRequestProperty("User-Agent", "Mozilla/5.0")
+                    }
+                    val loc = conn.getHeaderField("Location") ?: ""
+                    conn.disconnect()
+                    if (loc.isNotEmpty()) {
+                        val extractedTag = loc.substringAfterLast("/").trim()
+                        if (extractedTag.isNotEmpty()) {
+                            tagName = extractedTag
+                            htmlUrl = loc
+                            apkUrl = "https://github.com/Wyuio-0/DesktopPet/releases/download/$tagName/AmiyaPet-Android-$tagName.apk"
+                            apiSuccess = true
+                        }
+                    }
+                } catch (_: Exception) {
+                    // Fallback 也失败
+                }
+            }
+
+            if (!apiSuccess || tagName.isEmpty()) {
+                return@withContext Result.failure(Exception("无法连接更新服务器，请检查网络"))
             }
 
             val cleanTag = tagName.removePrefix("v").removePrefix("V")
             val hasNewVersion = isNewerVersion(cleanTag, currentVersion)
+            // 必须既是更新的版本，且有 APK 下载链接才判定为有更新
+            val hasUpdate = hasNewVersion && !apkUrl.isNullOrEmpty()
 
             Result.success(
                 ReleaseInfo(
@@ -103,7 +147,7 @@ object UpdateManager {
                     releaseNotes = body,
                     apkDownloadUrl = apkUrl,
                     htmlUrl = htmlUrl,
-                    hasUpdate = hasNewVersion
+                    hasUpdate = hasUpdate
                 )
             )
         } catch (e: Exception) {
@@ -243,17 +287,31 @@ object UpdateManager {
 
     fun getCurrentVersion(context: Context): String {
         return try {
-            val pInfo = context.packageManager.getPackageInfo(context.packageName, 0)
-            pInfo.versionName ?: "1.0.0"
+            val pInfo = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                context.packageManager.getPackageInfo(
+                    context.packageName,
+                    PackageManager.PackageInfoFlags.of(0)
+                )
+            } else {
+                @Suppress("DEPRECATION")
+                context.packageManager.getPackageInfo(context.packageName, 0)
+            }
+            pInfo.versionName?.takeIf { it.isNotBlank() } ?: "1.8.8"
         } catch (e: Exception) {
-            "1.0.0"
+            "1.8.8"
         }
     }
 
-    private fun isNewerVersion(remote: String, local: String): Boolean {
-        if (remote.isBlank()) return false
-        val rParts = remote.split(".").mapNotNull { it.toIntOrNull() }
-        val lParts = local.split(".").mapNotNull { it.toIntOrNull() }
+    fun parseVersion(v: String): List<Int> {
+        val mainPart = v.substringBefore("-").substringBefore("+")
+        val nums = Regex("\\d+").findAll(mainPart).map { it.value.toInt() }.toList()
+        return nums.take(3) + List(maxOf(0, 3 - nums.size)) { 0 }
+    }
+
+    fun isNewerVersion(remote: String, local: String): Boolean {
+        val rParts = parseVersion(remote)
+        val lParts = parseVersion(local)
+        if (rParts.isEmpty()) return false
         val maxLen = maxOf(rParts.size, lParts.size)
         for (i in 0 until maxLen) {
             val r = rParts.getOrElse(i) { 0 }

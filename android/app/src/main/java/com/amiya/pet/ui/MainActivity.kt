@@ -102,12 +102,20 @@ class MainActivity : ComponentActivity() {
                             actions = {
                                 TextButton(onClick = {
                                     scope.launch {
+                                        Toast.makeText(context, "正在检查更新...", Toast.LENGTH_SHORT).show()
                                         val res = UpdateManager.checkUpdate(context)
-                                        if (res.isSuccess && res.getOrNull()?.hasUpdate == true) {
-                                            releaseInfo = res.getOrNull()
-                                            showUpdateDialog = true
+                                        val currentVer = UpdateManager.getCurrentVersion(context)
+                                        if (res.isSuccess) {
+                                            val info = res.getOrNull()
+                                            if (info != null && info.hasUpdate) {
+                                                releaseInfo = info
+                                                showUpdateDialog = true
+                                            } else {
+                                                Toast.makeText(context, "当前已是最新版本 (v$currentVer)", Toast.LENGTH_SHORT).show()
+                                            }
                                         } else {
-                                            Toast.makeText(context, "当前已是最新版本", Toast.LENGTH_SHORT).show()
+                                            val err = res.exceptionOrNull()?.localizedMessage ?: "网络异常"
+                                            Toast.makeText(context, "检查更新失败: $err", Toast.LENGTH_SHORT).show()
                                         }
                                     }
                                 }) {
@@ -174,9 +182,10 @@ class MainActivity : ComponentActivity() {
 
                 // Update dialog
                 if (showUpdateDialog && releaseInfo != null) {
+                    val currentVer = UpdateManager.getCurrentVersion(context)
                     AlertDialog(
                         onDismissRequest = { if (!isDownloading) showUpdateDialog = false },
-                        title = { Text("发现新版本: ${releaseInfo!!.versionName}", color = MaterialTheme.colorScheme.onSurface) },
+                        title = { Text("发现新版本: ${releaseInfo!!.versionName} (当前: v$currentVer)", color = MaterialTheme.colorScheme.onSurface) },
                         text = {
                             Column {
                                 Text(releaseInfo!!.releaseNotes, fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurface)

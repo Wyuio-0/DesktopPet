@@ -48,7 +48,7 @@ class CloneStateProbe(QtCore.QThread):
 
 
 class UpdateCheckThread(QtCore.QThread):
-    """后台查 GitHub 最新 Release；发现比当前版本新则发 result(dict)，否则 None。"""
+    """后台查 GitHub 最新 Release；返回 dict 包含 status 和相应数据。"""
 
     result = QtCore.pyqtSignal(object)
 
@@ -57,10 +57,11 @@ class UpdateCheckThread(QtCore.QThread):
         if info:
             tag, html, installer = info
             if updater.is_newer(tag):
-                self.result.emit({"tag": tag, "html": html,
-                                  "installer": installer})
-                return
-        self.result.emit(None)
+                self.result.emit({"status": "update", "tag": tag, "html": html, "installer": installer})
+            else:
+                self.result.emit({"status": "latest", "tag": tag})
+        else:
+            self.result.emit({"status": "error"})
 
 
 class OcrWorker(QtCore.QThread):
@@ -1221,18 +1222,24 @@ class PetWindow(QtWidgets.QWidget):
         self._update_thread = t
         t.start()
 
-    def _update_result(self, info, silent):
+    def _update_result(self, res, silent):
         self._update_thread = None
-        if not info:
-            if not silent:
-                self._note("已经是最新版本了，博士。")
+        if not res:
             return
-        tag = info["tag"]
-        html = info["html"] or "https://github.com/%s/releases" % updater.REPO
-        if self.tray_coord.is_available():
-            self.tray_coord.show_update_notification(tag, html)
-        else:
-            self._note("发现新版本 %s，点击前往下载。" % tag)
+        status = res.get("status")
+        if status == "update":
+            tag = res.get("tag", "")
+            html = res.get("html") or "https://github.com/%s/releases" % updater.REPO
+            if self.tray_coord.is_available():
+                self.tray_coord.show_update_notification(tag, html)
+            else:
+                self._note("发现新版本 %s (当前 v%s)，点击前往下载。" % (tag, updater.APP_VERSION))
+        elif status == "latest":
+            if not silent:
+                self._note("当前已是最新版本 (v%s)，博士。" % updater.APP_VERSION)
+        elif status == "error":
+            if not silent:
+                self._note("检查更新失败，请检查网络连接。")
 
     def _start_clone(self):
         was_running = tts.clone_state() == "running"

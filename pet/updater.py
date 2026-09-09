@@ -35,14 +35,35 @@ def latest_release(timeout=5):
             if name.lower().endswith(".exe"):
                 installer = str(a.get("browser_download_url", "")).strip()
                 break
-        return (tag, html, installer) if tag else None
+        if tag:
+            return (tag, html, installer)
     except Exception:
-        return None
+        pass
+
+    # 备用机制：通过 GitHub Release 页面 302 重定向解析最新 tag
+    try:
+        req2 = urllib.request.Request(
+            "https://github.com/%s/releases/latest" % REPO,
+            headers={"User-Agent": "Mozilla/5.0"}
+        )
+        with urllib.request.urlopen(req2, timeout=timeout) as r:
+            final_url = r.geturl()
+        m = re.search(r"/releases/tag/([^/?#]+)", final_url)
+        if m:
+            tag = m.group(1).strip()
+            html = final_url
+            installer = "https://github.com/%s/releases/download/%s/DesktopPet-Setup-%s.exe" % (REPO, tag, tag)
+            return (tag, html, installer)
+    except Exception:
+        pass
+
+    return None
 
 
 def is_newer(tag, current=APP_VERSION):
     """'v1.4.0' / '1.4.0' 语义比较：tag 是否比 current 新。"""
     def norm(v):
-        nums = re.findall(r"\d+", str(v))
+        main_part = str(v).split("-")[0].split("+")[0]
+        nums = re.findall(r"\d+", main_part)
         return [int(x) for x in nums[:3]] + [0] * (3 - len(nums[:3]))
     return norm(tag) > norm(current)
