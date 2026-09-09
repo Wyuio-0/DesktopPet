@@ -120,6 +120,19 @@ fun ChatScreen() {
                     }
                 },
                 actions = {
+                    TextButton(onClick = {
+                        scope.launch {
+                            val res = UpdateManager.checkUpdate(context)
+                            if (res.isSuccess && res.getOrNull()?.hasUpdate == true) {
+                                releaseInfo = res.getOrNull()
+                                showUpdateDialog = true
+                            } else {
+                                android.widget.Toast.makeText(context, "当前已是最新版本", android.widget.Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    }) {
+                        Text("检查更新", color = Color.LightGray, fontSize = 14.sp)
+                    }
                     IconButton(onClick = { showCharDialog = true }) {
                         Icon(Icons.Default.Person, contentDescription = "切换角色", tint = Color.LightGray)
                     }
@@ -338,32 +351,6 @@ fun ChatScreen() {
                     }, valueRange = 0.5f..2f, steps = 14)
                     
                     Spacer(modifier = Modifier.height(16.dp))
-                    
-                    val context = LocalContext.current
-                    var isChecking by remember { mutableStateOf(false) }
-                    
-                    Button(
-                        onClick = {
-                            isChecking = true
-                            scope.launch {
-                                val res = UpdateManager.checkUpdate(context)
-                                isChecking = false
-                                if (res.isSuccess && res.getOrNull()?.hasUpdate == true) {
-                                    android.widget.Toast.makeText(context, "发现新版本，请在App主页更新", android.widget.Toast.LENGTH_SHORT).show()
-                                } else {
-                                    android.widget.Toast.makeText(context, "当前已是最新版本", android.widget.Toast.LENGTH_SHORT).show()
-                                }
-                            }
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF242832))
-                    ) {
-                        if (isChecking) {
-                            CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
-                            Spacer(Modifier.width(8.dp))
-                        }
-                        Text(if (isChecking) "检查中..." else "检查版本更新", color = Color.White)
-                    }
                 }
             },
             confirmButton = {
@@ -379,6 +366,74 @@ fun ChatScreen() {
             dismissButton = { TextButton(onClick = { showSettingsDialog = false }) { Text("取消", color = Color.Gray) } }
         )
     }
+
+    if (showUpdateDialog && releaseInfo != null) {
+        AlertDialog(
+            onDismissRequest = { if (!isDownloading) showUpdateDialog = false },
+            title = { Text("发现新版本: ${releaseInfo!!.versionName}", color = Color.White) },
+            text = {
+                Column {
+                    Text(releaseInfo!!.releaseNotes, fontSize = 14.sp, color = Color.LightGray)
+                    Spacer(Modifier.height(16.dp))
+                    if (isDownloading && downloadProgress != null) {
+                        LinearProgressIndicator(
+                            progress = { downloadProgress!!.progress },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            "${(downloadProgress!!.downloadedBytes / 1024 / 1024)}MB / ${(downloadProgress!!.totalBytes / 1024 / 1024)}MB",
+                            fontSize = 12.sp,
+                            color = Color.Gray
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                if (!isDownloading) {
+                    Button(onClick = {
+                        isDownloading = true
+                        downloadJob = scope.launch {
+                            val apkUrl = releaseInfo!!.apkDownloadUrl
+                            if (apkUrl.isNullOrEmpty()) {
+                                isDownloading = false
+                                return@launch
+                            }
+                            val res = UpdateManager.downloadApk(
+                                context,
+                                apkUrl,
+                                onProgress = { downloadProgress = it }
+                            )
+                            if (res.isSuccess) {
+                                isDownloading = false
+                                showUpdateDialog = false
+                                UpdateManager.installApk(context, res.getOrThrow())
+                            } else {
+                                isDownloading = false
+                            }
+                        }
+                    }) {
+                        Text("立即更新")
+                    }
+                }
+            },
+            dismissButton = {
+                if (!isDownloading) {
+                    TextButton(onClick = { showUpdateDialog = false }) {
+                        Text("稍后再说", color = Color.Gray)
+                    }
+                } else {
+                    TextButton(onClick = {
+                        downloadJob?.cancel()
+                        isDownloading = false
+                    }) {
+                        Text("取消下载", color = Color.Red)
+                    }
+                }
+            }
+        )
+    }
+
 }
 
 @Composable
