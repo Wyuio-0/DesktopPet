@@ -88,63 +88,77 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
+            val isDark = themeOverride.value ?: isSystemInDarkTheme()
+
+            fun triggerCheckUpdate() {
+                scope.launch {
+                    Toast.makeText(context, "正在检查更新...", Toast.LENGTH_SHORT).show()
+                    val res = UpdateManager.checkUpdate(context)
+                    val currentVer = UpdateManager.getCurrentVersion(context)
+                    if (res.isSuccess) {
+                        val info = res.getOrNull()
+                        if (info != null && info.hasUpdate) {
+                            releaseInfo = info
+                            showUpdateDialog = true
+                        } else {
+                            Toast.makeText(context, "当前已是最新版本 (v$currentVer)", Toast.LENGTH_SHORT).show()
+                        }
+                    } else {
+                        val err = res.exceptionOrNull()?.localizedMessage ?: "网络异常"
+                        Toast.makeText(context, "检查更新失败: $err", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+
+            fun toggleTheme() {
+                val newVal = when (themeOverride.value) {
+                    null -> true
+                    true -> false
+                    false -> null
+                }
+                themeOverride.value = newVal
+                val intVal = when (newVal) {
+                    true -> 1
+                    false -> 0
+                    null -> -1
+                }
+                prefs.edit().putInt("pref_theme", intVal).apply()
+            }
+
             AmiyaPetTheme(forceDark = themeOverride.value) {
                 var selectedTab by remember { mutableStateOf(MainTab.CHAT) }
 
                 Scaffold(
                     topBar = {
-                        TopAppBar(
-                            title = {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text("与桌宠互动", fontWeight = FontWeight.Bold, fontSize = 18.sp)
-                                }
-                            },
-                            actions = {
-                                TextButton(onClick = {
-                                    scope.launch {
-                                        Toast.makeText(context, "正在检查更新...", Toast.LENGTH_SHORT).show()
-                                        val res = UpdateManager.checkUpdate(context)
-                                        val currentVer = UpdateManager.getCurrentVersion(context)
-                                        if (res.isSuccess) {
-                                            val info = res.getOrNull()
-                                            if (info != null && info.hasUpdate) {
-                                                releaseInfo = info
-                                                showUpdateDialog = true
-                                            } else {
-                                                Toast.makeText(context, "当前已是最新版本 (v$currentVer)", Toast.LENGTH_SHORT).show()
-                                            }
+                        if (selectedTab != MainTab.CHAT) {
+                            TopAppBar(
+                                title = {
+                                    Text(
+                                        when (selectedTab) {
+                                            MainTab.SCHEDULE -> "课表管理"
+                                            MainTab.NOTES -> "灵感便签"
+                                            MainTab.FOCUS -> "专注番茄钟"
+                                            else -> ""
+                                        },
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 18.sp
+                                    )
+                                },
+                                actions = {
+                                    IconButton(onClick = { triggerCheckUpdate() }) {
+                                        Icon(Icons.Default.CloudDownload, contentDescription = "检查更新", tint = MaterialTheme.colorScheme.onSurface)
+                                    }
+                                    IconButton(onClick = { toggleTheme() }) {
+                                        if (isDark) {
+                                            Icon(Icons.Default.Brightness7, contentDescription = "切换到浅色模式", tint = MaterialTheme.colorScheme.onSurface)
                                         } else {
-                                            val err = res.exceptionOrNull()?.localizedMessage ?: "网络异常"
-                                            Toast.makeText(context, "检查更新失败: $err", Toast.LENGTH_SHORT).show()
+                                            Icon(Icons.Default.Brightness4, contentDescription = "切换到深色模式", tint = MaterialTheme.colorScheme.onSurface)
                                         }
                                     }
-                                }) {
-                                    Text("检查更新", color = MaterialTheme.colorScheme.onSurface, fontSize = 14.sp)
-                                }
-                                IconButton(onClick = {
-                                    // 循环切换主题状态
-                                    val newVal = when (themeOverride.value) {
-                                        null -> true
-                                        true -> false
-                                        false -> null
-                                    }
-                                    themeOverride.value = newVal
-                                    val intVal = when (newVal) {
-                                        true -> 1
-                                        false -> 0
-                                        null -> -1
-                                    }
-                                    prefs.edit().putInt("pref_theme", intVal).apply()
-                                }) {
-                                    if (themeOverride.value ?: isSystemInDarkTheme()) {
-                                        Icon(Icons.Default.Brightness7, contentDescription = "切换到浅色模式", tint = MaterialTheme.colorScheme.onSurface)
-                                    } else {
-                                        Icon(Icons.Default.Brightness4, contentDescription = "切换到深色模式", tint = MaterialTheme.colorScheme.onSurface)
-                                    }
-                                }
-                            },
-                            colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface)
-                        )
+                                },
+                                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface)
+                            )
+                        }
                     },
                     bottomBar = {
                         NavigationBar(
@@ -174,7 +188,11 @@ class MainActivity : ComponentActivity() {
                         when (selectedTab) {
                             MainTab.SCHEDULE -> ScheduleScreen()
                             MainTab.NOTES -> NotesScreen()
-                            MainTab.CHAT -> ChatScreen()
+                            MainTab.CHAT -> ChatScreen(
+                                onCheckUpdate = { triggerCheckUpdate() },
+                                onToggleTheme = { toggleTheme() },
+                                isDark = isDark
+                            )
                             MainTab.FOCUS -> PomodoroScreen()
                         }
                     }
