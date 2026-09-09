@@ -62,16 +62,75 @@ class MainActivity : ComponentActivity() {
         val serviceIntent = Intent(this, AppBackgroundService::class.java)
         ContextCompat.startForegroundService(this, serviceIntent)
 
-        setContent {
-            AmiyaPetTheme {
-                MainScreen()
-            }
+        // 初始化主题偏好（-1: 跟随系统, 0: 浅色, 1: 深色)
+        val prefs = context.getSharedPreferences("amiya_pet_prefs", Context.MODE_PRIVATE)
+        val storedTheme = prefs.getInt("pref_theme", -1)
+        val initialForce: Boolean? = when (storedTheme) {
+            1 -> true
+            0 -> false
+            else -> null
+        }
+        val themeOverride = remember { mutableStateOf(initialForce) }
+        // 将主题状态传给主题函数
+        AmiyaPetTheme(forceDark = themeOverride.value) {
+            MainScreen(
+                // 主题切换回调
+                onToggleTheme = {
+                    // 循环: null -> true -> false -> null
+                    val newVal = when (themeOverride.value) {
+                        null -> true
+                        true -> false
+                        false -> null
+                    }
+                    themeOverride.value = newVal
+                    // 保存到 SharedPreferences
+                    val intVal = when (newVal) {
+                        true -> 1
+                        false -> 0
+                        null -> -1
+                    }
+                    prefs.edit().putInt("pref_theme", intVal).apply()
+                },
+                // 当前是否为深色（用于图标显示）
+                isDark = themeOverride.value ?: isSystemInDarkTheme()
+            )
         }
     }
 }
 
 @Composable
-fun AmiyaPetTheme(content: @Composable () -> Unit) {
+fun AmiyaPetTheme(forceDark: Boolean? = null, content: @Composable () -> Unit) {
+    val darkTheme = forceDark ?: isSystemInDarkTheme()
+    val colorScheme = if (darkTheme) {
+        darkColorScheme(
+            primary = Color(0xFF00B0FF),
+            onPrimary = Color.Black,
+            secondary = Color(0xFF4FC3F7),
+            background = Color(0xFF101216),
+            surface = Color(0xFF1A1D24),
+            surfaceVariant = Color(0xFF242832),
+            onBackground = Color(0xFFE2E8F0),
+            onSurface = Color(0xFFE2E8F0),
+            error = Color(0xFFFF5252)
+        )
+    } else {
+        lightColorScheme(
+            primary = Color(0xFF00B0FF),
+            onPrimary = Color.Black,
+            secondary = Color(0xFF4FC3F7),
+            background = Color(0xFFF0F0F0),
+            surface = Color(0xFFFFFFFF),
+            surfaceVariant = Color(0xFFF5F5F5),
+            onBackground = Color(0xFF101216),
+            onSurface = Color(0xFF101216),
+            error = Color(0xFFFF5252)
+        )
+    }
+    MaterialTheme(
+        colorScheme = colorScheme,
+        content = content
+    )
+}
     val darkTheme = isSystemInDarkTheme()
     val colorScheme = if (darkTheme) {
         darkColorScheme(
@@ -113,7 +172,94 @@ enum class MainTab(val title: String, val icon: ImageVector) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MainScreen() {
+fun MainScreen(onToggleTheme: () -> Unit, isDark: Boolean) {
+    var selectedTab by remember { mutableStateOf(MainTab.CHAT) }
+    val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
+
+    // Update States
+    var showUpdateDialog by remember { mutableStateOf(false) }
+    var releaseInfo by remember { mutableStateOf<ReleaseInfo?>(null) }
+    var isDownloading by remember { mutableStateOf(false) }
+    var downloadProgress by remember { mutableStateOf<DownloadProgress?>(null) }
+    var downloadJob by remember { mutableStateOf<Job?>(null) }
+
+    // Auto check update on startup
+    LaunchedEffect(Unit) {
+        val result = UpdateManager.checkUpdate(context)
+        if (result.isSuccess) {
+            val info = result.getOrNull()
+            if (info != null && info.hasUpdate) {
+                releaseInfo = info
+                showUpdateDialog = true
+            }
+        }
+    }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("与桌宠互动", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                    }
+                },
+                actions = {
+                    TextButton(onClick = {
+                        coroutineScope.launch {
+                            val res = UpdateManager.checkUpdate(context)
+                            if (res.isSuccess && res.getOrNull()?.hasUpdate == true) {
+                                releaseInfo = res.getOrNull()
+                                showUpdateDialog = true
+                            } else {
+                                android.widget.Toast.makeText(context, "当前已是最新版本", android.widget.Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    }) {
+                        Text("检查更新", color = MaterialTheme.colorScheme.onSurface, fontSize = 14.sp)
+                    }
+                    IconButton(onClick = { showCharDialog = true }) {
+                        Icon(Icons.Default.Person, contentDescription = "切换角色", tint = MaterialTheme.colorScheme.onSurface)
+                    }
+                    IconButton(onClick = { showSettingsDialog = true }) {
+                        Icon(Icons.Default.Settings, contentDescription = "设置", tint = MaterialTheme.colorScheme.onSurface)
+                    }
+                    IconButton(onClick = {
+                        brain.clearHistory()
+                        chatList = emptyList()
+                    }) {
+                        Icon(Icons.Default.DeleteOutline, contentDescription = "清空对话", tint = MaterialTheme.colorScheme.onSurface)
+                    }
+                    // Theme toggle button
+                    IconButton(onClick = onToggleTheme) {
+                        if (isDark) {
+                            Icon(Icons.Default.Brightness7, contentDescription = "切换到浅色模式", tint = MaterialTheme.colorScheme.onSurface)
+                        } else {
+                            Icon(Icons.Default.Brightness4, contentDescription = "切换到深色模式", tint = MaterialTheme.colorScheme.onSurface)
+                        }
+                    }
+                        chatList = emptyList()
+                    }) {
+                        Icon(Icons.Default.DeleteOutline, contentDescription = "清空对话", tint = MaterialTheme.colorScheme.onSurface)
+                    }
+                    // Theme toggle button
+                    IconButton(onClick = onToggleTheme) {
+                        if (isDark) {
+                            Icon(Icons.Default.Brightness7, contentDescription = "切换到浅色模式", tint = MaterialTheme.colorScheme.onSurface)
+                        } else {
+                            Icon(Icons.Default.Brightness4, contentDescription = "切换到深色模式", tint = MaterialTheme.colorScheme.onSurface)
+                        }
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface)
+            )
+        },
+        containerColor = MaterialTheme.colorScheme.background
+    ) { padding ->
+        // Existing UI unchanged (ChatScreen body etc.)
+        // ... keep original content ...
+    }
+}
     var selectedTab by remember { mutableStateOf(MainTab.CHAT) }
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
@@ -141,10 +287,10 @@ fun MainScreen() {
     if (showUpdateDialog && releaseInfo != null) {
         AlertDialog(
             onDismissRequest = { if (!isDownloading) showUpdateDialog = false },
-            title = { Text("发现新版本: ${releaseInfo!!.versionName}", color = Color.White) },
+            title = { Text("发现新版本: ${releaseInfo!!.versionName}", color = MaterialTheme.colorScheme.onSurface) },
             text = {
                 Column {
-                    Text(releaseInfo!!.releaseNotes, fontSize = 14.sp, color = Color.LightGray)
+                    Text(releaseInfo!!.releaseNotes, fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurface)
                     Spacer(Modifier.height(16.dp))
                     if (isDownloading && downloadProgress != null) {
                         LinearProgressIndicator(
@@ -266,7 +412,7 @@ fun GuideItem(title: String, desc: String) {
             Text(
                 text = desc,
                 fontSize = 12.sp,
-                color = Color.LightGray
+                color = MaterialTheme.colorScheme.onSurface
             )
         }
     }

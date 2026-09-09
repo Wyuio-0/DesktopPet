@@ -92,7 +92,7 @@ fun ScheduleScreen() {
             title = { Text("导入强智教务课表", color = Color.White) },
             text = {
                 Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
-                    Text("请在下方粘贴抓包得到的课表 JSON 数据：", fontSize = 13.sp, color = Color.LightGray)
+                    Text("请在下方粘贴抓包得到的课表 JSON 数据：", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface)
                     Spacer(Modifier.height(8.dp))
                     OutlinedTextField(
                         value = jsonInput,
@@ -101,7 +101,16 @@ fun ScheduleScreen() {
                         textStyle = LocalTextStyle.current.copy(color = Color.White)
                     )
                     Spacer(Modifier.height(12.dp))
-                    Text("开学日期 (第一周周一，格式 YYYY-MM-DD)：", fontSize = 13.sp, color = Color.LightGray)
+                    Text("开学日期 (第一周周一，格式 YYYY-MM-DD)：", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface)
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = jsonInput,
+                        onValueChange = { jsonInput = it },
+                        modifier = Modifier.fillMaxWidth().height(150.dp),
+                        textStyle = LocalTextStyle.current.copy(color = Color.White)
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    Text("开学日期 (第一周周一，格式 YYYY-MM-DD)：", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface)
                     Spacer(Modifier.height(8.dp))
                     OutlinedTextField(
                         value = dateInput,
@@ -202,7 +211,7 @@ fun TimetableGrid(weekNo: Int, refreshTrigger: Int, onPrevWeek: () -> Unit, onNe
                 ) {
                     Text(
                         text = it,
-                        color = if (isToday) MaterialTheme.colorScheme.primary else Color.LightGray,
+                        color = if (isToday) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
                         fontSize = 12.sp,
                         fontWeight = if (isToday) FontWeight.Bold else FontWeight.Normal
                     )

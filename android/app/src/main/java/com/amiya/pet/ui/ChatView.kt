@@ -138,19 +138,19 @@ fun ChatScreen() {
                             }
                         }
                     }) {
-                        Text("检查更新", color = Color.LightGray, fontSize = 14.sp)
+                        Text("检查更新", color = MaterialTheme.colorScheme.onSurface, fontSize = 14.sp)
                     }
                     IconButton(onClick = { showCharDialog = true }) {
-                        Icon(Icons.Default.Person, contentDescription = "切换角色", tint = Color.LightGray)
+                        Icon(Icons.Default.Person, contentDescription = "切换角色", tint = MaterialTheme.colorScheme.onSurface)
                     }
                     IconButton(onClick = { showSettingsDialog = true }) {
-                        Icon(Icons.Default.Settings, contentDescription = "设置", tint = Color.LightGray)
+                        Icon(Icons.Default.Settings, contentDescription = "设置", tint = MaterialTheme.colorScheme.onSurface)
                     }
                     IconButton(onClick = {
                         brain.clearHistory()
                         chatList = emptyList()
                     }) {
-                        Icon(Icons.Default.DeleteOutline, contentDescription = "清空对话", tint = Color.LightGray)
+                        Icon(Icons.Default.DeleteOutline, contentDescription = "清空对话", tint = MaterialTheme.colorScheme.onSurface)
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface)
@@ -174,7 +174,7 @@ fun ChatScreen() {
                     ) {
                         Icon(Icons.Default.ChatBubbleOutline, null, tint = Color.Gray, modifier = Modifier.size(48.dp))
                         Spacer(modifier = Modifier.height(12.dp))
-                        Text("随时准备听您诉说。", color = Color.LightGray, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+                        Text("随时准备听您诉说。", color = MaterialTheme.colorScheme.onSurface, fontSize = 15.sp, fontWeight = FontWeight.Medium)
                     }
                 } else {
                     LazyColumn(
