@@ -49,17 +49,27 @@ fun ScheduleScreen(
 
     Column(modifier = Modifier.fillMaxSize()) {
         Row(
-            modifier = Modifier.fillMaxWidth().padding(16.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 6.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = { if (currentWeek > 1) currentWeek-- }) {
-                    Icon(Icons.Default.ChevronLeft, "上一周", tint = MaterialTheme.colorScheme.onBackground)
+                IconButton(
+                    onClick = { if (currentWeek > 1) currentWeek-- },
+                    modifier = Modifier.size(32.dp)
+                ) {
+                    Icon(Icons.Default.ChevronLeft, "上一周", tint = MaterialTheme.colorScheme.onBackground, modifier = Modifier.size(20.dp))
                 }
-                Text("第 $currentWeek 周", color = MaterialTheme.colorScheme.onBackground, fontWeight = FontWeight.Bold, fontSize = 18.sp)
-                IconButton(onClick = { currentWeek++ }) {
-                    Icon(Icons.Default.ChevronRight, "下一周", tint = MaterialTheme.colorScheme.onBackground)
+                Spacer(Modifier.width(2.dp))
+                Text("第 $currentWeek 周", color = MaterialTheme.colorScheme.onBackground, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                Spacer(Modifier.width(2.dp))
+                IconButton(
+                    onClick = { currentWeek++ },
+                    modifier = Modifier.size(32.dp)
+                ) {
+                    Icon(Icons.Default.ChevronRight, "下一周", tint = MaterialTheme.colorScheme.onBackground, modifier = Modifier.size(20.dp))
                 }
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -68,18 +78,19 @@ fun ScheduleScreen(
                         onClick = {
                             onConsultAi("阿米娅，请结合我导入的课表数据，全面分析我的学习情况与课程负荷，并给出科学的学习与作息规划建议。")
                         },
-                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                        modifier = Modifier.height(32.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Default.AutoAwesome,
                             contentDescription = null,
-                            modifier = Modifier.size(15.dp),
+                            modifier = Modifier.size(14.dp),
                             tint = MaterialTheme.colorScheme.primary
                         )
                         Spacer(Modifier.width(4.dp))
                         Text(
                             text = "AI 学情分析",
-                            fontSize = 13.sp,
+                            fontSize = 12.sp,
                             color = MaterialTheme.colorScheme.primary,
                             fontWeight = FontWeight.Bold
                         )
@@ -88,11 +99,13 @@ fun ScheduleScreen(
                 }
                 Button(
                     onClick = { showImportDialog = true },
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                    modifier = Modifier.height(32.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
                 ) {
-                    Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(16.dp), tint = Color.Black)
+                    Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(14.dp), tint = Color.Black)
                     Spacer(Modifier.width(4.dp))
-                    Text("导入课表", color = Color.Black, fontWeight = FontWeight.Bold)
+                    Text("导入课表", fontSize = 12.sp, color = Color.Black, fontWeight = FontWeight.Bold)
                 }
             }
         }

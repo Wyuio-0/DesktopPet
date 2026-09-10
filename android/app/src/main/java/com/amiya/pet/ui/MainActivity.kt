@@ -97,7 +97,7 @@ class MainActivity : ComponentActivity() {
                     val currentVer = UpdateManager.getCurrentVersion(context)
                     if (res.isSuccess) {
                         val info = res.getOrNull()
-                        if (info != null && info.hasUpdate) {
+                        if (info != null) {
                             releaseInfo = info
                             showUpdateDialog = true
                         } else {
@@ -209,61 +209,132 @@ class MainActivity : ComponentActivity() {
                 // Update dialog
                 if (showUpdateDialog && releaseInfo != null) {
                     val currentVer = UpdateManager.getCurrentVersion(context)
+                    val isNewer = releaseInfo!!.hasUpdate
                     AlertDialog(
                         onDismissRequest = { if (!isDownloading) showUpdateDialog = false },
-                        title = { Text("发现新版本: ${releaseInfo!!.versionName} (当前: v$currentVer)", color = MaterialTheme.colorScheme.onSurface) },
-                        text = {
-                            Column {
-                                Text(releaseInfo!!.releaseNotes, fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurface)
-                                Spacer(Modifier.height(16.dp))
-                                if (isDownloading && downloadProgress != null) {
-                                    LinearProgressIndicator(progress = { downloadProgress!!.progress }, modifier = Modifier.fillMaxWidth())
-                                    Spacer(Modifier.height(8.dp))
+                        containerColor = MaterialTheme.colorScheme.surface,
+                        title = {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    imageVector = if (isNewer) Icons.Default.CloudDownload else Icons.Default.CheckCircle,
+                                    contentDescription = null,
+                                    tint = if (isNewer) MaterialTheme.colorScheme.primary else Color(0xFF4CAF50),
+                                    modifier = Modifier.size(24.dp)
+                                )
+                                Spacer(Modifier.width(8.dp))
+                                Column {
                                     Text(
-                                        "${downloadProgress!!.downloadedBytes / 1024 / 1024}MB / ${downloadProgress!!.totalBytes / 1024 / 1024}MB",
-                                        fontSize = 12.sp,
-                                        color = Color.Gray
+                                        text = if (isNewer) "发现新版本 v${releaseInfo!!.versionName}" else "已是最新版本 (v$currentVer)",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 17.sp,
+                                        color = MaterialTheme.colorScheme.onSurface
                                     )
+                                    if (isNewer) {
+                                        Text(
+                                            text = "当前安装版本: v$currentVer",
+                                            fontSize = 12.sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+                            }
+                        },
+                        text = {
+                            Column(modifier = Modifier.fillMaxWidth()) {
+                                Text(
+                                    text = if (isNewer) "✨ 新版本更新内容：" else "✨ 本版更新日志：",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                Spacer(Modifier.height(8.dp))
+                                Surface(
+                                    shape = RoundedCornerShape(8.dp),
+                                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .heightIn(max = 240.dp)
+                                ) {
+                                    Column(
+                                        modifier = Modifier
+                                            .padding(12.dp)
+                                            .verticalScroll(rememberScrollState())
+                                    ) {
+                                        Text(
+                                            text = releaseInfo!!.releaseNotes.ifBlank { "包含多项性能优化与细节改进。" },
+                                            fontSize = 13.sp,
+                                            lineHeight = 20.sp,
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
+                                    }
+                                }
+                                if (isDownloading && downloadProgress != null) {
+                                    Spacer(Modifier.height(14.dp))
+                                    LinearProgressIndicator(progress = { downloadProgress!!.progress }, modifier = Modifier.fillMaxWidth())
+                                    Spacer(Modifier.height(6.dp))
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Text(
+                                            text = "${downloadProgress!!.downloadedBytes / 1024 / 1024}MB / ${downloadProgress!!.totalBytes / 1024 / 1024}MB",
+                                            fontSize = 12.sp,
+                                            color = Color.Gray
+                                        )
+                                        Text(
+                                            text = downloadProgress!!.formattedSpeed(),
+                                            fontSize = 12.sp,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                    }
                                 }
                             }
                         },
                         confirmButton = {
-                            if (!isDownloading) {
-                                Button(onClick = {
-                                    isDownloading = true
-                                    downloadJob = scope.launch {
-                                        val apkUrl = releaseInfo!!.apkDownloadUrl
-                                        if (!apkUrl.isNullOrEmpty()) {
-                                            val res = UpdateManager.downloadApk(context, apkUrl) { prog ->
-                                                downloadProgress = prog
-                                            }
-                                            if (res.isSuccess) {
-                                                isDownloading = false
-                                                showUpdateDialog = false
-                                                UpdateManager.installApk(context, res.getOrThrow())
+                            if (isNewer) {
+                                if (!isDownloading) {
+                                    Button(onClick = {
+                                        isDownloading = true
+                                        downloadJob = scope.launch {
+                                            val apkUrl = releaseInfo!!.apkDownloadUrl
+                                            if (!apkUrl.isNullOrEmpty()) {
+                                                val res = UpdateManager.downloadApk(context, apkUrl) { prog ->
+                                                    downloadProgress = prog
+                                                }
+                                                if (res.isSuccess) {
+                                                    isDownloading = false
+                                                    showUpdateDialog = false
+                                                    UpdateManager.installApk(context, res.getOrThrow())
+                                                } else {
+                                                    isDownloading = false
+                                                }
                                             } else {
                                                 isDownloading = false
                                             }
-                                        } else {
-                                            isDownloading = false
                                         }
+                                    }) {
+                                        Text("立即更新")
                                     }
-                                }) {
-                                    Text("立即更新")
+                                }
+                            } else {
+                                Button(onClick = { showUpdateDialog = false }) {
+                                    Text("好的")
                                 }
                             }
                         },
                         dismissButton = {
-                            if (!isDownloading) {
-                                TextButton(onClick = { showUpdateDialog = false }) {
-                                    Text("稍后再说", color = Color.Gray)
-                                }
-                            } else {
-                                TextButton(onClick = {
-                                    downloadJob?.cancel()
-                                    isDownloading = false
-                                }) {
-                                    Text("取消下载", color = Color.Red)
+                            if (isNewer) {
+                                if (!isDownloading) {
+                                    TextButton(onClick = { showUpdateDialog = false }) {
+                                        Text("稍后再说", color = Color.Gray)
+                                    }
+                                } else {
+                                    TextButton(onClick = {
+                                        downloadJob?.cancel()
+                                        isDownloading = false
+                                    }) {
+                                        Text("取消下载", color = Color.Red)
+                                    }
                                 }
                             }
                         }

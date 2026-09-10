@@ -140,11 +140,18 @@ object UpdateManager {
             // 必须既是更新的版本，且有 APK 下载链接才判定为有更新
             val hasUpdate = hasNewVersion && !apkUrl.isNullOrEmpty()
 
+            // 若更新日志为空或默认提示，尝试从 CDN / 仓库拉取详细更新说明
+            val finalBody = if (body.isBlank() || body.trim() == "暂无版本更新说明。") {
+                fetchChangelogNotes(cleanTag) ?: "包含多项性能优化与体验改进。"
+            } else {
+                body
+            }
+
             Result.success(
                 ReleaseInfo(
                     tagName = tagName,
                     versionName = cleanTag,
-                    releaseNotes = body,
+                    releaseNotes = finalBody,
                     apkDownloadUrl = apkUrl,
                     htmlUrl = htmlUrl,
                     hasUpdate = hasUpdate
@@ -153,6 +160,42 @@ object UpdateManager {
         } catch (e: Exception) {
             Result.failure(e)
         }
+    }
+
+    private fun fetchChangelogNotes(version: String): String? {
+        val clean = version.removePrefix("v").removePrefix("V")
+        val cdnUrls = listOf(
+            "https://fastly.jsdelivr.net/gh/Wyuio-0/DesktopPet@master/CHANGELOG.md",
+            "https://cdn.jsdelivr.net/gh/Wyuio-0/DesktopPet@master/CHANGELOG.md",
+            "https://raw.githubusercontent.com/Wyuio-0/DesktopPet/master/CHANGELOG.md"
+        )
+        for (u in cdnUrls) {
+            try {
+                val conn = (URL(u).openConnection() as HttpURLConnection).apply {
+                    connectTimeout = 4000
+                    readTimeout = 4000
+                    setRequestProperty("User-Agent", "Mozilla/5.0")
+                }
+                if (conn.responseCode == 200) {
+                    val raw = conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+                    val regex = Regex("""(?s)## \[(?:v)?${Regex.escape(clean)}\].*?(?=\n## \[|\z)""")
+                    val match = regex.find(raw)
+                    if (match != null) {
+                        val lines = match.value.trim().lines()
+                        val content = if (lines.size > 1) {
+                            lines.drop(1).joinToString("\n").trim()
+                        } else {
+                            match.value.trim()
+                        }
+                        if (content.isNotEmpty()) {
+                            return content
+                        }
+                    }
+                }
+            } catch (_: Exception) {
+            }
+        }
+        return null
     }
 
     suspend fun downloadApk(
