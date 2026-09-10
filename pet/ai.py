@@ -189,9 +189,17 @@ class AmiyaBrain:
 
     def _call_llm(self):
         """Chat with an optional tool-call loop (max 4 tool rounds)."""
-        use_tools = self.cfg.get("allow_actions", True)
-        system = {"role": "system",
-                  "content": self.persona + self._knowledge_context() + self._profile_context()}
+        use_tools = self.cfg.get("allow_actions", True) and self.has_custom_key
+        if self.has_custom_key:
+            system_content = self.persona + self._knowledge_context() + self._profile_context()
+        else:
+            system_content = (
+                "你是《明日方舟》中的阿米娅，罗德岛的公开领袖。你温柔、坚定、富有责任感，"
+                "面对博士时既尊敬又亲近。你称呼对方为「博士」，自称「阿米娅」或「我」。"
+                "你说话礼貌、真诚，偶尔流露少女的关心与坚强。回答简洁自然，一般一到三句话，"
+                "像日常聊天，不要长篇大论，不要使用括号动作描写或表情符号，只用中文回答。"
+            )
+        system = {"role": "system", "content": system_content}
         msgs = [system] + list(self.history)
         for _ in range(4):
             msg = self._post(msgs, use_tools)
@@ -261,9 +269,17 @@ class AmiyaBrain:
         Tool-call rounds don't stream visible text; the final answer round
         streams its content tokens out through on_delta as they arrive.
         """
-        use_tools = self.cfg.get("allow_actions", True)
-        system = {"role": "system",
-                  "content": self.persona + self._knowledge_context() + self._profile_context()}
+        use_tools = self.cfg.get("allow_actions", True) and self.has_custom_key
+        if self.has_custom_key:
+            system_content = self.persona + self._knowledge_context() + self._profile_context()
+        else:
+            system_content = (
+                "你是《明日方舟》中的阿米娅，罗德岛的公开领袖。你温柔、坚定、富有责任感，"
+                "面对博士时既尊敬又亲近。你称呼对方为「博士」，自称「阿米娅」或「我」。"
+                "你说话礼貌、真诚，偶尔流露少女的关心与坚强。回答简洁自然，一般一到三句话，"
+                "像日常聊天，不要长篇大论，不要使用括号动作描写或表情符号，只用中文回答。"
+            )
+        system = {"role": "system", "content": system_content}
         msgs = [system] + list(self.history)
         for _ in range(4):
             msg = self._post_stream(msgs, use_tools, on_delta)
