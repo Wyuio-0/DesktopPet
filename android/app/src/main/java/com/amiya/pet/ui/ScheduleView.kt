@@ -9,9 +9,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ChevronLeft
-import androidx.compose.material.icons.filled.ChevronRight
-import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -36,7 +34,9 @@ private val COURSE_COLORS = listOf(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ScheduleScreen() {
+fun ScheduleScreen(
+    onConsultAi: (String) -> Unit = {}
+) {
     val context = LocalContext.current
     var currentWeek by remember { mutableIntStateOf(ScheduleManager.getWeekNo() ?: 1) }
     var showImportDialog by remember { mutableStateOf(false) }
@@ -62,19 +62,68 @@ fun ScheduleScreen() {
                     Icon(Icons.Default.ChevronRight, "下一周", tint = MaterialTheme.colorScheme.onBackground)
                 }
             }
-            Button(
-                onClick = { showImportDialog = true },
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
-            ) {
-                Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(16.dp), tint = Color.Black)
-                Spacer(Modifier.width(4.dp))
-                Text("导入课表", color = Color.Black, fontWeight = FontWeight.Bold)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (ScheduleManager.courses.isNotEmpty()) {
+                    OutlinedButton(
+                        onClick = {
+                            onConsultAi("阿米娅，请结合我导入的课表数据，全面分析我的学习情况与课程负荷，并给出科学的学习与作息规划建议。")
+                        },
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.AutoAwesome,
+                            contentDescription = null,
+                            modifier = Modifier.size(15.dp),
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Text(
+                            text = "AI 学情分析",
+                            fontSize = 13.sp,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                    Spacer(Modifier.width(8.dp))
+                }
+                Button(
+                    onClick = { showImportDialog = true },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                ) {
+                    Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(16.dp), tint = Color.Black)
+                    Spacer(Modifier.width(4.dp))
+                    Text("导入课表", color = Color.Black, fontWeight = FontWeight.Bold)
+                }
             }
         }
 
         if (ScheduleManager.courses.isEmpty()) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text("暂无课表数据，请点击右上角导入", color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f))
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.padding(24.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.DateRange,
+                        contentDescription = null,
+                        tint = Color.Gray,
+                        modifier = Modifier.size(48.dp)
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    Text(
+                        text = "暂无课表数据，请点击右上角「导入课表」",
+                        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        text = "💡 导入后课表将自动同步给阿米娅，可一键获取全套学情负荷分析与自习作息建议",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.85f),
+                        textAlign = TextAlign.Center
+                    )
+                }
             }
         } else {
             TimetableGrid(currentWeek, refreshTrigger, { if (currentWeek > 1) currentWeek-- }, { currentWeek++ })
@@ -112,6 +161,21 @@ fun ScheduleScreen() {
                     if (resultMsg.isNotEmpty()) {
                         Spacer(Modifier.height(8.dp))
                         Text(resultMsg, color = if(resultMsg.contains("成功")) Color(0xFF4CAF50) else MaterialTheme.colorScheme.error, fontSize = 13.sp)
+                        if (resultMsg.contains("成功")) {
+                            Spacer(Modifier.height(10.dp))
+                            Button(
+                                onClick = {
+                                    showImportDialog = false
+                                    onConsultAi("阿米娅，我已经成功导入了新学期课表，请结合我的课表数据为我做一次全面的学情分析：包括课程负荷评估、每周节奏分析与自习备考作息建议！")
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                            ) {
+                                Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(16.dp), tint = Color.Black)
+                                Spacer(Modifier.width(6.dp))
+                                Text("立即让阿米娅分析课表 ✨", color = Color.Black, fontWeight = FontWeight.Bold)
+                            }
+                        }
                     }
                 }
             },

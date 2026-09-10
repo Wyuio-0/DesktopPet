@@ -127,6 +127,7 @@ class MainActivity : ComponentActivity() {
 
             AmiyaPetTheme(forceDark = themeOverride.value) {
                 var selectedTab by remember { mutableStateOf(MainTab.CHAT) }
+                var pendingChatPrompt by remember { mutableStateOf<String?>(null) }
 
                 Scaffold(
                     topBar = {
@@ -186,12 +187,19 @@ class MainActivity : ComponentActivity() {
                 ) { padding ->
                     Box(modifier = Modifier.padding(padding)) {
                         when (selectedTab) {
-                            MainTab.SCHEDULE -> ScheduleScreen()
+                            MainTab.SCHEDULE -> ScheduleScreen(
+                                onConsultAi = { prompt ->
+                                    pendingChatPrompt = prompt
+                                    selectedTab = MainTab.CHAT
+                                }
+                            )
                             MainTab.NOTES -> NotesScreen()
                             MainTab.CHAT -> ChatScreen(
                                 onCheckUpdate = { triggerCheckUpdate() },
                                 onToggleTheme = { toggleTheme() },
-                                isDark = isDark
+                                isDark = isDark,
+                                initialPrompt = pendingChatPrompt,
+                                onConsumeInitialPrompt = { pendingChatPrompt = null }
                             )
                             MainTab.FOCUS -> PomodoroScreen()
                         }

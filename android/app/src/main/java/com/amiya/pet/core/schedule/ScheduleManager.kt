@@ -281,6 +281,99 @@ object ScheduleManager {
         }
         return null
     }
+
+    /**
+     * 构建供 AI 对话系统提示词直接使用的学情与课表全景分析文本档案
+     */
+    fun buildScheduleAnalysisContext(context: Context? = null): String {
+        if (context != null && courses.isEmpty()) {
+            load(context)
+        }
+        if (courses.isEmpty()) {
+            return ""
+        }
+
+        val sb = StringBuilder()
+        sb.append("【博士已导入的真实课表与学情数据档案】：\n")
+
+        val now = Date()
+        val weekNo = getWeekNo(now) ?: 1
+        val cal = Calendar.getInstance()
+        cal.time = now
+        val todayIdx = cal.get(Calendar.DAY_OF_WEEK)
+        val todayWeekday = if (todayIdx == Calendar.SUNDAY) 7 else todayIdx - 1
+        val weekdayNames = arrayOf("", "周一", "周二", "周三", "周四", "周五", "周六", "周日")
+
+        sb.append("- 当前学期进度：第 $weekNo 周（今日是 ${weekdayNames.getOrElse(todayWeekday) { "周一" }}）\n")
+
+        // 1. 课程全景统计
+        val distinctCourses = courses.map { it.name }.distinct()
+        sb.append("- 修读科目清单（共 ${distinctCourses.size} 门）：${distinctCourses.joinToString("、")}\n")
+
+        // 2. 本周各日课程与负荷
+        sb.append("- 本周（第 $weekNo 周）各日排课与课时负荷：\n")
+        var totalWeekSessions = 0
+        val busyDays = mutableListOf<String>()
+        val freeDays = mutableListOf<String>()
+
+        for (w in 1..7) {
+            val dayCourses = getCoursesOn(w, weekNo)
+            var daySessions = 0
+            for (c in dayCourses) {
+                daySessions += (c.secEnd - c.secStart + 1)
+            }
+            totalWeekSessions += daySessions
+            val wName = weekdayNames[w]
+            if (dayCourses.isEmpty()) {
+                freeDays.add(wName)
+                sb.append("  * $wName：无课（全天空闲，建议规划自主复习、大作业攻坚或整理作息）\n")
+            } else {
+                if (daySessions >= 6) {
+                    busyDays.add("$wName($daySessions 节)")
+                }
+                val details = dayCourses.joinToString("；") { c ->
+                    val roomStr = if (c.room.isNotEmpty() && c.room != "待定") "@${c.room}" else ""
+                    val teacherStr = if (c.teacher.isNotEmpty()) "(${c.teacher})" else ""
+                    "${c.secStart}-${c.secEnd}节《${c.name}》$teacherStr$roomStr"
+                }
+                sb.append("  * $wName：共 $daySessions 节课 [ $details ]\n")
+            }
+        }
+        sb.append("- 本周总课时：共 $totalWeekSessions 节课。\n")
+        if (busyDays.isNotEmpty()) {
+            sb.append("- 高负荷繁忙日：${busyDays.joinToString("、")}（课时密集，需注意提前预习与课间精力恢复）\n")
+        }
+        if (freeDays.isNotEmpty()) {
+            sb.append("- 较空闲日：${freeDays.joinToString("、")}（拥有整块自主掌控时间，适合用于深入钻研核心科目或休整放松）\n")
+        }
+
+        // 3. 今日课程与下一门课
+        val todayCourses = getCoursesOn(todayWeekday, weekNo)
+        if (todayCourses.isNotEmpty()) {
+            val todayStr = todayCourses.joinToString("；") { c ->
+                val time = sections[c.secStart.toString()] ?: ""
+                val timeStr = if (time.isNotEmpty()) "($time)" else ""
+                "${c.secStart}-${c.secEnd}节$timeStr《${c.name}》@${c.room.ifEmpty { "待定" }}"
+            }
+            sb.append("- 今日（${weekdayNames.getOrElse(todayWeekday) { "" }}）课程安排：$todayStr\n")
+        } else {
+            sb.append("- 今日（${weekdayNames.getOrElse(todayWeekday) { "" }}）课程安排：今天没有排课，可自由安排学习或休息。\n")
+        }
+
+        val next = nextClass(now)
+        if (next != null) {
+            val timeFmt = SimpleDateFormat("HH:mm", Locale.getDefault()).format(next.startTime)
+            val dayStr = if (next.weekday == todayWeekday) "今天" else weekdayNames.getOrElse(next.weekday) { "" }
+            sb.append("- 下一节即将开始的课程：$dayStr $timeFmt ${next.course.secStart}-${next.course.secEnd}节《${next.course.name}》@${next.course.room.ifEmpty { "待定" }}\n")
+        }
+
+        // 4. 实训与网课/实验备忘
+        if (notes.isNotEmpty()) {
+            sb.append("- 实践与实训环节：${notes.joinToString("；")}\n")
+        }
+
+        return sb.toString().trim()
+    }
 }
 
 data class CourseInfo(

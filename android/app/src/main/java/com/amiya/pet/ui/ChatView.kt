@@ -4,10 +4,12 @@ import android.content.Context
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -34,6 +36,7 @@ import androidx.compose.ui.unit.sp
 import com.amiya.pet.R
 import com.amiya.pet.core.ai.AmiyaBrain
 import com.amiya.pet.core.ai.ChatMessage
+import com.amiya.pet.core.schedule.ScheduleManager
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -41,7 +44,9 @@ import kotlinx.coroutines.launch
 fun ChatScreen(
     onCheckUpdate: () -> Unit = {},
     onToggleTheme: () -> Unit = {},
-    isDark: Boolean = true
+    isDark: Boolean = true,
+    initialPrompt: String? = null,
+    onConsumeInitialPrompt: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -54,6 +59,16 @@ fun ChatScreen(
     var showSettingsDialog by remember { mutableStateOf(false) }
 
     val listState = rememberLazyListState()
+
+    LaunchedEffect(Unit) {
+        if (ScheduleManager.courses.isEmpty()) {
+            ScheduleManager.load(context)
+        }
+    }
+
+    val courseCount = remember(ScheduleManager.courses) {
+        ScheduleManager.courses.map { it.name }.distinct().size
+    }
 
     fun sendMessage(msg: String) {
         val trimmed = msg.trim()
@@ -100,6 +115,13 @@ fun ChatScreen(
             if (chatList.isNotEmpty()) {
                 listState.animateScrollToItem(chatList.size - 1)
             }
+        }
+    }
+
+    LaunchedEffect(initialPrompt) {
+        if (!initialPrompt.isNullOrBlank()) {
+            sendMessage(initialPrompt)
+            onConsumeInitialPrompt()
         }
     }
 
@@ -162,6 +184,35 @@ fun ChatScreen(
                         Icon(Icons.Default.ChatBubbleOutline, null, tint = Color.Gray, modifier = Modifier.size(48.dp))
                         Spacer(modifier = Modifier.height(12.dp))
                         Text("随时准备听您诉说。", color = MaterialTheme.colorScheme.onSurface, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+                        if (courseCount > 0) {
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                                modifier = Modifier.clickable {
+                                    sendMessage("阿米娅，请结合我导入的课表数据，全面分析我的学习情况与课程负荷，并给出科学的学习与作息规划建议。")
+                                }
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.AutoAwesome,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = "已同步博士课表（共 $courseCount 门）· 点击让阿米娅分析学情",
+                                        fontSize = 12.sp,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                }
+                            }
+                        }
                     }
                 } else {
                     LazyColumn(
@@ -181,12 +232,23 @@ fun ChatScreen(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
                     .padding(horizontal = 12.dp, vertical = 4.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                QuickPromptChip("辛苦了", { sendMessage("辛苦了") })
-                QuickPromptChip("帮我提个建议", { sendMessage("帮我提个建议") })
-                QuickPromptChip("有什么安排？", { sendMessage("有什么安排？") })
+                if (courseCount > 0) {
+                    QuickPromptChip("📊 课表学情分析", {
+                        sendMessage("阿米娅，请结合我导入的课表数据，全面分析我的学习负荷与课程节奏，并给出科学的自习与作息规划建议。")
+                    })
+                    QuickPromptChip("📅 今天有什么课", {
+                        sendMessage("阿米娅，我今天有什么课程安排？下一节课是什么？")
+                    })
+                    QuickPromptChip("💡 学习作息建议", {
+                        sendMessage("根据我这周的课程密度与空闲时段，建议我在什么时候安排自习和备考比较好？")
+                    })
+                }
+                QuickPromptChip("☕ 辛苦了", { sendMessage("辛苦了，阿米娅。") })
+                QuickPromptChip("有什么安排？", { sendMessage("阿米娅，今天有什么需要注意的安排吗？") })
             }
 
             // Input

@@ -673,12 +673,64 @@ def _week_active_text(sched, week_no):
     return "\n".join(lines)
 
 
+def _full_schedule_analysis(sched, week_no):
+    """生成完整学情分析数据（总课程数、各日课时负荷、密集日与空闲日、今日安排、实验与实训）。"""
+    eff = week_no if week_no and week_no >= 1 else 1
+    days = ["", "周一", "周二", "周三", "周四", "周五", "周六", "周日"]
+    distinct_courses = sorted({c.name for c in sched.courses})
+    lines = [
+        "【博士课表全量与学情数据】",
+        "当前学期进度：第 %d 周" % eff,
+        "课程总数：共 %d 门不同课程（%s）" % (len(distinct_courses), "、".join(distinct_courses)),
+        "本周各日课时分布与负荷："
+    ]
+    total_periods = 0
+    busy_days = []
+    free_days = []
+    for wd in range(1, 8):
+        courses = [c for c in sched.courses_on(wd, None) if c.active_on(eff)]
+        periods = sum(c.sec_end - c.sec_start + 1 for c in courses)
+        total_periods += periods
+        w_name = days[wd]
+        if not courses:
+            free_days.append(w_name)
+            lines.append("  %s：无课（全天空闲，建议安排自主复习与整理）" % w_name)
+        else:
+            if periods >= 6:
+                busy_days.append("%s(%d节)" % (w_name, periods))
+            detail = "；".join(c.display(sched.sections) for c in courses)
+            lines.append("  %s：共 %d 节课（%s）" % (w_name, periods, detail))
+    lines.append("本周总课时：共 %d 节。" % total_periods)
+    if busy_days:
+        lines.append("高负荷密集日：%s（课时集中，需注意劳逸结合与课前预习）" % "、".join(busy_days))
+    if free_days:
+        lines.append("空闲整块自习日：%s（有充裕自主复习与备考时间）" % "、".join(free_days))
+    today_c = sched.today(eff)
+    today_wd = datetime.now().isoweekday()
+    lines.append("今日（%s）课程：%s" % (
+        days[today_wd],
+        "；".join(c.display(sched.sections) for c in today_c) if today_c else "今天没有排课"
+    ))
+    nxt = sched.next_class()
+    if nxt:
+        c, _, _, start = nxt
+        where = " @%s" % c.room if c.room else ""
+        lines.append("下一节课：%s %s %d-%d节%s" % (
+            c.name, start.strftime("%H:%M"), c.sec_start, c.sec_end, where
+        ))
+    if sched.notes:
+        lines.append("实践/网课说明：" + "；".join(sched.notes))
+    return "\n".join(lines)
+
+
 def query_schedule(scope="today"):
-    """查课表：scope ∈ today / tomorrow / week / next。"""
+    """查课表：scope ∈ today / tomorrow / week / next / analyze / all。"""
     sched = _schedule_provider() if _schedule_provider else None
     if sched is None or not sched.courses:
         return "还没有导入课表，请右键菜单 → 课程表 → 导入课表。"
     week_no = sched.week_no()
+    if scope in ("all", "analyze", "analysis", "summary"):
+        return _full_schedule_analysis(sched, week_no)
     if scope == "week":
         return _week_active_text(sched, week_no)
     if scope == "tomorrow":
@@ -1022,10 +1074,10 @@ TOOLS = [
          "delay_seconds": {"type": "number", "description": "多少秒后提醒（可与分钟叠加）"},
          "message": {"type": "string", "description": "提醒内容，如「该休息了」「开会」"}},
         []),
-    _fn("query_schedule", "查询课表（今天的课/明天的课/本周课表/下一节课）",
+    _fn("query_schedule", "查询课表（今天的课/明天的课/本周课表/下一节课/全量学情分析与课表规划）",
         {"scope": {"type": "string",
-                   "enum": ["today", "tomorrow", "week", "next"],
-                   "description": "today=今天, tomorrow=明天, week=本周, next=下一节课"}},
+                   "enum": ["today", "tomorrow", "week", "next", "analyze", "all"],
+                   "description": "today=今天, tomorrow=明天, week=本周, next=下一节课, analyze=全量学情负荷分析与作息规划建议"}},
         []),
     _fn("query_tasks", "查询未完成的作业/考试及剩余时间"),
     _fn("add_task", "添加一个作业或考试的截止提醒（待办）",

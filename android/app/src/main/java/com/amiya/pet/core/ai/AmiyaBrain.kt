@@ -1,6 +1,7 @@
 package com.amiya.pet.core.ai
 
 import android.content.Context
+import com.amiya.pet.core.schedule.ScheduleManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -8,6 +9,9 @@ import org.json.JSONObject
 import java.io.OutputStreamWriter
 import java.net.HttpURLConnection
 import java.net.URL
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 data class ChatMessage(
     val role: String,
@@ -41,12 +45,30 @@ class AmiyaBrain private constructor(private val context: Context) {
         get() = prefs.getString("public_relay_url", DEFAULT_PUBLIC_RELAY_URL) ?: DEFAULT_PUBLIC_RELAY_URL
         set(value) = prefs.edit().putString("public_relay_url", value.trim()).apply()
 
-    private val persona = (
-        "你是《明日方舟》中的阿米娅，罗德岛的公开领袖。你温柔、坚定、富有责任感，" +
-        "面对博士时既尊敬又亲近。你称呼对方为「博士」，自称「阿米娅」或「我」。" +
-        "你说话礼貌、真诚，偶尔流露少女的关心与坚强。回答简洁自然，一般一到三句话，" +
-        "像日常手机聊天，不要长篇大论，不要使用括号动作描写或表情符号，只用中文回答。"
-    )
+    private fun buildSystemPrompt(): String = buildString {
+        append(
+            "你是《明日方舟》中的阿米娅，罗德岛的公开领袖。你温柔、坚定、富有责任感，" +
+            "面对博士时既尊敬又亲近。你称呼对方为「博士」，自称「阿米娅」或「我」。" +
+            "你说话礼貌、真诚，偶尔流露少女的关心与坚强。不要使用括号动作描写或表情符号，只用中文回答。\n" +
+            "【表达规范】：日常闲聊与日常互动时回答简洁自然（一般一到三句话），像日常手机聊天；但当博士询问学情分析、课表建议、复习备考或作息规划等需要深度指导的问题时，请条理清晰、层次分明地展开专业分析并给出切实可行的规划与关怀建议。"
+        )
+
+        // 现实时间感知
+        val sdf = SimpleDateFormat("yyyy-MM-dd EEEE HH:mm", Locale.CHINESE)
+        append("\n\n【当前现实时间】：").append(sdf.format(Date()))
+
+        // 课表与学情真实数据注入
+        val scheduleDossier = ScheduleManager.buildScheduleAnalysisContext(context)
+        if (scheduleDossier.isNotEmpty()) {
+            append("\n\n").append(scheduleDossier).append("\n\n")
+            append(
+                "【学情分析与学业指导规范】：\n" +
+                "1. 博士已将其在教务系统导入的真实课表数据同步至罗德岛 PRTS 神经元。当博士询问今天/明天/本周的课程、课表概况、学情分析或学习作息建议时，必须严格基于上述真实课表数据回答；\n" +
+                "2. 做学情分析时，请评估整体学业负荷（总课时与修读门数），分析课程节奏（指出高负荷密集日与空闲自习日），指出重难点学科的复习时间窗口，并从作息调理与罗德岛领袖的关怀角度给出切实可行的 3~4 条建议；\n" +
+                "3. 若博士询问某具体课程的时间地点或下一节课，请准确告知节次、时间与教学楼/教室。"
+            )
+        }
+    }
 
     private val fallbackReplies = listOf(
         "博士，您辛苦了。有什么需要阿米娅协助的吗？",
@@ -124,10 +146,10 @@ class AmiyaBrain private constructor(private val context: Context) {
                 put("temperature", 0.75)
                 put("stream", true)
                 val messages = JSONArray()
-                // System Persona
+                // System Persona & Real-time Knowledge
                 messages.put(JSONObject().apply {
                     put("role", "system")
-                    put("content", persona)
+                    put("content", buildSystemPrompt())
                 })
                 // 最近 8 轮历史（仅发送最终文本，不包含 CoT 思考过程避免 prompt 污染）
                 val recent = history.takeLast(16)
