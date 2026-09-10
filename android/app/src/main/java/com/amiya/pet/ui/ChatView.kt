@@ -1,5 +1,6 @@
 package com.amiya.pet.ui
 
+import android.content.Context
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -45,6 +46,8 @@ fun ChatScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val brain = remember { AmiyaBrain.getInstance(context) }
+    val prefs = remember { context.getSharedPreferences("amiya_pet_prefs", Context.MODE_PRIVATE) }
+    var showGuideDialog by remember { mutableStateOf(!prefs.getBoolean("has_seen_guide_v1", false)) }
     var chatList by remember { mutableStateOf(brain.chatHistory) }
     var inputText by remember { mutableStateOf("") }
     var isSending by remember { mutableStateOf(false) }
@@ -76,6 +79,13 @@ fun ChatScreen(
                     }
                 },
                 actions = {
+                    IconButton(onClick = { showGuideDialog = true }) {
+                        Icon(
+                            imageVector = Icons.Default.Campaign,
+                            contentDescription = "公告与使用指南",
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
                     IconButton(onClick = {
                         brain.clearHistory()
                         chatList = emptyList()
@@ -260,6 +270,15 @@ fun ChatScreen(
                 }
             },
             dismissButton = { TextButton(onClick = { showSettingsDialog = false }) { Text("取消", color = Color.Gray) } }
+        )
+    }
+
+    if (showGuideDialog) {
+        UserGuideDialog(
+            onDismiss = {
+                prefs.edit().putBoolean("has_seen_guide_v1", true).apply()
+                showGuideDialog = false
+            }
         )
     }
 }
