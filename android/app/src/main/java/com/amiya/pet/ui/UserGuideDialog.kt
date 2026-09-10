@@ -129,15 +129,15 @@ fun UserGuideDialog(onDismiss: () -> Unit) {
                         )
                     }
 
-                    // Section 2: 课表自行导入教程
+                    // Section 2: 课表抓包与自行导入保姆级教程
                     GuideSectionCard(
                         icon = Icons.Default.CalendarMonth,
                         iconColor = Color(0xFF0284C7),
-                        title = "2. 智能课表管理与自行导入教程",
-                        tag = "教务导入"
+                        title = "2. 课表抓包导入保姆级教程（F12抓包）",
+                        tag = "强智/高校教务"
                     ) {
                         Text(
-                            text = "课表系统能够自动根据当前开学周次计算今日课程，并在上课前通过前台服务发送提醒通知，支持左右滑动切换周次。",
+                            text = "阿米娅课表支持自动计算当前周次课程与课前 10 分钟自动提醒。只需按以下 5 步从电脑教务系统抓取一次数据导入即可永久使用：",
                             fontSize = 12.sp,
                             lineHeight = 18.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -145,19 +145,29 @@ fun UserGuideDialog(onDismiss: () -> Unit) {
                         Spacer(modifier = Modifier.height(8.dp))
 
                         GuideStepItem(
-                            step = "A",
-                            title = "进入课表导入面板",
-                            desc = "点击底部导航栏第二个标签「课表」，点击右上角带有下载图标的「导入课表」按钮。"
+                            step = "1",
+                            title = "电脑登录教务系统进入课表",
+                            desc = "在电脑浏览器（推荐 Edge/Chrome）登录学校教务系统，点击进入「个人课表查询」或「学生课表」页面，选好当前学年与学期（如 2026-2027-1），此时先不要点查询。"
                         )
                         GuideStepItem(
-                            step = "B",
-                            title = "粘贴教务 JSON 数据与开学日期",
-                            desc = "在上方文本框粘贴强智等教务系统抓包所得的课表 JSON 数据，并在下方输入「开学第一周周一」日期（格式为 YYYY-MM-DD，如 2026-09-01）。"
+                            step = "2",
+                            title = "按 F12 打开开发者工具",
+                            desc = "在课表页面按键盘 F12 键（部分笔记本按 Fn+F12，或鼠标右键网页空白处选择「检查」）。在弹出的控制台顶部，切换到「Network / 网络」标签栏。"
                         )
                         GuideStepItem(
-                            step = "C",
-                            title = "解析与日常查看",
-                            desc = "点击「开始导入」，应用会自动解析课程名、教室、周次与节次。点击课表左侧节次数字可切换上下课具体作息时间显示。"
+                            step = "3",
+                            title = "点击查询，筛选特殊请求与特征值",
+                            desc = "保持 F12 网络面板开启，在网页上点击「查询」按钮触发加载。在 Network 顶部的搜索筛选框（Filter）中输入关键字：xskbcx 或 kbList。请求列表中会出现名为 xskbcx_cxXsksxxlist（或包含 kbcx）的网络请求。"
+                        )
+                        GuideStepItem(
+                            step = "4",
+                            title = "核对特殊值并完整复制 Response",
+                            desc = "点击该请求，在右侧面板切到「Response / 响应」（或 Preview / 预览）。核对内容必须包含 \"kbList\"、\"kcmc\"（课程名）、\"cdmc\"（教室）、\"zcd\"（周次）等特殊特征值。在响应内容区域右键点击「Copy response（复制响应内容）」或全选复制完整 JSON 数据（以 { 开头、以 } 结尾），通过微信传输助手/QQ发到手机。"
+                        )
+                        GuideStepItem(
+                            step = "5",
+                            title = "手机 App 一键导入与周次绑定",
+                            desc = "打开本 App 底部「课表」➔ 点击右上角「导入课表」➔ 将复制的 JSON 文本完整粘贴至上方输入框 ➔ 在下方准确输入「开学第 1 周周一」日期（如 2026-09-07，周次计算基准）➔ 点击「开始导入」即可！"
                         )
                     }
 
