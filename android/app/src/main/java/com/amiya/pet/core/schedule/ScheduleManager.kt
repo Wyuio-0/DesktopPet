@@ -12,8 +12,8 @@ object ScheduleManager {
 
     private val defaultSections = mapOf(
         "1" to "08:00", "2" to "08:50", "3" to "09:50", "4" to "10:40", "5" to "11:30",
-        "6" to "14:05", "7" to "14:55", "8" to "15:45", "9" to "16:35",
-        "10" to "18:30", "11" to "19:20", "12" to "20:10", "13" to "21:00"
+        "6" to "14:05", "7" to "14:55", "8" to "15:45", "9" to "16:40",
+        "10" to "17:30", "11" to "19:20", "12" to "20:10", "13" to "21:00"
     )
 
     var termStart: Date? = null
@@ -41,13 +41,19 @@ object ScheduleManager {
 
             val secObj = data.optJSONObject("sections")
             if (secObj != null) {
-                val map = mutableMapOf<String, String>()
+                val map = defaultSections.toMutableMap()
                 for (key in secObj.keys()) {
                     map[key] = secObj.getString(key)
                 }
-                if (map.isNotEmpty()) {
-                    sections = map
+                if (map["9"] in listOf("16:30", "16:35")) {
+                    map["9"] = "16:40"
                 }
+                if (map["10"] == "18:30") {
+                    map["10"] = "17:30"
+                }
+                sections = map
+            } else {
+                sections = defaultSections.toMap()
             }
 
             remindMinutes = data.optInt("remind_minutes", 10)

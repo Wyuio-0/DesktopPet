@@ -29,8 +29,8 @@ from .settings import config_dir
 # 常见作息（仅作默认展示，具体以 schedule.json 的 sections 为准）。
 DEFAULT_SECTIONS = {
     "1": "08:00", "2": "08:50", "3": "09:50", "4": "10:40", "5": "11:30",
-    "6": "14:05", "7": "14:55", "8": "15:45", "9": "16:35",
-    "10": "18:30", "11": "19:20", "12": "20:10", "13": "21:00",
+    "6": "14:05", "7": "14:55", "8": "15:45", "9": "16:40",
+    "10": "17:30", "11": "19:20", "12": "20:10", "13": "21:00",
 }
 WEEKDAY_NAMES = {1: "周一", 2: "周二", 3: "周三", 4: "周四",
                  5: "周五", 6: "周六", 7: "周日"}
@@ -223,7 +223,13 @@ class Schedule:
         except Exception:
             self.term_start = None
         sections = data.get("sections") or {}
-        self.sections = {str(k): str(v) for k, v in sections.items()}
+        sec_map = dict(DEFAULT_SECTIONS)
+        sec_map.update({str(k): str(v) for k, v in sections.items()})
+        if sec_map.get("9") in ("16:30", "16:35"):
+            sec_map["9"] = "16:40"
+        if sec_map.get("10") == "18:30":
+            sec_map["10"] = "17:30"
+        self.sections = sec_map
         self.remind_minutes = max(1, int(data.get("remind_minutes", 10) or 10))
         self.courses = []
         for c in data.get("courses", []):

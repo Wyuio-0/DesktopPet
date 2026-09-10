@@ -95,8 +95,28 @@ object PomodoroTimer {
         }
     }
 
-    fun reset() {
+    fun setDuration(mode: PomodoroMode, minutes: Int) {
+        if (_status.value.state == PomodoroState.RUNNING) return
         handler.removeCallbacks(tickRunnable)
-        _status.value = PomodoroStatus()
+        val sec = minutes * 60
+        _status.value = PomodoroStatus(
+            state = PomodoroState.IDLE,
+            mode = mode,
+            remainingSeconds = sec,
+            totalSeconds = sec
+        )
+    }
+
+    fun reset(customMinutes: Int? = null) {
+        handler.removeCallbacks(tickRunnable)
+        val currentMode = _status.value.mode
+        val mins = customMinutes ?: if (currentMode == PomodoroMode.WORK) 25 else 5
+        val sec = mins * 60
+        _status.value = PomodoroStatus(
+            state = PomodoroState.IDLE,
+            mode = currentMode,
+            remainingSeconds = sec,
+            totalSeconds = sec
+        )
     }
 }
