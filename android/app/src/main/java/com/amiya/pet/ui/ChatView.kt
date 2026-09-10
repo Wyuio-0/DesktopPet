@@ -60,9 +60,42 @@ fun ChatScreen(
         if (trimmed.isEmpty() || isSending) return
         inputText = ""
         isSending = true
+
+        val userMsg = ChatMessage("user", trimmed)
+        val assistantPlaceholder = ChatMessage(
+            role = "assistant",
+            content = "",
+            reasoningContent = "",
+            isThinking = false,
+            isStreaming = true
+        )
+        chatList = chatList + userMsg + assistantPlaceholder
+
         scope.launch {
-            val reply = brain.sendMessage(trimmed)
-            chatList = brain.chatHistory
+            if (chatList.isNotEmpty()) {
+                listState.animateScrollToItem(chatList.size - 1)
+            }
+            brain.sendMessageStream(trimmed) { reasoning, content, isThinking ->
+                val current = chatList
+                if (current.isNotEmpty() && current.last().role == "assistant") {
+                    val updated = current.last().copy(
+                        reasoningContent = reasoning,
+                        content = content,
+                        isThinking = isThinking,
+                        isStreaming = true
+                    )
+                    chatList = current.dropLast(1) + updated
+                }
+            }
+            // 流式结束，更新状态
+            val current = chatList
+            if (current.isNotEmpty() && current.last().role == "assistant") {
+                val updated = current.last().copy(
+                    isThinking = false,
+                    isStreaming = false
+                )
+                chatList = current.dropLast(1) + updated
+            }
             isSending = false
             if (chatList.isNotEmpty()) {
                 listState.animateScrollToItem(chatList.size - 1)
@@ -245,7 +278,7 @@ fun ChatScreen(
                     )
 
                     Text(
-                        text = "💡 提示：无需配置 Key 即可直接与阿米娅 AI 对话（默认使用公共免费线路）；离线状态将自动切换为原声陪伴台词。",
+                        text = "💡 提示：无需配置 Key 即可直接与阿米娅 AI 对话（默认使用公共免费线路）；支持自定义接入 DeepSeek-R1 / OpenAI 等推理模型，流式展现深度思考过程；离线状态将自动切换为原声陪伴台词。",
                         fontSize = 11.sp,
                         lineHeight = 15.sp,
                         color = MaterialTheme.colorScheme.primary.copy(alpha = 0.85f)
@@ -429,7 +462,7 @@ fun ChatBubbleItem(message: ChatMessage, isDark: Boolean = true) {
             // 45° 切角战术气泡实体
             Box(
                 modifier = Modifier
-                    .widthIn(max = 265.dp)
+                    .widthIn(max = 280.dp)
                     .clip(TacticalBubbleShape(chamferDp = 10f, isUser = isUser))
                     .background(bubbleBg)
                     .drawBehind {
@@ -458,12 +491,113 @@ fun ChatBubbleItem(message: ChatMessage, isDark: Boolean = true) {
                         bottom = 9.dp
                     )
             ) {
-                Text(
-                    text = message.content,
-                    fontSize = 14.sp,
-                    lineHeight = 20.sp,
-                    color = bubbleText
-                )
+                Column {
+                    if (!isUser) {
+                        val hasReasoning = message.reasoningContent.isNotEmpty()
+                        val isCurrentlyThinking = message.isStreaming && message.isThinking
+
+                        // 深度思考 (Reasoning / CoT) 折叠卡片
+                        if (hasReasoning || isCurrentlyThinking) {
+                            var isExpanded by remember { mutableStateOf(message.isStreaming) }
+                            val thinkingBg = if (isDark) Color(0xFF0F141C) else Color(0xFFF1F5F9)
+                            val thinkingBorder = if (isDark) Color(0xFF1E293B) else Color(0xFFE2E8F0)
+                            val thinkingTextColor = if (isDark) Color(0xFF94A3B8) else Color(0xFF475569)
+
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(thinkingBg)
+                                    .clickable { isExpanded = !isExpanded }
+                                    .padding(horizontal = 8.dp, vertical = 6.dp)
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.AutoAwesome,
+                                        contentDescription = null,
+                                        tint = bubbleAccent,
+                                        modifier = Modifier.size(13.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(
+                                        text = if (isCurrentlyThinking) "阿米娅正在深度思考..." else "思考过程",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        fontFamily = FontFamily.Monospace,
+                                        color = bubbleAccent
+                                    )
+                                    Spacer(modifier = Modifier.weight(1f))
+                                    if (isCurrentlyThinking) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(10.dp),
+                                            strokeWidth = 1.5.dp,
+                                            color = bubbleAccent
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                    }
+                                    Icon(
+                                        imageVector = if (isExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                                        contentDescription = if (isExpanded) "折叠" else "展开",
+                                        tint = thinkingTextColor,
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                }
+
+                                if (isExpanded) {
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    HorizontalDivider(
+                                        color = thinkingBorder,
+                                        thickness = 0.5.dp
+                                    )
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        text = if (message.reasoningContent.isNotEmpty()) {
+                                            message.reasoningContent + if (isCurrentlyThinking) " ▌" else ""
+                                        } else {
+                                            "正在梳理战术逻辑与数据链路..."
+                                        },
+                                        fontSize = 11.sp,
+                                        lineHeight = 16.sp,
+                                        fontFamily = FontFamily.Monospace,
+                                        color = thinkingTextColor
+                                    )
+                                }
+                            }
+
+                            if (message.content.isNotEmpty() || (!isCurrentlyThinking && message.isStreaming)) {
+                                Spacer(modifier = Modifier.height(8.dp))
+                            }
+                        }
+
+                        // 回复正文（支持流式光标 ▌）
+                        if (message.content.isNotEmpty()) {
+                            Text(
+                                text = message.content + if (message.isStreaming && !message.isThinking) " ▌" else "",
+                                fontSize = 14.sp,
+                                lineHeight = 20.sp,
+                                color = bubbleText
+                            )
+                        } else if (message.isStreaming && !message.isThinking) {
+                            Text(
+                                text = "阿米娅正在组织语言 ▌",
+                                fontSize = 13.sp,
+                                lineHeight = 18.sp,
+                                color = bubbleText.copy(alpha = 0.7f),
+                                fontFamily = FontFamily.Monospace
+                            )
+                        }
+                    } else {
+                        Text(
+                            text = message.content,
+                            fontSize = 14.sp,
+                            lineHeight = 20.sp,
+                            color = bubbleText
+                        )
+                    }
+                }
             }
         }
 

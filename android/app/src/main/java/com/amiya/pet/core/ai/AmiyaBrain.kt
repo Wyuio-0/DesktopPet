@@ -12,6 +12,9 @@ import java.net.URL
 data class ChatMessage(
     val role: String,
     val content: String,
+    val reasoningContent: String = "",
+    val isThinking: Boolean = false,
+    val isStreaming: Boolean = false,
     val timestamp: Long = System.currentTimeMillis()
 )
 
@@ -62,7 +65,14 @@ class AmiyaBrain private constructor(private val context: Context) {
         history.clear()
     }
 
-    suspend fun sendMessage(userText: String): String = withContext(Dispatchers.IO) {
+    suspend fun sendMessage(userText: String): String {
+        return sendMessageStream(userText) { _, _, _ -> }
+    }
+
+    suspend fun sendMessageStream(
+        userText: String,
+        onUpdate: (reasoning: String, content: String, isThinking: Boolean) -> Unit
+    ): String = withContext(Dispatchers.IO) {
         val trimmed = userText.trim()
         if (trimmed.isEmpty()) return@withContext ""
 
@@ -98,10 +108,11 @@ class AmiyaBrain private constructor(private val context: Context) {
             val url = URL(endpoint)
             val conn = (url.openConnection() as HttpURLConnection).apply {
                 requestMethod = "POST"
-                connectTimeout = 12000
-                readTimeout = 20000
+                connectTimeout = 15000
+                readTimeout = 60000 // 流式传输支持最长 60s 响应读取
                 doOutput = true
                 setRequestProperty("Content-Type", "application/json; charset=utf-8")
+                setRequestProperty("Accept", "text/event-stream")
                 if (authHeader != null) {
                     setRequestProperty("Authorization", authHeader)
                 }
@@ -111,19 +122,22 @@ class AmiyaBrain private constructor(private val context: Context) {
             val reqBody = JSONObject().apply {
                 put("model", targetModel)
                 put("temperature", 0.75)
+                put("stream", true)
                 val messages = JSONArray()
                 // System Persona
                 messages.put(JSONObject().apply {
                     put("role", "system")
                     put("content", persona)
                 })
-                // 最近 8 轮历史
+                // 最近 8 轮历史（仅发送最终文本，不包含 CoT 思考过程避免 prompt 污染）
                 val recent = history.takeLast(16)
                 for (msg in recent) {
-                    messages.put(JSONObject().apply {
-                        put("role", msg.role)
-                        put("content", msg.content)
-                    })
+                    if (msg.content.isNotBlank()) {
+                        messages.put(JSONObject().apply {
+                            put("role", msg.role)
+                            put("content", msg.content)
+                        })
+                    }
                 }
                 put("messages", messages)
             }
@@ -134,15 +148,84 @@ class AmiyaBrain private constructor(private val context: Context) {
             }
 
             if (conn.responseCode in 200..299) {
-                val respStr = conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
-                val respJson = JSONObject(respStr)
-                val choices = respJson.optJSONArray("choices")
-                if (choices != null && choices.length() > 0) {
-                    val choice = choices.getJSONObject(0)
-                    val reply = choice.optJSONObject("message")?.optString("content")?.trim() ?: "博士，阿米娅在听呢。"
-                    history.add(ChatMessage("assistant", reply))
-                    return@withContext reply
+                val reader = conn.inputStream.bufferedReader(Charsets.UTF_8)
+                val accumulatedReasoning = StringBuilder()
+                val accumulatedContent = StringBuilder()
+                var inThinkTag = false
+                var isThinking = false
+
+                var line = reader.readLine()
+                while (line != null) {
+                    val trimmedLine = line.trim()
+                    if (trimmedLine.startsWith("data:")) {
+                        val data = trimmedLine.removePrefix("data:").trim()
+                        if (data == "[DONE]") {
+                            break
+                        }
+                        if (data.isNotEmpty()) {
+                            try {
+                                val json = JSONObject(data)
+                                val choices = json.optJSONArray("choices")
+                                if (choices != null && choices.length() > 0) {
+                                    val delta = choices.getJSONObject(0).optJSONObject("delta")
+                                    if (delta != null) {
+                                        // 1. 检查 reasoning_content 字段 (DeepSeek-R1 / SiliconFlow / OpenAI 官方标准)
+                                        val reasoningChunk = delta.optString("reasoning_content", "")
+                                        if (reasoningChunk.isNotEmpty()) {
+                                            accumulatedReasoning.append(reasoningChunk)
+                                            isThinking = true
+                                            onUpdate(accumulatedReasoning.toString(), accumulatedContent.toString(), true)
+                                        }
+
+                                        // 2. 检查 content 字段
+                                        val contentChunk = delta.optString("content", "")
+                                        if (contentChunk.isNotEmpty()) {
+                                            // 解析可能包含在 content 中的 <think> ... </think> 标签（兼容直接返回 think 标签的开源模型）
+                                            var remaining = contentChunk
+                                            while (remaining.isNotEmpty()) {
+                                                if (!inThinkTag) {
+                                                    val thinkStart = remaining.indexOf("<think>")
+                                                    if (thinkStart != -1) {
+                                                        accumulatedContent.append(remaining.substring(0, thinkStart))
+                                                        inThinkTag = true
+                                                        isThinking = true
+                                                        remaining = remaining.substring(thinkStart + "<think>".length)
+                                                    } else {
+                                                        accumulatedContent.append(remaining)
+                                                        isThinking = false
+                                                        remaining = ""
+                                                    }
+                                                } else {
+                                                    val thinkEnd = remaining.indexOf("</think>")
+                                                    if (thinkEnd != -1) {
+                                                        accumulatedReasoning.append(remaining.substring(0, thinkEnd))
+                                                        inThinkTag = false
+                                                        isThinking = false
+                                                        remaining = remaining.substring(thinkEnd + "</think>".length)
+                                                    } else {
+                                                        accumulatedReasoning.append(remaining)
+                                                        isThinking = true
+                                                        remaining = ""
+                                                    }
+                                                }
+                                            }
+                                            onUpdate(accumulatedReasoning.toString(), accumulatedContent.toString(), isThinking)
+                                        }
+                                    }
+                                }
+                            } catch (ignored: Exception) {
+                            }
+                        }
+                    }
+                    line = reader.readLine()
                 }
+
+                val finalReasoning = accumulatedReasoning.toString().trim()
+                val finalContent = accumulatedContent.toString().trim()
+                val finalReply = if (finalContent.isNotEmpty()) finalContent else if (finalReasoning.isNotEmpty()) "（思考完毕）" else "博士，阿米娅在听呢。"
+
+                history.add(ChatMessage("assistant", finalReply, reasoningContent = finalReasoning))
+                return@withContext finalReply
             }
 
             // 响应非 200 时：自定义 Key 提示配置，公共免 Key 则无缝降级为温馨陪伴台词
@@ -152,6 +235,7 @@ class AmiyaBrain private constructor(private val context: Context) {
                 fallbackReplies.random()
             }
             history.add(ChatMessage("assistant", reply))
+            onUpdate("", reply, false)
             reply
         } catch (e: Exception) {
             val reply = if (isCustomKey) {
@@ -160,6 +244,7 @@ class AmiyaBrain private constructor(private val context: Context) {
                 fallbackReplies.random()
             }
             history.add(ChatMessage("assistant", reply))
+            onUpdate("", reply, false)
             reply
         }
     }
