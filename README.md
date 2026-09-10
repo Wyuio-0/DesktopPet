@@ -94,9 +94,14 @@ powershell -ExecutionPolicy Bypass -File build.ps1
 
 ## 🤖 AI 对话
 
-### 配置 API Key
+### 💡 开箱即用（免 Key 体验）
 
-编辑 `characters/<角色>/ai_config.json`，填入 API key：
+应用已支持**公共免费 AI 线路**：**无需注册或填写任何 API Key**，即可直接与阿米娅进行自然的日常 AI 智能对话；离线或网络受阻时自动无缝降级为温馨原声台词。
+如需自建专属免费免 Key 中转网关，详见 [`server/README.md`](server/README.md)。
+
+### 自定义专属 API Key（进阶可选）
+
+若您拥有自己的大模型专属 Key（如 DeepSeek 等），可在设置中配置以优先使用您的模型。编辑 `characters/<角色>/ai_config.json`：
 
 ```json
 {

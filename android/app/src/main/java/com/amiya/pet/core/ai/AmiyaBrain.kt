@@ -31,6 +31,13 @@ class AmiyaBrain private constructor(private val context: Context) {
         get() = prefs.getString("model", "deepseek-chat") ?: "deepseek-chat"
         set(value) = prefs.edit().putString("model", value.trim()).apply()
 
+    /**
+     * 公共免 Key 线路端点（基于 Cloudflare Worker 或统一代理）
+     */
+    var publicRelayUrl: String
+        get() = prefs.getString("public_relay_url", DEFAULT_PUBLIC_RELAY_URL) ?: DEFAULT_PUBLIC_RELAY_URL
+        set(value) = prefs.edit().putString("public_relay_url", value.trim()).apply()
+
     private val persona = (
         "你是《明日方舟》中的阿米娅，罗德岛的公开领袖。你温柔、坚定、富有责任感，" +
         "面对博士时既尊敬又亲近。你称呼对方为「博士」，自称「阿米娅」或「我」。" +
@@ -61,29 +68,48 @@ class AmiyaBrain private constructor(private val context: Context) {
 
         history.add(ChatMessage("user", trimmed))
 
-        // 如果没有配置 API Key，直接使用阿米娅经典台词兜底
-        val key = apiKey
-        if (key.isBlank()) {
-            val reply = fallbackReplies.random()
-            history.add(ChatMessage("assistant", reply))
-            return@withContext reply
+        val customKey = apiKey.trim()
+        val isCustomKey = customKey.isNotEmpty()
+
+        // 确定访问端点与模型：若配置了自定义 Key 优先走自定义，否则走公共免费 AI 线路
+        val endpoint: String
+        val targetModel: String
+        val authHeader: String?
+
+        if (isCustomKey) {
+            val base = baseUrl.trim()
+            endpoint = if (base.endsWith("/chat/completions")) base
+                       else if (base.endsWith("/")) "${base}v1/chat/completions"
+                       else if (base.endsWith("/v1")) "$base/chat/completions"
+                       else "$base/v1/chat/completions"
+            targetModel = model.ifBlank { "deepseek-chat" }
+            authHeader = "Bearer $customKey"
+        } else {
+            val relay = publicRelayUrl.trim().ifBlank { DEFAULT_PUBLIC_RELAY_URL }
+            endpoint = if (relay.endsWith("/chat/completions")) relay
+                       else if (relay.endsWith("/")) "${relay}v1/chat/completions"
+                       else if (relay.endsWith("/v1")) "$relay/chat/completions"
+                       else "$relay/v1/chat/completions"
+            targetModel = "glm-4-flash"
+            authHeader = null // 由 Worker 云端自动注入免费 Key
         }
 
         try {
-            val endpoint = if (baseUrl.endsWith("/")) "${baseUrl}v1/chat/completions" else if (baseUrl.endsWith("/v1")) "$baseUrl/chat/completions" else "$baseUrl/v1/chat/completions"
             val url = URL(endpoint)
             val conn = (url.openConnection() as HttpURLConnection).apply {
                 requestMethod = "POST"
-                connectTimeout = 15000
+                connectTimeout = 12000
                 readTimeout = 20000
                 doOutput = true
                 setRequestProperty("Content-Type", "application/json; charset=utf-8")
-                setRequestProperty("Authorization", "Bearer $key")
+                if (authHeader != null) {
+                    setRequestProperty("Authorization", authHeader)
+                }
                 setRequestProperty("User-Agent", "AmiyaPet-Android")
             }
 
             val reqBody = JSONObject().apply {
-                put("model", model)
+                put("model", targetModel)
                 put("temperature", 0.75)
                 val messages = JSONArray()
                 // System Persona
@@ -118,18 +144,29 @@ class AmiyaBrain private constructor(private val context: Context) {
                     return@withContext reply
                 }
             }
-            // 响应非 200 时退化为离线台词
-            val reply = fallbackReplies.random()
+
+            // 响应非 200 时：自定义 Key 提示配置，公共免 Key 则无缝降级为温馨陪伴台词
+            val reply = if (isCustomKey) {
+                "（通信连接异常[${conn.responseCode}]，博士。请检查 API Key、Base URL 或网络连接。）"
+            } else {
+                fallbackReplies.random()
+            }
             history.add(ChatMessage("assistant", reply))
             reply
         } catch (e: Exception) {
-            val reply = fallbackReplies.random()
+            val reply = if (isCustomKey) {
+                "（网络连接出错了，博士稍后再试呢。）"
+            } else {
+                fallbackReplies.random()
+            }
             history.add(ChatMessage("assistant", reply))
             reply
         }
     }
 
     companion object {
+        const val DEFAULT_PUBLIC_RELAY_URL = "https://amiya-ai-relay.wyuio-0.workers.dev/v1/chat/completions"
+
         @Volatile
         private var INSTANCE: AmiyaBrain? = null
 

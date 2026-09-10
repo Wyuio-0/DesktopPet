@@ -38,10 +38,14 @@ FALLBACK = [
 ]
 
 
+DEFAULT_PUBLIC_RELAY_URL = "https://amiya-ai-relay.wyuio-0.workers.dev/v1/chat/completions"
+
+
 def load_ai_config(char_dir):
     """Merge ai_config.json with env vars (env wins). Returns a dict."""
     cfg = {"base_url": "https://api.deepseek.com", "model": "deepseek-chat",
-           "api_key": "", "temperature": 0.8, "allow_actions": True}
+           "api_key": "", "temperature": 0.8, "allow_actions": True,
+           "public_relay_url": ""}
     path = os.path.join(char_dir, "ai_config.json")
     if os.path.isfile(path):
         with open(path, encoding="utf-8") as f:
@@ -49,6 +53,7 @@ def load_ai_config(char_dir):
     cfg["api_key"] = os.environ.get("PET_AI_KEY", cfg.get("api_key", ""))
     cfg["base_url"] = os.environ.get("PET_AI_BASE", cfg["base_url"])
     cfg["model"] = os.environ.get("PET_AI_MODEL", cfg["model"])
+    cfg["public_relay_url"] = os.environ.get("PET_AI_RELAY", cfg.get("public_relay_url", ""))
     return cfg
 
 
@@ -94,8 +99,12 @@ class AmiyaBrain:
             return ""
 
     @property
-    def online(self):
+    def has_custom_key(self):
         return bool(self.cfg.get("api_key"))
+
+    @property
+    def online(self):
+        return bool(self.has_custom_key or self.cfg.get("public_relay_url") or DEFAULT_PUBLIC_RELAY_URL)
 
     def _load_history(self):
         """Load persisted history, keeping user/assistant/tool turns."""
@@ -134,8 +143,11 @@ class AmiyaBrain:
         else:
             try:
                 text = self._call_llm()
-            except Exception as e:  # network/auth/etc -> graceful message
-                text = f"（连接出错了，博士稍后再试）{type(e).__name__}"
+            except Exception as e:
+                if self.has_custom_key:
+                    text = f"（连接出错了，博士稍后再试）{type(e).__name__}"
+                else:
+                    text = self._fallback_reply()
         self.history.append({"role": "assistant", "content": text})
         # keep only the last N turns to bound the context (cut at a safe
         # boundary so tool rounds aren't orphaned)
@@ -159,7 +171,10 @@ class AmiyaBrain:
             try:
                 text = self._call_llm_stream(on_delta)
             except Exception as e:
-                text = f"（连接出错了，博士稍后再试）{type(e).__name__}"
+                if self.has_custom_key:
+                    text = f"（连接出错了，博士稍后再试）{type(e).__name__}"
+                else:
+                    text = self._fallback_reply()
                 if on_delta:
                     on_delta(text)
         self.history.append({"role": "assistant", "content": text})
@@ -193,18 +208,49 @@ class AmiyaBrain:
         msg = self._post(msgs, False)
         return (msg.get("content") or "好的，博士。").strip()
 
-    def _post(self, msgs, use_tools):
-        payload = {"model": self.cfg["model"], "messages": msgs,
-                   "temperature": self.cfg.get("temperature", 0.8),
-                   "stream": False}
-        if use_tools:
+    def _target_endpoint_and_headers(self, stream=False, use_tools=False, msgs=None):
+        has_custom = self.has_custom_key
+        if has_custom:
+            base = self.cfg["base_url"].rstrip("/")
+            if base.endswith("/chat/completions"):
+                url = base
+            elif base.endswith("/v1"):
+                url = base + "/chat/completions"
+            else:
+                url = base + "/v1/chat/completions"
+            model = self.cfg.get("model", "deepseek-chat")
+            headers = {
+                "Content-Type": "application/json",
+                "Authorization": "Bearer " + self.cfg["api_key"],
+                "User-Agent": "AmiyaDesktopPet/1.0"
+            }
+        else:
+            relay = (self.cfg.get("public_relay_url") or DEFAULT_PUBLIC_RELAY_URL).rstrip("/")
+            if relay.endswith("/chat/completions"):
+                url = relay
+            elif relay.endswith("/v1"):
+                url = relay + "/chat/completions"
+            else:
+                url = relay + "/v1/chat/completions"
+            model = "glm-4-flash"
+            headers = {
+                "Content-Type": "application/json",
+                "User-Agent": "AmiyaDesktopPet/1.0"
+            }
+
+        payload = {
+            "model": model,
+            "messages": msgs or [],
+            "temperature": self.cfg.get("temperature", 0.8),
+            "stream": stream,
+        }
+        if use_tools and has_custom:
             payload["tools"] = actions.TOOLS
-        body = json.dumps(payload).encode("utf-8")
-        url = self.cfg["base_url"].rstrip("/") + "/v1/chat/completions"
-        req = urllib.request.Request(url, data=body, method="POST", headers={
-            "Content-Type": "application/json",
-            "Authorization": "Bearer " + self.cfg["api_key"],
-        })
+        return url, headers, json.dumps(payload).encode("utf-8")
+
+    def _post(self, msgs, use_tools):
+        url, headers, body = self._target_endpoint_and_headers(stream=False, use_tools=use_tools, msgs=msgs)
+        req = urllib.request.Request(url, data=body, method="POST", headers=headers)
         with urllib.request.urlopen(req, timeout=30) as resp:
             data = json.loads(resp.read().decode("utf-8"))
         return data["choices"][0]["message"]
@@ -253,17 +299,8 @@ class AmiyaBrain:
             self.history.append(tool_msg)
 
     def _post_stream(self, msgs, use_tools, on_delta):
-        payload = {"model": self.cfg["model"], "messages": msgs,
-                   "temperature": self.cfg.get("temperature", 0.8),
-                   "stream": True}
-        if use_tools:
-            payload["tools"] = actions.TOOLS
-        body = json.dumps(payload).encode("utf-8")
-        url = self.cfg["base_url"].rstrip("/") + "/v1/chat/completions"
-        req = urllib.request.Request(url, data=body, method="POST", headers={
-            "Content-Type": "application/json",
-            "Authorization": "Bearer " + self.cfg["api_key"],
-        })
+        url, headers, body = self._target_endpoint_and_headers(stream=True, use_tools=use_tools, msgs=msgs)
+        req = urllib.request.Request(url, data=body, method="POST", headers=headers)
         with urllib.request.urlopen(req, timeout=60) as resp:
             return _consume_stream(resp, on_delta)
 

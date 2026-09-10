@@ -224,6 +224,7 @@ fun ChatScreen(
                         value = apiKey, 
                         onValueChange = { apiKey = it }, 
                         label = { Text("API Key") }, 
+                        placeholder = { Text("不填则默认使用公共免费 AI 线路", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)) },
                         singleLine = true, 
                         modifier = Modifier.fillMaxWidth(),
                         colors = OutlinedTextFieldDefaults.colors(
@@ -242,8 +243,15 @@ fun ChatScreen(
                             unfocusedTextColor = MaterialTheme.colorScheme.onSurface
                         )
                     )
+
+                    Text(
+                        text = "💡 提示：无需配置 Key 即可直接与阿米娅 AI 对话（默认使用公共免费线路）；离线状态将自动切换为原声陪伴台词。",
+                        fontSize = 11.sp,
+                        lineHeight = 15.sp,
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.85f)
+                    )
                     
-                    Spacer(modifier = Modifier.height(10.dp))
+                    Spacer(modifier = Modifier.height(6.dp))
                     OutlinedButton(
                         onClick = {
                             showSettingsDialog = false

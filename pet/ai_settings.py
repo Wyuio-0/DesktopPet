@@ -126,7 +126,7 @@ class AiSettingsDialog(QtWidgets.QDialog):
 
         self.api_key = QtWidgets.QLineEdit(self)
         self.api_key.setEchoMode(QtWidgets.QLineEdit.Password)
-        self.api_key.setPlaceholderText("不填则离线使用内置台词")
+        self.api_key.setPlaceholderText("不填则默认启用公共免费 AI 线路（离线时使用内置台词）")
         form.addRow("API Key", self.api_key)
 
         self.temperature = QtWidgets.QDoubleSpinBox(self)
@@ -140,8 +140,8 @@ class AiSettingsDialog(QtWidgets.QDialog):
         form.addRow("", self.allow_actions)
 
         self.note = QtWidgets.QLabel(
-            "支持兼容 /v1/chat/completions 的接口。若设置了 PET_AI_* 环境变量，"
-            "运行时会优先使用环境变量。",
+            "提示：无需配置 Key 即可直接与阿米娅 AI 对话（默认走公共免费线路）；"
+            "填写自定义 Key 后将优先使用您的专属模型。若设置了 PET_AI_* 环境变量亦优先遵循。",
             self,
         )
         self.note.setObjectName("TerminalNote")

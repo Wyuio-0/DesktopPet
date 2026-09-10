@@ -102,10 +102,10 @@ fun UserGuideDialog(onDismiss: () -> Unit) {
                         icon = Icons.Default.Key,
                         iconColor = Color(0xFFF59E0B),
                         title = "1. AI 对话与 API Key 配置教程",
-                        tag = "核心配置"
+                        tag = "开箱即用"
                     ) {
                         Text(
-                            text = "本应用采用兼容 OpenAI 标准的大模型通讯接口，您可以接入自己喜爱的大模型让阿米娅具备强大的日常闲聊、日程规划与答疑能力。",
+                            text = "阿米娅已内置公共免费 AI 线路，您无需配置任何 API Key 即可直接与阿米娅进行自然流畅的 AI 智能对话！同时支持接入您的专属大模型以满足个性化需求。",
                             fontSize = 12.sp,
                             lineHeight = 18.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -114,18 +114,18 @@ fun UserGuideDialog(onDismiss: () -> Unit) {
 
                         GuideStepItem(
                             step = "A",
-                            title = "获取 API Key（推荐 DeepSeek）",
-                            desc = "前往大模型开放平台（如 platform.deepseek.com）注册并创建 API Key（支持 DeepSeek、Kimi、通义千问等兼容平台，性价比极高）。"
+                            title = "免配置直接开聊（默认推荐）",
+                            desc = "初次安装无需任何繁琐设置，直接在下方输入框发送消息，阿米娅将通过公共免费 AI 线路即刻与您交流；离线时将自动无缝切换为原声陪伴台词。"
                         )
                         GuideStepItem(
                             step = "B",
-                            title = "在应用中填写配置",
-                            desc = "在对话界面右上角点击齿轮 ⚙️「设置」按钮，分别填入：\n• API Base URL：https://api.deepseek.com\n• API Key：sk-xxxxxxxxxxxx\n• Model：deepseek-chat（或 deepseek-reasoner）"
+                            title = "接入专属自定义大模型（进阶可选）",
+                            desc = "若您拥有 DeepSeek、Kimi、通义千问等平台专属 API Key，可在右上角 ⚙️「设置」中填入 Base URL、API Key 与 Model，保存后优先使用您自己的大模型。"
                         )
                         GuideStepItem(
                             step = "C",
-                            title = "保存并测试",
-                            desc = "点击「保存」后即可在对话框中给阿米娅发送任意消息测试回复。若未配置 API Key，阿米娅将使用内置语音台词给您温馨陪伴回复。"
+                            title = "随时自由切换",
+                            desc = "若想换回公共免费 AI 线路，只需在设置中将 API Key 清空并保存即可。"
                         )
                     }
 
