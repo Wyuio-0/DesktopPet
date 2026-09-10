@@ -114,3 +114,25 @@ class TestSchedule:
         text = s.dump_text(week_no=9)
         assert "高数" in text
         assert "本周不上" in text or "实验" in text  # 第9周单周，实验(双)不上
+
+    def test_sections_migration(self, tmp_path):
+        p = tmp_path / "legacy_schedule.json"
+        legacy_data = {
+            "term": "2026-2027-1",
+            "term_start": "2026-09-07",
+            "sections": {
+                "9": "16:30",
+                "10": "18:30",
+                "11": "19:20",
+                "12": "20:10",
+                "13": "21:00",
+            },
+        }
+        p.write_text(json.dumps(legacy_data), encoding="utf-8")
+        s = Schedule(path=str(p))
+        assert s.sections["9"] == "16:40"
+        assert s.sections["10"] == "17:30"
+        assert s.sections["11"] == "18:30"
+        assert s.sections["12"] == "19:20"
+        assert s.sections["13"] == "20:10"
+
