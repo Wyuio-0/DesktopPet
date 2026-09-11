@@ -38,7 +38,7 @@ FALLBACK = [
 ]
 
 
-DEFAULT_PUBLIC_RELAY_URL = "https://amiya-ai-relay.wyuio-0.workers.dev/v1/chat/completions"
+DEFAULT_PUBLIC_RELAY_URL = "https://wmntwvrw57.sealosbja.site/v1/chat/completions"
 
 
 def load_ai_config(char_dir):

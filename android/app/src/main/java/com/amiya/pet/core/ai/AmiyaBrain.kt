@@ -272,7 +272,7 @@ class AmiyaBrain private constructor(private val context: Context) {
     }
 
     companion object {
-        const val DEFAULT_PUBLIC_RELAY_URL = "https://amiya-ai-relay.wyuio-0.workers.dev/v1/chat/completions"
+        const val DEFAULT_PUBLIC_RELAY_URL = "https://wmntwvrw57.sealosbja.site/v1/chat/completions"
 
         @Volatile
         private var INSTANCE: AmiyaBrain? = null
