@@ -1,3 +1,10 @@
+## [v1.8.26]
+- 修复桌面小组件 (AppWidget)「载入窗口小部件时出现问题」故障：
+  - 彻底根治 RemoteViews 非法类崩溃：Android 系统桌面 RemoteViews 严格禁止直接使用 `<View>`（未标注 `@RemoteView` 注解，会导致桌面启动器在 inflate 解析时直接抛出 `InflateException: Class not allowed to be inflated in RemoteViews: android.view.View`）。已将所有占位分隔标签全量替换为合法的 `<FrameLayout>`。
+  - 移除 RemoteViews 无法解析的主题属性：移除 `?android:attr/selectableItemBackgroundBorderless`（桌面进程无法继承宿主 App 主题导致解析崩溃），替换为原生独立圆环资源 `@drawable/widget_btn_bg`。
+  - 解决部分机型矢量图标不兼容：将刷新按钮与头像图标重构为高清晰度跨版本 100% 兼容的透明 PNG 位图资产，避免系统 Launcher 无法解析 VectorDrawable。
+  - 增强小组件容错与鲁棒性：`ScheduleWidgetProvider` 更新主链路增加全包裹 `try-catch` 降级保护，并在 `schedule_widget_info.xml` 增加预加载预览图与弹性尺寸适配。
+
 ## [v1.8.25]
 - 上课前阿米娅智能推送提醒 (Alarm Notification)：课前提前 15 ~ 30 分钟（时间可完全自定义，支持 10/15/20/25/30 分钟快速选择），手机后台弹出阿米娅定制常驻/高优先级横幅通知（“博士，距离《高等数学》上课还有 20 分钟（主教楼 302），请记得带好水杯与课本哦”），点击通知一键直达应用与课表。
 - 下课换教室防跑错与作息关怀：下课时自动感知今日后续排课；如有下一节课，及时发出换教室与防跑错教学楼提醒；若是上午最后一节课贴心关怀午餐与小憩，下午最后一节课提示晚餐与自习时间安排。

@@ -53,9 +53,10 @@ class ScheduleWidgetProvider : AppWidgetProvider() {
         }
 
         fun updateAppWidget(context: Context, appWidgetManager: AppWidgetManager, appWidgetId: Int) {
-            val views = RemoteViews(context.packageName, R.layout.widget_schedule_layout)
+            try {
+                val views = RemoteViews(context.packageName, R.layout.widget_schedule_layout)
 
-            // 1. 加载课表数据
+                // 1. 加载课表数据
             ScheduleManager.load(context)
 
             val now = Date()
@@ -174,6 +175,8 @@ class ScheduleWidgetProvider : AppWidgetProvider() {
             views.setOnClickPendingIntent(R.id.widget_btn_refresh, refreshPendingIntent)
 
             appWidgetManager.updateAppWidget(appWidgetId, views)
+        } catch (t: Throwable) {
+            android.util.Log.e("ScheduleWidget", "Failed to update widget $appWidgetId", t)
         }
     }
 }
