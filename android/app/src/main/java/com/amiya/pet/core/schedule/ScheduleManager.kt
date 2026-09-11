@@ -7,6 +7,7 @@ import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
 import java.util.regex.Pattern
+import com.amiya.pet.widget.ScheduleWidgetProvider
 
 object ScheduleManager {
 
@@ -137,6 +138,7 @@ object ScheduleManager {
             data.put("notes", notesArray)
 
             getScheduleFile(context).writeText(data.toString(2))
+            ScheduleWidgetProvider.sendUpdateBroadcast(context)
         } catch (e: Exception) {
             e.printStackTrace()
         }

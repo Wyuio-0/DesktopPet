@@ -55,6 +55,22 @@
                 android:value="Schedule reminders and Pomodoro timer background checks" />
         </service>
 
+        <!-- 阿米娅今日课表桌面小组件 (AppWidget) -->
+        <receiver
+            android:name=".widget.ScheduleWidgetProvider"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="com.amiya.pet.action.REFRESH_WIDGET" />
+                <action android:name="android.intent.action.TIME_SET" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+                <action android:name="android.intent.action.DATE_CHANGED" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/schedule_widget_info" />
+        </receiver>
+
     </application>
 
 </manifest>

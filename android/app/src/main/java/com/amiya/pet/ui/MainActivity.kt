@@ -34,6 +34,7 @@ import com.amiya.pet.core.update.DownloadProgress
 import com.amiya.pet.core.update.ReleaseInfo
 import com.amiya.pet.core.update.UpdateManager
 import com.amiya.pet.service.AppBackgroundService
+import com.amiya.pet.widget.ScheduleWidgetProvider
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
@@ -42,6 +43,11 @@ class MainActivity : ComponentActivity() {
     private val notificationPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { /* granted or denied */ }
+
+    override fun onResume() {
+        super.onResume()
+        ScheduleWidgetProvider.sendUpdateBroadcast(this)
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)

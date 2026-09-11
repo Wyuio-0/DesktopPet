@@ -1,3 +1,5 @@
 <resources>
     <string name="app_name">阿米娅桌宠</string>
+    <string name="widget_schedule_name">今日课表</string>
+    <string name="widget_schedule_description">在桌面随时查看阿米娅今日排课、节次时间与下一节教室</string>
 </resources>
