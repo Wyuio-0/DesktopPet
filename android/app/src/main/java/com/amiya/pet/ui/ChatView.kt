@@ -1,6 +1,8 @@
 package com.amiya.pet.ui
 
 import android.content.Context
+import android.widget.Toast
+import com.amiya.pet.floating.FloatingPetManager
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -390,7 +392,43 @@ fun ChatScreen(
                         color = MaterialTheme.colorScheme.primary.copy(alpha = 0.85f)
                     )
                     
-                    Spacer(modifier = Modifier.height(6.dp))
+                    HorizontalDivider()
+
+                    // 桌面悬浮窗桌宠开关
+                    var floatingEnabled by remember { mutableStateOf(FloatingPetManager.isFloatingPetEnabled(context)) }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("桌面悬浮窗桌宠", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                            Text("纯净透明立绘 · 跨应用常驻 · 课表速览", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Switch(
+                            checked = floatingEnabled,
+                            onCheckedChange = { checked ->
+                                if (checked) {
+                                    if (!FloatingPetManager.canDrawOverlays(context)) {
+                                        Toast.makeText(context, "请先授予「显示在其他应用上层」悬浮窗权限", Toast.LENGTH_LONG).show()
+                                        FloatingPetManager.requestOverlayPermission(context)
+                                    } else {
+                                        FloatingPetManager.setFloatingPetEnabled(context, true)
+                                        floatingEnabled = true
+                                        Toast.makeText(context, "桌面悬浮桌宠已开启，可自由拖拽", Toast.LENGTH_SHORT).show()
+                                    }
+                                } else {
+                                    FloatingPetManager.setFloatingPetEnabled(context, false)
+                                    floatingEnabled = false
+                                    Toast.makeText(context, "桌面悬浮桌宠已关闭", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        )
+                    }
+
+                    HorizontalDivider()
+
+                    Spacer(modifier = Modifier.height(4.dp))
                     OutlinedButton(
                         onClick = {
                             showSettingsDialog = false

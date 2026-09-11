@@ -34,6 +34,7 @@ import com.amiya.pet.core.update.DownloadProgress
 import com.amiya.pet.core.update.ReleaseInfo
 import com.amiya.pet.core.update.UpdateManager
 import com.amiya.pet.core.schedule.ScheduleManager
+import com.amiya.pet.floating.FloatingPetManager
 import com.amiya.pet.service.AppBackgroundService
 import com.amiya.pet.widget.ScheduleWidgetProvider
 import kotlinx.coroutines.Job
@@ -48,6 +49,7 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         ScheduleWidgetProvider.sendUpdateBroadcast(this)
+        FloatingPetManager.checkAndSync(this)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -156,18 +158,40 @@ class MainActivity : ComponentActivity() {
                                         fontSize = 18.sp
                                     )
                                 },
-                                actions = {
-                                    IconButton(onClick = { triggerCheckUpdate() }) {
-                                        Icon(Icons.Default.CloudDownload, contentDescription = "检查更新", tint = MaterialTheme.colorScheme.onSurface)
-                                    }
-                                    IconButton(onClick = { toggleTheme() }) {
-                                        if (isDark) {
-                                            Icon(Icons.Default.Brightness7, contentDescription = "切换到浅色模式", tint = MaterialTheme.colorScheme.onSurface)
-                                        } else {
-                                            Icon(Icons.Default.Brightness4, contentDescription = "切换到深色模式", tint = MaterialTheme.colorScheme.onSurface)
-                                        }
-                                    }
-                                },
+                                 actions = {
+                                     IconButton(onClick = {
+                                         val isCurrentlyEnabled = FloatingPetManager.isFloatingPetEnabled(context)
+                                         if (isCurrentlyEnabled) {
+                                             FloatingPetManager.setFloatingPetEnabled(context, false)
+                                             Toast.makeText(context, "桌面悬浮桌宠已关闭", Toast.LENGTH_SHORT).show()
+                                         } else {
+                                             if (!FloatingPetManager.canDrawOverlays(context)) {
+                                                 Toast.makeText(context, "请先授予「显示在其他应用上层」悬浮窗权限", Toast.LENGTH_LONG).show()
+                                                 FloatingPetManager.requestOverlayPermission(context)
+                                             } else {
+                                                 FloatingPetManager.setFloatingPetEnabled(context, true)
+                                                 Toast.makeText(context, "桌面悬浮桌宠已开启，可全屏自由拖拽", Toast.LENGTH_SHORT).show()
+                                             }
+                                         }
+                                     }) {
+                                         val isEnabled = FloatingPetManager.isShowing || FloatingPetManager.isFloatingPetEnabled(context)
+                                         Icon(
+                                             Icons.Default.PictureInPictureAlt,
+                                             contentDescription = "桌面悬浮桌宠",
+                                             tint = if (isEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                                         )
+                                     }
+                                     IconButton(onClick = { triggerCheckUpdate() }) {
+                                         Icon(Icons.Default.CloudDownload, contentDescription = "检查更新", tint = MaterialTheme.colorScheme.onSurface)
+                                     }
+                                     IconButton(onClick = { toggleTheme() }) {
+                                         if (isDark) {
+                                             Icon(Icons.Default.Brightness7, contentDescription = "切换到浅色模式", tint = MaterialTheme.colorScheme.onSurface)
+                                         } else {
+                                             Icon(Icons.Default.Brightness4, contentDescription = "切换到深色模式", tint = MaterialTheme.colorScheme.onSurface)
+                                         }
+                                     }
+                                 },
                                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface)
                             )
                         }
