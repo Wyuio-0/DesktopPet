@@ -127,7 +127,7 @@ class MainActivity : ComponentActivity() {
             }
 
             AmiyaPetTheme(forceDark = themeOverride.value) {
-                var selectedTab by remember { mutableStateOf(MainTab.CHAT) }
+                var selectedTab by remember { mutableStateOf(MainTab.SCHEDULE) }
                 var pendingChatPrompt by remember { mutableStateOf<String?>(null) }
 
                 Scaffold(
