@@ -1,3 +1,7 @@
+## [v1.8.29]
+- 修复 Android 编译构建错误 (`ScheduleWidgetProvider.kt: Syntax error: Missing '}'`)：
+  - 补充 `ScheduleWidgetProvider` 类末尾遗漏的闭合花括号 `}`，恢复全工程所有 Kotlin 源码括号闭合平衡，确保 GitHub Actions CI 与 Gradle 打包流畅通过。
+
 ## [v1.8.28]
 - 重磅推出 Android 桌面全局悬浮窗桌宠 (Floating Overlay Window)：
   - 纯净透明立绘设计：采用纯透明阿米娅立绘（标准 64dp 尺寸），彻底去除任何金色外框与高亮发光光圈，立体自然且不遮挡日常阅读或观影视野。
