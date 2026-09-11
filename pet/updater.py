@@ -9,7 +9,7 @@ import re
 import urllib.request
 
 # 与仓库发布 tag 保持一致（如发 v1.6.7 时这里就是 "1.6.7"）。
-APP_VERSION = "1.8.26"
+APP_VERSION = "1.8.27"
 
 REPO = "Wyuio-0/DesktopPet"
 _LATEST_API = "https://api.github.com/repos/%s/releases/latest" % REPO

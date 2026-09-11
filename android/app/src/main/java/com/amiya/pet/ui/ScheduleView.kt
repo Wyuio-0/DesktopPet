@@ -40,14 +40,27 @@ fun ScheduleScreen(
     onConsultAi: (String) -> Unit = {}
 ) {
     val context = LocalContext.current
-    var currentWeek by remember { mutableIntStateOf(ScheduleManager.getWeekNo() ?: 1) }
+    var refreshTrigger by remember { mutableIntStateOf(0) }
+    
+    // 首次进入立即同步加载，确保无论冷启动还是热切页，内存数据绝对最新
+    var isDataLoaded by remember {
+        ScheduleManager.load(context)
+        mutableStateOf(true)
+    }
+
+    var currentWeek by remember(refreshTrigger) {
+        mutableIntStateOf(ScheduleManager.getWeekNo() ?: 1)
+    }
+    val courses = remember(refreshTrigger, isDataLoaded) {
+        ScheduleManager.courses
+    }
     var showImportDialog by remember { mutableStateOf(false) }
     var showReminderDialog by remember { mutableStateOf(false) }
-    var refreshTrigger by remember { mutableStateOf(0) }
     
     LaunchedEffect(refreshTrigger) {
         ScheduleManager.load(context)
         currentWeek = ScheduleManager.getWeekNo() ?: 1
+        isDataLoaded = true
     }
 
     Column(modifier = Modifier.fillMaxSize()) {
@@ -76,7 +89,7 @@ fun ScheduleScreen(
                 }
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
-                if (ScheduleManager.courses.isNotEmpty()) {
+                if (courses.isNotEmpty()) {
                     OutlinedButton(
                         onClick = {
                             onConsultAi("阿米娅，请结合我导入的课表数据，全面分析我的学习情况与课程负荷，并给出科学的学习与作息规划建议。")
@@ -125,7 +138,7 @@ fun ScheduleScreen(
             }
         }
 
-        if (ScheduleManager.courses.isEmpty()) {
+        if (courses.isEmpty()) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
@@ -248,7 +261,7 @@ fun ScheduleScreen(
 fun TimetableGrid(weekNo: Int, refreshTrigger: Int, onPrevWeek: () -> Unit, onNextWeek: () -> Unit) {
     val weekDays = listOf("日", "一", "二", "三", "四", "五", "六")
     val courses = ScheduleManager.courses
-    val colorMap = remember(refreshTrigger) {
+    val colorMap = remember(refreshTrigger, courses) {
         val map = mutableMapOf<String, Color>()
         var idx = 0
         courses.forEach { 

@@ -1,3 +1,9 @@
+## [v1.8.27]
+- 修复首次打开 App / 启动冷启动时课表首屏不显示、必须手动切页才刷新的问题：
+  - 根因定位：原课表视图仅在异步协程 `LaunchedEffect` 中触发 `ScheduleManager.load()`，首屏初次 Composition 渲染时数据尚未载入内存，且 `ScheduleManager.courses` 属于静态单例变量而非 Compose 响应式 State，导致首屏初次判定为空后由于周次未发生变化而不触发重组（Recomposition）。
+  - 启动阶段同步预加载：在 `MainActivity.onCreate()` 最前沿直接调用 `ScheduleManager.load(this)`，确保进入 Compose 树之前课表、周次与学期基准数据已在内存中全量就绪。
+  - 课表组件生命周期与响应式状态重构：`ScheduleScreen` 内通过 `remember` 同步挂载 `courses` 响应式状态与加载标记，所有空状态与网格判定实时联动 Compose State，打开 App 首屏即可秒级呈现完整排课网格。
+
 ## [v1.8.26]
 - 修复桌面小组件 (AppWidget)「载入窗口小部件时出现问题」故障：
   - 彻底根治 RemoteViews 非法类崩溃：Android 系统桌面 RemoteViews 严格禁止直接使用 `<View>`（未标注 `@RemoteView` 注解，会导致桌面启动器在 inflate 解析时直接抛出 `InflateException: Class not allowed to be inflated in RemoteViews: android.view.View`）。已将所有占位分隔标签全量替换为合法的 `<FrameLayout>`。

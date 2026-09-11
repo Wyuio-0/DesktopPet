@@ -33,6 +33,7 @@ import androidx.core.content.ContextCompat
 import com.amiya.pet.core.update.DownloadProgress
 import com.amiya.pet.core.update.ReleaseInfo
 import com.amiya.pet.core.update.UpdateManager
+import com.amiya.pet.core.schedule.ScheduleManager
 import com.amiya.pet.service.AppBackgroundService
 import com.amiya.pet.widget.ScheduleWidgetProvider
 import kotlinx.coroutines.Job
@@ -63,6 +64,9 @@ class MainActivity : ComponentActivity() {
         // 启动前台服务
         val serviceIntent = Intent(this, AppBackgroundService::class.java)
         ContextCompat.startForegroundService(this, serviceIntent)
+
+        // 预加载课表数据 (确保首屏直接显示课表时无需切页即可立即可用)
+        ScheduleManager.load(this)
 
         // 初始化主题偏好（-1: 跟随系统, 0: 浅色, 1: 深色）
         val prefs = getSharedPreferences("amiya_pet_prefs", Context.MODE_PRIVATE)
