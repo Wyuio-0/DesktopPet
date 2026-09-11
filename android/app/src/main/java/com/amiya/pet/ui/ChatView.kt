@@ -10,6 +10,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -296,13 +297,18 @@ fun ChatScreen(
         var baseUrl by remember { mutableStateOf(brain.baseUrl) }
         var apiKey by remember { mutableStateOf(brain.apiKey) }
         var model by remember { mutableStateOf(brain.model) }
+        var publicRelayUrl by remember { mutableStateOf(brain.publicRelayUrl) }
+        var showAdvancedRelay by remember { mutableStateOf(false) }
 
         AlertDialog(
             onDismissRequest = { showSettingsDialog = false },
             containerColor = MaterialTheme.colorScheme.surface,
             title = { Text("综合设置", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface) },
             text = {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Column(
+                    modifier = Modifier.verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
                     Text("AI 模型配置", color = MaterialTheme.colorScheme.primary, fontSize = 14.sp, fontWeight = FontWeight.Bold)
                     OutlinedTextField(
                         value = baseUrl, 
@@ -339,6 +345,44 @@ fun ChatScreen(
                         )
                     )
 
+                    // 可折叠高级公共中转配置（用于 Laf 或国内免翻墙自建网关）
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { showAdvancedRelay = !showAdvancedRelay }
+                            .padding(vertical = 4.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (showAdvancedRelay) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = "公共免 Key 中转网关设置 (Laf / 国内直连)",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+
+                    if (showAdvancedRelay) {
+                        OutlinedTextField(
+                            value = publicRelayUrl,
+                            onValueChange = { publicRelayUrl = it },
+                            label = { Text("免 Key 公共网关 URL") },
+                            placeholder = { Text("如 https://xxx.laf.run/v1/chat/completions", fontSize = 11.sp) },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = MaterialTheme.colorScheme.onSurface,
+                                unfocusedTextColor = MaterialTheme.colorScheme.onSurface
+                            )
+                        )
+                    }
+
                     Text(
                         text = "💡 提示：无需配置 Key 即可直接与阿米娅 AI 对话（默认使用公共免费线路）；支持自定义接入 DeepSeek-R1 / OpenAI 等推理模型，流式展现深度思考过程；离线状态将自动切换为原声陪伴台词。",
                         fontSize = 11.sp,
@@ -367,6 +411,7 @@ fun ChatScreen(
                     brain.baseUrl = baseUrl
                     brain.apiKey = apiKey
                     brain.model = model
+                    brain.publicRelayUrl = publicRelayUrl.trim().ifBlank { AmiyaBrain.DEFAULT_PUBLIC_RELAY_URL }
                     showSettingsDialog = false
                 }) {
                     Text("保存", color = Color.Black)
