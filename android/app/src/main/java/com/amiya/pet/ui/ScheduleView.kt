@@ -1,5 +1,7 @@
 package com.amiya.pet.ui
 
+import android.widget.Toast
+import com.amiya.pet.service.AppBackgroundService
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -40,6 +42,7 @@ fun ScheduleScreen(
     val context = LocalContext.current
     var currentWeek by remember { mutableIntStateOf(ScheduleManager.getWeekNo() ?: 1) }
     var showImportDialog by remember { mutableStateOf(false) }
+    var showReminderDialog by remember { mutableStateOf(false) }
     var refreshTrigger by remember { mutableStateOf(0) }
     
     LaunchedEffect(refreshTrigger) {
@@ -95,7 +98,19 @@ fun ScheduleScreen(
                             fontWeight = FontWeight.Bold
                         )
                     }
-                    Spacer(Modifier.width(8.dp))
+                    Spacer(Modifier.width(6.dp))
+                    IconButton(
+                        onClick = { showReminderDialog = true },
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (ScheduleManager.remindEnabled) Icons.Default.NotificationsActive else Icons.Default.NotificationsOff,
+                            contentDescription = "提醒设置",
+                            tint = if (ScheduleManager.remindEnabled) MaterialTheme.colorScheme.primary else Color.Gray,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                    Spacer(Modifier.width(6.dp))
                 }
                 Button(
                     onClick = { showImportDialog = true },
@@ -210,6 +225,20 @@ fun ScheduleScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showImportDialog = false }) { Text("关闭") }
+            }
+        )
+    }
+
+    if (showReminderDialog) {
+        CourseReminderDialog(
+            onDismiss = { showReminderDialog = false },
+            onSave = { enabled, dismissEnabled, mins ->
+                ScheduleManager.remindEnabled = enabled
+                ScheduleManager.dismissRemindEnabled = dismissEnabled
+                ScheduleManager.remindMinutes = mins
+                ScheduleManager.save(context)
+                Toast.makeText(context, "课表提醒设置已保存", Toast.LENGTH_SHORT).show()
+                showReminderDialog = false
             }
         )
     }
@@ -435,3 +464,145 @@ fun CourseBlock(course: Course, color: Color, rowH: androidx.compose.ui.unit.Dp)
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun CourseReminderDialog(
+    onDismiss: () -> Unit,
+    onSave: (Boolean, Boolean, Int) -> Unit
+) {
+    val context = LocalContext.current
+    var remindEnabled by remember { mutableStateOf(ScheduleManager.remindEnabled) }
+    var dismissRemindEnabled by remember { mutableStateOf(ScheduleManager.dismissRemindEnabled) }
+    var remindMinutes by remember { mutableIntStateOf(ScheduleManager.remindMinutes) }
+    val minuteOptions = listOf(10, 15, 20, 25, 30)
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    Icons.Default.NotificationsActive,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(24.dp)
+                )
+                Spacer(Modifier.width(8.dp))
+                Text("课表提醒与作息关怀", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                Text(
+                    text = "阿米娅会在上课前为您推送常驻高优先级通知（带教室、授课教师及准备建议），下课时关怀午餐/晚餐与换教室防遗忘。",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    lineHeight = 16.sp
+                )
+
+                HorizontalDivider()
+
+                // 上课提醒开关
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("上课前智能提醒", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                        Text("提前推送通知并提醒带好水杯课本", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Switch(
+                        checked = remindEnabled,
+                        onCheckedChange = { remindEnabled = it }
+                    )
+                }
+
+                // 提前时间选择
+                if (remindEnabled) {
+                    Column {
+                        Text("提前提醒时间：", fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                        Spacer(Modifier.height(6.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            minuteOptions.forEach { mins ->
+                                FilterChip(
+                                    selected = (remindMinutes == mins),
+                                    onClick = { remindMinutes = mins },
+                                    label = { Text("${mins}m", fontSize = 12.sp) },
+                                    modifier = Modifier.padding(horizontal = 2.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+
+                HorizontalDivider()
+
+                // 下课/放学关怀开关
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("下课换教室/就餐关怀", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                        Text("下课时提示下一节课位置或就餐自习", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Switch(
+                        checked = dismissRemindEnabled,
+                        onCheckedChange = { dismissRemindEnabled = it }
+                    )
+                }
+
+                HorizontalDivider()
+
+                // 测试按钮
+                Text("通知效果测试：", fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = {
+                            AppBackgroundService.sendTestReminder(context, isDismissal = false)
+                            Toast.makeText(context, "已发送上课测试通知，请查看通知栏", Toast.LENGTH_SHORT).show()
+                        },
+                        modifier = Modifier.weight(1f),
+                        contentPadding = PaddingValues(vertical = 4.dp, horizontal = 6.dp)
+                    ) {
+                        Text("测试上课提醒", fontSize = 11.sp)
+                    }
+                    OutlinedButton(
+                        onClick = {
+                            AppBackgroundService.sendTestReminder(context, isDismissal = true)
+                            Toast.makeText(context, "已发送下课测试通知，请查看通知栏", Toast.LENGTH_SHORT).show()
+                        },
+                        modifier = Modifier.weight(1f),
+                        contentPadding = PaddingValues(vertical = 4.dp, horizontal = 6.dp)
+                    ) {
+                        Text("测试下课关怀", fontSize = 11.sp)
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { onSave(remindEnabled, dismissRemindEnabled, remindMinutes) }
+            ) {
+                Text("保存设置")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("取消")
+            }
+        }
+    )
+}

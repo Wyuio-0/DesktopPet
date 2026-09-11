@@ -19,7 +19,9 @@ object ScheduleManager {
 
     var termStart: Date? = null
     var sections: Map<String, String> = defaultSections.toMap()
-    var remindMinutes: Int = 10
+    var remindEnabled: Boolean = true
+    var dismissRemindEnabled: Boolean = true
+    var remindMinutes: Int = 20
     var courses: List<Course> = emptyList()
     var notes: List<String> = emptyList()
 
@@ -66,7 +68,9 @@ object ScheduleManager {
                 sections = defaultSections.toMap()
             }
 
-            remindMinutes = data.optInt("remind_minutes", 10)
+            remindEnabled = data.optBoolean("remind_enabled", true)
+            dismissRemindEnabled = data.optBoolean("dismiss_remind_enabled", true)
+            remindMinutes = data.optInt("remind_minutes", 20)
 
             val courseList = mutableListOf<Course>()
             val coursesArray = data.optJSONArray("courses") ?: JSONArray()
@@ -111,6 +115,8 @@ object ScheduleManager {
                 secObj.put(k, v)
             }
             data.put("sections", secObj)
+            data.put("remind_enabled", remindEnabled)
+            data.put("dismiss_remind_enabled", dismissRemindEnabled)
             data.put("remind_minutes", remindMinutes)
 
             val coursesArray = JSONArray()
