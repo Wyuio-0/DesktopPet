@@ -339,9 +339,9 @@ object UpdateManager {
                 @Suppress("DEPRECATION")
                 context.packageManager.getPackageInfo(context.packageName, 0)
             }
-            pInfo.versionName?.takeIf { it.isNotBlank() } ?: "1.8.9"
+            pInfo.versionName?.takeIf { it.isNotBlank() } ?: "1.9.0"
         } catch (e: Exception) {
-            "1.8.9"
+            "1.9.0"
         }
     }
 

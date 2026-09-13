@@ -3,6 +3,8 @@ package com.amiya.pet.ui
 import android.content.Context
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -126,17 +128,31 @@ fun PomodoroScreen() {
                 )
             }
 
-            // 快捷时长预设气泡与自定义时长按钮
+            // 快捷时长预设气泡与自定义时长按钮（等宽等高，规格完全一致）
             Row(
+                modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 val presets = if (isWork) listOf(15, 25, 45, 60) else listOf(3, 5, 10, 15)
+                val isCustomSelected = !presets.contains(currentMinutes)
+
                 presets.forEach { mins ->
                     val isSelected = currentMinutes == mins
-                    AssistChip(
-                        onClick = {
-                            if (status.state != PomodoroState.RUNNING) {
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(34.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(
+                                if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.22f)
+                                else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+                            )
+                            .then(
+                                if (isSelected) Modifier.border(1.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(10.dp))
+                                else Modifier
+                            )
+                            .clickable(enabled = status.state != PomodoroState.RUNNING) {
                                 if (isWork) {
                                     workMinutes = mins
                                     prefs.edit().putInt("pref_pomodoro_work_mins", mins).apply()
@@ -145,48 +161,46 @@ fun PomodoroScreen() {
                                     prefs.edit().putInt("pref_pomodoro_break_mins", mins).apply()
                                 }
                                 PomodoroTimer.setDuration(status.mode, mins)
-                            }
-                        },
-                        label = {
-                            Text(
-                                "${mins}m",
-                                fontSize = 11.sp,
-                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
-                            )
-                        },
-                        colors = AssistChipDefaults.assistChipColors(
-                            containerColor = if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.22f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
-                            labelColor = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
-                        ),
-                        border = if (isSelected) BorderStroke(1.dp, MaterialTheme.colorScheme.primary) else null,
-                        shape = RoundedCornerShape(12.dp)
-                    )
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "${mins}m",
+                            fontSize = 12.sp,
+                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                            color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1
+                        )
+                    }
                 }
 
-                // 自定义时长弹窗入口
-                AssistChip(
-                    onClick = {
-                        if (status.state != PomodoroState.RUNNING) {
-                            showCustomDialog = true
-                        }
-                    },
-                    label = {
-                        Text(
-                            text = if (!presets.contains(currentMinutes)) "${currentMinutes}m ⚙️" else "自定义",
-                            fontSize = 11.sp,
-                            fontWeight = if (!presets.contains(currentMinutes)) FontWeight.Bold else FontWeight.Normal
+                // 自定义时长入口（与其他预设按钮完全一致的规格与尺寸）
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(34.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(
+                            if (isCustomSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.22f)
+                            else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
                         )
-                    },
-                    leadingIcon = {
-                        Icon(Icons.Default.Tune, contentDescription = "自定义时长", modifier = Modifier.size(13.dp))
-                    },
-                    colors = AssistChipDefaults.assistChipColors(
-                        containerColor = if (!presets.contains(currentMinutes)) MaterialTheme.colorScheme.primary.copy(alpha = 0.22f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
-                        labelColor = if (!presets.contains(currentMinutes)) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
-                    ),
-                    border = if (!presets.contains(currentMinutes)) BorderStroke(1.dp, MaterialTheme.colorScheme.primary) else null,
-                    shape = RoundedCornerShape(12.dp)
-                )
+                        .then(
+                            if (isCustomSelected) Modifier.border(1.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(10.dp))
+                            else Modifier
+                        )
+                        .clickable(enabled = status.state != PomodoroState.RUNNING) {
+                            showCustomDialog = true
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = if (isCustomSelected) "${currentMinutes}m" else "自定义",
+                        fontSize = 11.sp,
+                        fontWeight = if (isCustomSelected) FontWeight.Bold else FontWeight.Normal,
+                        color = if (isCustomSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1
+                    )
+                }
             }
         }
 

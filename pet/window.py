@@ -30,6 +30,8 @@ from .tray import PetTrayCoordinator
 from .voice import VoicePlayer
 from .wander import PetWanderCoordinator
 from .weather import PetWeatherCoordinator
+from .sync_service import get_sync_service
+from .sync_ui import RhodesSyncWindow, RhodesPairConfirmDialog
 from . import actions, knowledge, logging as petlog, memory, theme, tts
 from . import single_instance, updater
 
@@ -122,6 +124,11 @@ class PetWindow(QtWidgets.QWidget):
     reminder_requested = QtCore.pyqtSignal(int, str)
     # AI 敏感操作确认：worker 线程通过它把"弹确认框"的请求投递到 GUI 线程。
     confirm_dialog_requested = QtCore.pyqtSignal(object)
+    # 跨端协同网络事件信号
+    pair_requested = QtCore.pyqtSignal(object)
+    remote_clipboard_received = QtCore.pyqtSignal(str, str)
+    quick_clip_sent_signal = QtCore.pyqtSignal(str)
+    quick_sync_done_signal = QtCore.pyqtSignal(str)
 
     def __init__(self, character):
         super().__init__()
@@ -256,6 +263,17 @@ class PetWindow(QtWidgets.QWidget):
         self._clone_idle_timer.timeout.connect(
             lambda: tts.maybe_stop_idle_clone(600))
         self._clone_idle_timer.start(60 * 1000)
+
+        # 跨端协同局域网互联服务
+        self.sync_service = get_sync_service()
+        self.sync_window = None
+        self.pair_requested.connect(self._on_pair_requested)
+        self.remote_clipboard_received.connect(self._on_remote_clipboard)
+        self.quick_clip_sent_signal.connect(self._on_quick_clip_sent)
+        self.quick_sync_done_signal.connect(self._on_quick_sync_done)
+        self.sync_service.on_pair_request_callback = lambda req: self.pair_requested.emit(req)
+        self.sync_service.on_clipboard_callback = lambda txt, title: self.remote_clipboard_received.emit(txt, title)
+        self.sync_service.start()
 
     # ── 向后兼容属性与门面方法 (Facade Properties & Methods) ───────────
 
@@ -1334,7 +1352,86 @@ class PetWindow(QtWidgets.QWidget):
             self._info_panel_widget.close()
         if hasattr(self, "notes_window") and self.notes_window is not None:
             self.notes_window.close()
+        if hasattr(self, "sync_service") and self.sync_service is not None:
+            self.sync_service.stop()
+        if hasattr(self, "sync_window") and self.sync_window is not None:
+            self.sync_window.close()
         QtWidgets.QApplication.quit()
+
+    def open_sync_center(self):
+        """打开罗德岛跨端协同终端互联管理中心。"""
+        if self.sync_window is None:
+            self.sync_window = RhodesSyncWindow(self)
+        self.sync_window.show()
+        self.sync_window.raise_()
+        self.sync_window.activateWindow()
+
+    def _on_pair_requested(self, pair_req):
+        """收到远端发起的蓝牙式配对请求，无论主窗口是否打开均弹出置顶核验卡片。"""
+        dialog = RhodesPairConfirmDialog(pair_req, self)
+        dialog.exec_()
+        if self.sync_window and self.sync_window.isVisible():
+            self.sync_window._refresh_paired_list()
+
+    def _on_remote_clipboard(self, text, title):
+        """收到手机快传，写入本地剪贴板并让桌宠展示气泡。"""
+        clipboard = QtWidgets.QApplication.clipboard()
+        clipboard.setText(text)
+        preview = text[:28] + ("…" if len(text) > 28 else "")
+        self.bubble.say(f"收到来自移动终端的快传：\n「{preview}」\n已存入系统剪贴板！", self._body_rect())
+
+    def quick_send_clipboard_to_mobile(self):
+        """快捷操作：将本地剪贴板一键投送至已配对手机。"""
+        import threading
+        clipboard = QtWidgets.QApplication.clipboard()
+        text = clipboard.text().strip()
+        if not text:
+            self.bubble.say("剪贴板当前为空，无法发送哦。", self._body_rect())
+            return
+        paired = self.sync_service.pair_manager.get_trusted_devices()
+        if not paired:
+            self.bubble.say("尚未配对移动设备，请右键打开「跨端协同」进行配对。", self._body_rect())
+            return
+        dev_id = list(paired.keys())[0]
+        info = paired[dev_id]
+        ip, port, token = info.get("ip"), info.get("port", 23334), info.get("token")
+        name = info.get("name", "移动终端")
+        
+        def worker():
+            ok = self.sync_service.send_clipboard(ip, port, token, text, title=self.char.display_name)
+            if ok:
+                self.quick_clip_sent_signal.emit(f"已将剪贴板快传至「{name}」！")
+            else:
+                self.quick_clip_sent_signal.emit(f"快传至「{name}」失败，请检查网络。")
+        
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _on_quick_clip_sent(self, msg):
+        self.bubble.say(msg, self._body_rect())
+
+    def quick_sync_data(self):
+        """快捷操作：与已配对设备一键双向合并学业数据。"""
+        import threading
+        paired = self.sync_service.pair_manager.get_trusted_devices()
+        if not paired:
+            self.bubble.say("尚未配对移动设备，请右键打开「跨端协同」进行配对。", self._body_rect())
+            return
+        dev_id = list(paired.keys())[0]
+        info = paired[dev_id]
+        ip, port, token = info.get("ip"), info.get("port", 23334), info.get("token")
+        name = info.get("name", "移动终端")
+        self.bubble.say(f"正在与「{name}」双向同步学业数据…", self._body_rect())
+
+        def worker():
+            ok1, _ = self.sync_service.sync_pull(ip, port, token)
+            ok2, _ = self.sync_service.sync_push(ip, port, token, mode="replace")
+            msg = "学业日程双向同步已完成！" if (ok1 and ok2) else "数据同步未完成，请检查网络。"
+            self.quick_sync_done_signal.emit(msg)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _on_quick_sync_done(self, msg):
+        self.bubble.say(msg, self._body_rect())
 
     def closeEvent(self, event):
         self.tray_coord.handle_close_event(event)

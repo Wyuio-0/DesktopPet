@@ -136,3 +136,36 @@ class TestSchedule:
         assert s.sections["12"] == "19:20"
         assert s.sections["13"] == "20:10"
 
+    def test_schedule_crud(self, tmp_path):
+        p = tmp_path / "crud_schedule.json"
+        s = Schedule(path=str(p))
+        assert len(s.courses) == 0
+
+        # Add
+        c1 = Course("测试课程A", 1, 1, 2, 1, 16, "all", room="A101", teacher="凯尔希")
+        s.add_course(c1)
+        assert len(s.courses) == 1
+        assert s.courses[0].name == "测试课程A"
+
+        # Verify disk persistence
+        s_loaded = Schedule(path=str(p))
+        assert len(s_loaded.courses) == 1
+        assert s_loaded.courses[0].room == "A101"
+
+        # Update
+        c1_mod = Course("测试课程A-修改", 1, 1, 2, 1, 16, "all", room="A102", teacher="阿米娅")
+        res = s.update_course(c1, c1_mod)
+        assert res is True
+        assert s.courses[0].name == "测试课程A-修改"
+        assert s.courses[0].room == "A102"
+
+        # Delete
+        res = s.delete_course(c1_mod)
+        assert res is True
+        assert len(s.courses) == 0
+
+        # Verify reload is empty
+        s_empty = Schedule(path=str(p))
+        assert len(s_empty.courses) == 0
+
+

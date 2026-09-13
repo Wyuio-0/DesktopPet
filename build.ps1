@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 # 桌面宠物 —— 一键构建脚本
 #
 # 作用：重新用 PyInstaller 打包 DesktopPet.exe，同步角色资源（阿米娅 / 圣聆初雪
@@ -74,5 +74,12 @@ $lnk.IconLocation     = if (Test-Path $IconPath) { "$IconPath,0" } else { "$ExeP
 $lnk.Description       = '桌面宠物'
 $lnk.Save()
 Write-Host "    已更新: $Shortcut" -ForegroundColor DarkGray
+
+# 清理历史遗留的旧快捷方式
+$LegacyShortcut = Join-Path $Desktop 'AmiyaDesktopPet.lnk'
+if (Test-Path $LegacyShortcut) {
+    Remove-Item -Force $LegacyShortcut -ErrorAction SilentlyContinue
+    Write-Host "    已清理历史遗留快捷方式: $LegacyShortcut" -ForegroundColor DarkGray
+}
 
 Write-Host '==> [4/4] 完成 ✅  桌面宠物已更新，双击桌面快捷方式即可运行。' -ForegroundColor Green

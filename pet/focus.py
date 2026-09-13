@@ -48,18 +48,12 @@ class PetFocusToolsManager(QtCore.QObject):
         self._tasks_timer.timeout.connect(self.tasks_tick)
         self._tasks_timer.start(30 * 1000)
 
-        self._exam_badge = CountdownBadge()
-        self._exam_timer = QtCore.QTimer(self)
-        self._exam_timer.timeout.connect(self.refresh_exam_badge)
-        self._exam_timer.start(60 * 60 * 1000)  # 每小时刷新
-
         # ── 5. 时间段问候 ──────────────────────────────────────────
         self._greet_windows = []
         self._greet_timer = QtCore.QTimer(self)
         self._greet_timer.timeout.connect(self.check_greetings)
 
         self.setup_greetings()
-        self.refresh_exam_badge()
 
     # ------------------------------------------------------------------ #
     # 专注小工具 (Countdown & Pomodoro)                                    #
@@ -324,40 +318,19 @@ class PetFocusToolsManager(QtCore.QObject):
             self.window._announce("博士，%s《%s》还有 %s 到期，别忘了。"
                                  % (verb, t.title, when), use_tts=True)
 
+    @property
+    def _exam_badge(self):
+        return None
+
     def refresh_exam_badge(self):
-        """刷新常驻考试倒计时徽章。"""
-        b = self._exam_badge
-        if not b:
-            return
-        if not self.window.prefs.get("exam_badge", True):
-            b.hide()
-            return
-        exams = self.tasks.exams()
-        if not exams:
-            b.hide()
-            return
-        t = exams[0]
-        days = max((t.due - datetime.now()).days, 0)
-        b.show_text("距%s\n还有 %d 天" % (t.title, days), self.window._body_rect())
-        self.place_exam_badge()
+        """已停用悬浮考试徽章（按用户需求直接移除桌面悬浮提示）。"""
+        pass
 
     def place_exam_badge(self):
-        """考试徽章定位到桌宠左上角（专注徽章在右上角）。"""
-        b = self._exam_badge
-        if not b:
-            return
-        rect = self.window._body_rect()
-        x = rect.left() - b.width() // 2
-        y = rect.top() - b.height() // 2
-        b.move(max(0, x), max(0, y))
+        pass
 
     def toggle_exam_badge(self, checked):
-        """开关考试倒计时徽章。"""
-        self.window.prefs.set("exam_badge", bool(checked))
-        if checked:
-            self.refresh_exam_badge()
-        elif self._exam_badge:
-            self._exam_badge.hide()
+        self.window.prefs.set("exam_badge", False)
 
     def course_names(self):
         """返回课表里的去重课程名。"""
@@ -459,18 +432,15 @@ class PetFocusToolsManager(QtCore.QObject):
     # ------------------------------------------------------------------ #
 
     def reposition_badges(self, body_rect):
-        """窗口拖动或缩放时重新定位专注徽章与考试徽章。"""
+        """窗口拖动或缩放时重新定位专注徽章。"""
         if self.badge and self.badge.isVisible():
             self.badge.reposition(body_rect)
-        if self._exam_badge and self._exam_badge.isVisible():
-            self.place_exam_badge()
 
     def close(self):
         """停止所有定时器并关闭徽章子窗口。"""
         self._cd_timer.stop()
         self._sched_timer.stop()
         self._tasks_timer.stop()
-        self._exam_timer.stop()
         self._greet_timer.stop()
         for t in self._reminders:
             try:
@@ -481,5 +451,3 @@ class PetFocusToolsManager(QtCore.QObject):
 
         if self.badge:
             self.badge.close()
-        if self._exam_badge:
-            self._exam_badge.close()

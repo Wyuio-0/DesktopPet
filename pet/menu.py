@@ -86,6 +86,7 @@ class PetContextMenuBuilder(QtCore.QObject):
         self.add_tasks_menu(m)
         self.add_focus_menu(m)
         self.add_trans_ocr_menu(m)
+        self.add_sync_menu(m)
         m.addSeparator()
 
         # ── 3. 智能与角色 ────────────────────────────────────────────
@@ -220,10 +221,6 @@ class PetContextMenuBuilder(QtCore.QObject):
             sub.addAction("即将到期", fm.show_tasks)
             sub.addAction("考试倒计时", fm.show_exam_countdown)
             sub.addAction("管理待办…", fm.manage_tasks)
-            badge_act = sub.addAction("考试倒计时徽章")
-            badge_act.setCheckable(True)
-            badge_act.setChecked(self.window.prefs.get("exam_badge", True))
-            badge_act.toggled.connect(fm.toggle_exam_badge)
         else:
             sub.addAction("添加作业 DDL…", lambda: self.window._add_task("homework"))
             sub.addAction("添加考试…", lambda: self.window._add_task("exam"))
@@ -231,10 +228,6 @@ class PetContextMenuBuilder(QtCore.QObject):
             sub.addAction("即将到期", self.window._show_tasks)
             sub.addAction("考试倒计时", self.window._show_exam_countdown)
             sub.addAction("管理待办…", self.window._manage_tasks)
-            badge_act = sub.addAction("考试倒计时徽章")
-            badge_act.setCheckable(True)
-            badge_act.setChecked(self.window.prefs.get("exam_badge", True))
-            badge_act.toggled.connect(self.window._toggle_exam_badge)
 
     def add_trans_ocr_menu(self, parent):
         """翻译与识图子菜单（截图翻译、剪贴板翻译、截图总结、知识库）。"""
@@ -261,6 +254,14 @@ class PetContextMenuBuilder(QtCore.QObject):
         sub.addAction("重新加载讲义知识库", self.reload_knowledge)
 
     add_ocr_menu = add_trans_ocr_menu
+
+    def add_sync_menu(self, parent):
+        """跨端协同（罗德岛终端互联与数据同步）子菜单。"""
+        w = self.window
+        sub = parent.addMenu("跨端协同 (手机互联)")
+        sub.addAction("终端互联管理中心…", w.open_sync_center)
+        sub.addAction("发送当前剪贴板至手机", w.quick_send_clipboard_to_mobile)
+        sub.addAction("一键双向同步学业数据", w.quick_sync_data)
 
     def add_focus_menu(self, parent):
         """专注小工具子菜单。"""

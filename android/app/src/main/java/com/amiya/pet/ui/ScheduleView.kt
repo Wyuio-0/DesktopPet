@@ -3,6 +3,7 @@ package com.amiya.pet.ui
 import android.widget.Toast
 import com.amiya.pet.service.AppBackgroundService
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -37,6 +38,16 @@ private val COURSE_COLORS = listOf(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ScheduleScreen(
+    currentWeek: Int,
+    onWeekChange: (Int) -> Unit,
+    showImportDialog: Boolean = false,
+    onDismissImportDialog: () -> Unit = {},
+    onOpenImportDialog: () -> Unit = {},
+    showReminderDialog: Boolean = false,
+    onDismissReminderDialog: () -> Unit = {},
+    showAddCourseDialog: Boolean = false,
+    onDismissAddCourseDialog: () -> Unit = {},
+    onOpenAddCourseDialog: () -> Unit = {},
     onConsultAi: (String) -> Unit = {}
 ) {
     val context = LocalContext.current
@@ -48,96 +59,51 @@ fun ScheduleScreen(
         mutableStateOf(true)
     }
 
-    var currentWeek by remember(refreshTrigger) {
-        mutableIntStateOf(ScheduleManager.getWeekNo() ?: 1)
-    }
     val courses = remember(refreshTrigger, isDataLoaded) {
         ScheduleManager.courses
     }
-    var showImportDialog by remember { mutableStateOf(false) }
-    var showReminderDialog by remember { mutableStateOf(false) }
     
+    val colorMap = remember(refreshTrigger, courses) {
+        val map = mutableMapOf<String, Color>()
+        var idx = 0
+        courses.forEach { 
+            if (!map.containsKey(it.name)) {
+                map[it.name] = COURSE_COLORS[idx % COURSE_COLORS.size]
+                idx++
+            }
+        }
+        map
+    }
+
+    // 交互弹窗状态
+    var selectedCourseForDetail by remember { mutableStateOf<Course?>(null) }
+    var editingCourse by remember { mutableStateOf<Course?>(null) }
+    var showCourseEditDialog by remember { mutableStateOf(false) }
+    var deletingCourse by remember { mutableStateOf<Course?>(null) }
+    var newCourseWeekday by remember { mutableIntStateOf(1) }
+    var newCourseSection by remember { mutableIntStateOf(1) }
+
+    val cal = Calendar.getInstance()
+    val todayIdx = cal.get(Calendar.DAY_OF_WEEK)
+    val currentIsoWeekday = if (todayIdx == Calendar.SUNDAY) 7 else todayIdx - 1
+
     LaunchedEffect(refreshTrigger) {
         ScheduleManager.load(context)
-        currentWeek = ScheduleManager.getWeekNo() ?: 1
         isDataLoaded = true
     }
 
-    Column(modifier = Modifier.fillMaxSize()) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 6.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(
-                    onClick = { if (currentWeek > 1) currentWeek-- },
-                    modifier = Modifier.size(32.dp)
-                ) {
-                    Icon(Icons.Default.ChevronLeft, "上一周", tint = MaterialTheme.colorScheme.onBackground, modifier = Modifier.size(20.dp))
-                }
-                Spacer(Modifier.width(2.dp))
-                Text("第 $currentWeek 周", color = MaterialTheme.colorScheme.onBackground, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                Spacer(Modifier.width(2.dp))
-                IconButton(
-                    onClick = { currentWeek++ },
-                    modifier = Modifier.size(32.dp)
-                ) {
-                    Icon(Icons.Default.ChevronRight, "下一周", tint = MaterialTheme.colorScheme.onBackground, modifier = Modifier.size(20.dp))
-                }
-            }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                if (courses.isNotEmpty()) {
-                    OutlinedButton(
-                        onClick = {
-                            onConsultAi("阿米娅，请结合我导入的课表数据，全面分析我的学习情况与课程负荷，并给出科学的学习与作息规划建议。")
-                        },
-                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                        modifier = Modifier.height(32.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.AutoAwesome,
-                            contentDescription = null,
-                            modifier = Modifier.size(14.dp),
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                        Spacer(Modifier.width(4.dp))
-                        Text(
-                            text = "AI 学情分析",
-                            fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.primary,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                    Spacer(Modifier.width(6.dp))
-                    IconButton(
-                        onClick = { showReminderDialog = true },
-                        modifier = Modifier.size(32.dp)
-                    ) {
-                        Icon(
-                            imageVector = if (ScheduleManager.remindEnabled) Icons.Default.NotificationsActive else Icons.Default.NotificationsOff,
-                            contentDescription = "提醒设置",
-                            tint = if (ScheduleManager.remindEnabled) MaterialTheme.colorScheme.primary else Color.Gray,
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
-                    Spacer(Modifier.width(6.dp))
-                }
-                Button(
-                    onClick = { showImportDialog = true },
-                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                    modifier = Modifier.height(32.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
-                ) {
-                    Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(14.dp), tint = Color.Black)
-                    Spacer(Modifier.width(4.dp))
-                    Text("导入课表", fontSize = 12.sp, color = Color.Black, fontWeight = FontWeight.Bold)
-                }
-            }
+    // 响应外部顶栏触发的添加课程
+    LaunchedEffect(showAddCourseDialog) {
+        if (showAddCourseDialog) {
+            editingCourse = null
+            newCourseWeekday = currentIsoWeekday
+            newCourseSection = 1
+            showCourseEditDialog = true
+            onDismissAddCourseDialog()
         }
+    }
 
+    Column(modifier = Modifier.fillMaxSize()) {
         if (courses.isEmpty()) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Column(
@@ -152,22 +118,61 @@ fun ScheduleScreen(
                     )
                     Spacer(Modifier.height(12.dp))
                     Text(
-                        text = "暂无课表数据，请点击右上角「导入课表」",
+                        text = "暂无课表数据",
                         color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Medium
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold
                     )
                     Spacer(Modifier.height(6.dp))
                     Text(
-                        text = "💡 导入后课表将自动同步给阿米娅，可一键获取全套学情负荷分析与自习作息建议",
+                        text = "💡 支持手动录入课程或一键导入教务课表，阿米娅将自动为您规划作息与学情分析",
                         fontSize = 12.sp,
                         color = MaterialTheme.colorScheme.primary.copy(alpha = 0.85f),
                         textAlign = TextAlign.Center
                     )
+                    Spacer(Modifier.height(20.dp))
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Button(
+                            onClick = {
+                                editingCourse = null
+                                newCourseWeekday = currentIsoWeekday
+                                newCourseSection = 1
+                                showCourseEditDialog = true
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                        ) {
+                            Icon(Icons.Default.Add, contentDescription = null, tint = Color.Black, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("手动添加课程", color = Color.Black, fontWeight = FontWeight.Bold)
+                        }
+                        OutlinedButton(
+                            onClick = onOpenImportDialog
+                        ) {
+                            Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("导入教务课表", fontWeight = FontWeight.Medium)
+                        }
+                    }
                 }
             }
         } else {
-            TimetableGrid(currentWeek, refreshTrigger, { if (currentWeek > 1) currentWeek-- }, { currentWeek++ })
+            TimetableGrid(
+                weekNo = currentWeek,
+                refreshTrigger = refreshTrigger,
+                colorMap = colorMap,
+                onPrevWeek = { if (currentWeek > 1) onWeekChange(currentWeek - 1) },
+                onNextWeek = { onWeekChange(currentWeek + 1) },
+                onSelectCourse = { selectedCourseForDetail = it },
+                onAddCourseAt = { wd, sec ->
+                    editingCourse = null
+                    newCourseWeekday = wd
+                    newCourseSection = sec
+                    showCourseEditDialog = true
+                }
+            )
         }
     }
     
@@ -177,7 +182,7 @@ fun ScheduleScreen(
         var resultMsg by remember { mutableStateOf("") }
         
         AlertDialog(
-            onDismissRequest = { showImportDialog = false },
+            onDismissRequest = onDismissImportDialog,
             containerColor = MaterialTheme.colorScheme.surface,
             title = { Text("导入强智教务课表", color = MaterialTheme.colorScheme.onSurface) },
             text = {
@@ -206,7 +211,7 @@ fun ScheduleScreen(
                             Spacer(Modifier.height(10.dp))
                             Button(
                                 onClick = {
-                                    showImportDialog = false
+                                    onDismissImportDialog()
                                     onConsultAi("阿米娅，我已经成功导入了新学期课表，请结合我的课表数据为我做一次全面的学情分析：包括课程负荷评估、每周节奏分析与自习备考作息建议！")
                                 },
                                 modifier = Modifier.fillMaxWidth(),
@@ -237,42 +242,96 @@ fun ScheduleScreen(
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showImportDialog = false }) { Text("关闭") }
+                TextButton(onClick = onDismissImportDialog) { Text("关闭") }
             }
         )
     }
 
     if (showReminderDialog) {
         CourseReminderDialog(
-            onDismiss = { showReminderDialog = false },
+            onDismiss = onDismissReminderDialog,
             onSave = { enabled, dismissEnabled, mins ->
                 ScheduleManager.remindEnabled = enabled
                 ScheduleManager.dismissRemindEnabled = dismissEnabled
                 ScheduleManager.remindMinutes = mins
                 ScheduleManager.save(context)
                 Toast.makeText(context, "课表提醒设置已保存", Toast.LENGTH_SHORT).show()
-                showReminderDialog = false
+                onDismissReminderDialog()
+            }
+        )
+    }
+
+    if (selectedCourseForDetail != null) {
+        val course = selectedCourseForDetail!!
+        CourseDetailDialog(
+            course = course,
+            color = colorMap[course.name] ?: MaterialTheme.colorScheme.primary,
+            onDismiss = { selectedCourseForDetail = null },
+            onEdit = {
+                val c = selectedCourseForDetail!!
+                selectedCourseForDetail = null
+                editingCourse = c
+                showCourseEditDialog = true
+            },
+            onDelete = {
+                val c = selectedCourseForDetail!!
+                selectedCourseForDetail = null
+                deletingCourse = c
+            }
+        )
+    }
+
+    if (deletingCourse != null) {
+        val target = deletingCourse!!
+        DeleteConfirmationDialog(
+            courseName = target.name,
+            onDismiss = { deletingCourse = null },
+            onConfirm = {
+                ScheduleManager.deleteCourse(target.id, context)
+                Toast.makeText(context, "已删除课程《${target.name}》", Toast.LENGTH_SHORT).show()
+                deletingCourse = null
+                refreshTrigger++
+            }
+        )
+    }
+
+    if (showCourseEditDialog) {
+        CourseEditDialog(
+            initialCourse = editingCourse,
+            defaultWeekday = newCourseWeekday,
+            defaultSection = newCourseSection,
+            onDismiss = {
+                showCourseEditDialog = false
+                editingCourse = null
+            },
+            onSave = { savedCourse ->
+                if (editingCourse != null) {
+                    ScheduleManager.updateCourse(savedCourse, context)
+                    Toast.makeText(context, "已更新课程《${savedCourse.name}》", Toast.LENGTH_SHORT).show()
+                } else {
+                    ScheduleManager.addCourse(savedCourse, context)
+                    Toast.makeText(context, "已添加新课程《${savedCourse.name}》", Toast.LENGTH_SHORT).show()
+                }
+                showCourseEditDialog = false
+                editingCourse = null
+                refreshTrigger++
             }
         )
     }
 }
 
 @Composable
-fun TimetableGrid(weekNo: Int, refreshTrigger: Int, onPrevWeek: () -> Unit, onNextWeek: () -> Unit) {
+fun TimetableGrid(
+    weekNo: Int,
+    refreshTrigger: Int,
+    colorMap: Map<String, Color>,
+    onPrevWeek: () -> Unit,
+    onNextWeek: () -> Unit,
+    onSelectCourse: (Course) -> Unit,
+    onAddCourseAt: (weekday: Int, section: Int) -> Unit
+) {
     val weekDays = listOf("日", "一", "二", "三", "四", "五", "六")
     val courses = ScheduleManager.courses
-    val colorMap = remember(refreshTrigger, courses) {
-        val map = mutableMapOf<String, Color>()
-        var idx = 0
-        courses.forEach { 
-            if (!map.containsKey(it.name)) {
-                map[it.name] = COURSE_COLORS[idx % COURSE_COLORS.size]
-                idx++
-            }
-        }
-        map
-    }
-
 
     var showTime by remember { mutableStateOf(false) }
 
@@ -306,7 +365,6 @@ fun TimetableGrid(weekNo: Int, refreshTrigger: Int, onPrevWeek: () -> Unit, onNe
 
     // Gesture state
     var dragAccumulator by remember { mutableFloatStateOf(0f) }
-
 
     Column(modifier = Modifier.fillMaxSize()) {
         Row(modifier = Modifier.fillMaxWidth().padding(start = 38.dp, end = 8.dp)) {
@@ -413,13 +471,34 @@ fun TimetableGrid(weekNo: Int, refreshTrigger: Int, onPrevWeek: () -> Unit, onNe
                     }
                 }
             }
-            // Courses overlay
+            // Courses overlay & Empty clickable slots
             Row(modifier = Modifier.matchParentSize().padding(start = 38.dp)) {
                 for (wd in listOf(7, 1, 2, 3, 4, 5, 6)) {
                     Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
                         val dayCourses = ScheduleManager.getCoursesOn(wd, weekNo)
+
+                        // 1. Clickable empty slots to quickly add a course
+                        for (sec in 1..13) {
+                            val isOccupied = dayCourses.any { sec in it.secStart..it.secEnd }
+                            if (!isOccupied) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .offset(y = rowH * (sec - 1))
+                                        .height(rowH)
+                                        .clickable { onAddCourseAt(wd, sec) }
+                                )
+                            }
+                        }
+
+                        // 2. Render active courses
                         for (c in dayCourses) {
-                            CourseBlock(c, colorMap[c.name] ?: Color.Gray, rowH)
+                            CourseBlock(
+                                course = c,
+                                color = colorMap[c.name] ?: Color.Gray,
+                                rowH = rowH,
+                                onClick = { onSelectCourse(c) }
+                            )
                         }
                     }
                 }
@@ -429,8 +508,12 @@ fun TimetableGrid(weekNo: Int, refreshTrigger: Int, onPrevWeek: () -> Unit, onNe
 }
 
 @Composable
-fun CourseBlock(course: Course, color: Color, rowH: androidx.compose.ui.unit.Dp) {
-    var showDetail by remember { mutableStateOf(false) }
+fun CourseBlock(
+    course: Course,
+    color: Color,
+    rowH: androidx.compose.ui.unit.Dp,
+    onClick: () -> Unit
+) {
     val topOff = rowH * (course.secStart - 1)
     val height = rowH * (course.secEnd - course.secStart + 1)
 
@@ -442,7 +525,7 @@ fun CourseBlock(course: Course, color: Color, rowH: androidx.compose.ui.unit.Dp)
             .fillMaxWidth()
             .clip(RoundedCornerShape(6.dp))
             .background(color)
-            .clickable { showDetail = true }
+            .clickable(onClick = onClick)
             .padding(2.dp)
     ) {
         Column(modifier = Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -453,27 +536,485 @@ fun CourseBlock(course: Course, color: Color, rowH: androidx.compose.ui.unit.Dp)
             }
         }
     }
+}
 
-    if (showDetail) {
-        AlertDialog(
-            onDismissRequest = { showDetail = false },
-            containerColor = MaterialTheme.colorScheme.surface,
-            title = { Text("课程详情", color = MaterialTheme.colorScheme.onSurface) },
-            text = {
-                Column {
-                    Text(course.name, color = color, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                    Spacer(Modifier.height(8.dp))
-                    Text("节次: ${course.secStart} - ${course.secEnd}节", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f), fontSize = 14.sp)
-                    Text("周次: ${course.weekStart} - ${course.weekEnd}周 (${course.parity})", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f), fontSize = 14.sp)
-                    if (course.teacher.isNotEmpty()) Text("教师: ${course.teacher}", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f), fontSize = 14.sp)
-                    if (course.room.isNotEmpty()) Text("教室: ${course.room}", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f), fontSize = 14.sp)
-                    if (course.note.isNotEmpty()) Text("备注: ${course.note}", color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f), fontSize = 14.sp)
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = { showDetail = false }) { Text("关闭") }
+@Composable
+fun CourseDetailDialog(
+    course: Course,
+    color: Color,
+    onDismiss: () -> Unit,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit
+) {
+    val weekdayNames = arrayOf("", "周一", "周二", "周三", "周四", "周五", "周六", "周日")
+    val weekdayStr = weekdayNames.getOrElse(course.weekday) { "周${course.weekday}" }
+    val parityStr = when(course.parity) {
+        "odd" -> "仅单周"
+        "even" -> "仅双周"
+        else -> "全部周"
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = MaterialTheme.colorScheme.surface,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(modifier = Modifier.size(14.dp).clip(RoundedCornerShape(3.dp)).background(color))
+                Spacer(Modifier.width(8.dp))
+                Text("课程详情", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold, fontSize = 18.sp)
             }
-        )
+        },
+        text = {
+            Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                Text(course.name, color = color, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                Spacer(Modifier.height(12.dp))
+
+                DetailItem(icon = Icons.Default.AccessTime, label = "时间", value = "$weekdayStr 第 ${course.secStart}-${course.secEnd} 节")
+                DetailItem(icon = Icons.Default.DateRange, label = "周次", value = "第 ${course.weekStart}-${course.weekEnd} 周 ($parityStr)")
+                if (course.room.isNotEmpty()) {
+                    DetailItem(icon = Icons.Default.LocationOn, label = "教室", value = course.room)
+                }
+                if (course.teacher.isNotEmpty()) {
+                    DetailItem(icon = Icons.Default.Person, label = "教师", value = course.teacher)
+                }
+                if (course.campus.isNotEmpty()) {
+                    DetailItem(icon = Icons.Default.School, label = "校区", value = course.campus)
+                }
+                if (course.note.isNotEmpty()) {
+                    DetailItem(icon = Icons.Default.Notes, label = "备注", value = course.note)
+                }
+            }
+        },
+        confirmButton = {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(
+                    onClick = onDelete,
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("删除")
+                }
+                Button(
+                    onClick = onEdit,
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                ) {
+                    Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(16.dp), tint = Color.Black)
+                    Spacer(Modifier.width(4.dp))
+                    Text("编辑", color = Color.Black, fontWeight = FontWeight.Bold)
+                }
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("关闭") }
+        }
+    )
+}
+
+@Composable
+private fun DetailItem(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, value: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(icon, contentDescription = null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+        Spacer(Modifier.width(8.dp))
+        Text("$label: ", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
+        Text(value, fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Medium)
+    }
+}
+
+@Composable
+fun DeleteConfirmationDialog(
+    courseName: String,
+    onDismiss: () -> Unit,
+    onConfirm: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.Warning, contentDescription = null, tint = MaterialTheme.colorScheme.error)
+                Spacer(Modifier.width(8.dp))
+                Text("删除课程确认", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+            }
+        },
+        text = {
+            Text("确定要删除课程《$courseName》吗？\n删除后无法撤销，如需重新添加需手动录入。", fontSize = 14.sp)
+        },
+        confirmButton = {
+            Button(
+                onClick = onConfirm,
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+            ) {
+                Text("确认删除", color = Color.White, fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("取消") }
+        }
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun CourseEditDialog(
+    initialCourse: Course? = null,
+    defaultWeekday: Int = 1,
+    defaultSection: Int = 1,
+    onDismiss: () -> Unit,
+    onSave: (Course) -> Unit
+) {
+    var name by remember { mutableStateOf(initialCourse?.name ?: "") }
+    var weekday by remember { mutableIntStateOf(initialCourse?.weekday ?: defaultWeekday) }
+    var secStart by remember { mutableIntStateOf(initialCourse?.secStart ?: defaultSection) }
+    var secEnd by remember { mutableIntStateOf(initialCourse?.secEnd ?: (defaultSection + 1).coerceAtMost(13)) }
+    var weekStart by remember { mutableIntStateOf(initialCourse?.weekStart ?: 1) }
+    var weekEnd by remember { mutableIntStateOf(initialCourse?.weekEnd ?: 16) }
+    var parity by remember { mutableStateOf(initialCourse?.parity ?: "all") }
+    var room by remember { mutableStateOf(initialCourse?.room ?: "") }
+    var teacher by remember { mutableStateOf(initialCourse?.teacher ?: "") }
+    var note by remember { mutableStateOf(initialCourse?.note ?: "") }
+    var campus by remember { mutableStateOf(initialCourse?.campus ?: "") }
+
+    var hasError by remember { mutableStateOf(false) }
+    var errorMessage by remember { mutableStateOf("") }
+
+    val isEditing = (initialCourse != null)
+    val weekdayList = listOf(
+        Pair(1, "一"), Pair(2, "二"), Pair(3, "三"),
+        Pair(4, "四"), Pair(5, "五"), Pair(6, "六"), Pair(7, "日")
+    )
+    val parityOptions = listOf(
+        Pair("all", "全部周"),
+        Pair("odd", "仅单周"),
+        Pair("even", "仅双周")
+    )
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        containerColor = MaterialTheme.colorScheme.surface,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = if (isEditing) Icons.Default.Edit else Icons.Default.AddCircleOutline,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(24.dp)
+                )
+                Spacer(Modifier.width(8.dp))
+                Text(if (isEditing) "编辑课程" else "手动添加课程", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 480.dp)
+                    .verticalScroll(rememberScrollState())
+            ) {
+                // 1. 课程名称
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = {
+                        name = it
+                        if (hasError && it.isNotBlank()) hasError = false
+                    },
+                    label = { Text("课程名称 *") },
+                    placeholder = { Text("如：高等数学、自习、大学物理") },
+                    isError = hasError && name.isBlank(),
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+                if (hasError && name.isBlank()) {
+                    Text("课程名称不能为空", color = MaterialTheme.colorScheme.error, fontSize = 11.sp, modifier = Modifier.padding(start = 4.dp, top = 2.dp))
+                }
+
+                Spacer(Modifier.height(12.dp))
+
+                // 2. 上课星期
+                Text("上课星期", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f))
+                Spacer(Modifier.height(6.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    weekdayList.forEach { (wInt, wName) ->
+                        val isSelected = (weekday == wInt)
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .padding(horizontal = 2.dp)
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
+                                .clickable { weekday = wInt }
+                                .padding(vertical = 6.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = wName,
+                                fontSize = 12.sp,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                color = if (isSelected) Color.Black else MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(12.dp))
+
+                // 3. 节次范围 (开始节 - 结束节)
+                Text("节次范围", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f))
+                Spacer(Modifier.height(6.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    NumberDropdownSelector(
+                        label = "第",
+                        suffix = "节",
+                        currentValue = secStart,
+                        range = 1..13,
+                        modifier = Modifier.weight(1f),
+                        onValueChange = {
+                            secStart = it
+                            if (secEnd < it) secEnd = it
+                        }
+                    )
+                    Text("至", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
+                    NumberDropdownSelector(
+                        label = "第",
+                        suffix = "节",
+                        currentValue = secEnd,
+                        range = secStart..13,
+                        modifier = Modifier.weight(1f),
+                        onValueChange = { secEnd = it }
+                    )
+                }
+
+                Spacer(Modifier.height(12.dp))
+
+                // 4. 周次范围 (起始周 - 结束周)
+                Text("周次范围", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.85f))
+                Spacer(Modifier.height(6.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    NumberDropdownSelector(
+                        label = "第",
+                        suffix = "周",
+                        currentValue = weekStart,
+                        range = 1..30,
+                        modifier = Modifier.weight(1f),
+                        onValueChange = {
+                            weekStart = it
+                            if (weekEnd < it) weekEnd = it
+                        }
+                    )
+                    Text("至", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f))
+                    NumberDropdownSelector(
+                        label = "第",
+                        suffix = "周",
+                        currentValue = weekEnd,
+                        range = weekStart..30,
+                        modifier = Modifier.weight(1f),
+                        onValueChange = { weekEnd = it }
+                    )
+                }
+
+                Spacer(Modifier.height(10.dp))
+
+                // 5. 单双周
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    parityOptions.forEach { (pKey, pLabel) ->
+                        val isSelected = (parity == pKey)
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.25f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                                .border(
+                                    width = if (isSelected) 1.5.dp else 0.dp,
+                                    color = if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent,
+                                    shape = RoundedCornerShape(8.dp)
+                                )
+                                .clickable { parity = pKey }
+                                .padding(vertical = 7.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = pLabel,
+                                fontSize = 12.sp,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(12.dp))
+
+                // 6. 上课教室 (选填)
+                OutlinedTextField(
+                    value = room,
+                    onValueChange = { room = it },
+                    label = { Text("上课教室 (选填)") },
+                    placeholder = { Text("如：教三 201、实验楼 402") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+
+                Spacer(Modifier.height(8.dp))
+
+                // 7. 任课教师 (选填)
+                OutlinedTextField(
+                    value = teacher,
+                    onValueChange = { teacher = it },
+                    label = { Text("任课教师 (选填)") },
+                    placeholder = { Text("如：张教授") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+
+                Spacer(Modifier.height(8.dp))
+
+                // 8. 备注说明 (选填)
+                OutlinedTextField(
+                    value = note,
+                    onValueChange = { note = it },
+                    label = { Text("备注说明 (选填)") },
+                    placeholder = { Text("如：大作业、需带电脑、自习") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+
+                if (errorMessage.isNotEmpty()) {
+                    Spacer(Modifier.height(6.dp))
+                    Text(errorMessage, color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    if (name.isBlank()) {
+                        hasError = true
+                        errorMessage = "请输入课程名称"
+                        return@Button
+                    }
+                    if (secStart > secEnd) {
+                        errorMessage = "开始节次不能大于结束节次"
+                        return@Button
+                    }
+                    if (weekStart > weekEnd) {
+                        errorMessage = "起始周次不能大于结束周次"
+                        return@Button
+                    }
+
+                    val finalCourse = (initialCourse ?: Course(
+                        name = name.trim(),
+                        weekday = weekday,
+                        secStart = secStart,
+                        secEnd = secEnd,
+                        weekStart = weekStart,
+                        weekEnd = weekEnd,
+                        parity = parity,
+                        room = room.trim(),
+                        teacher = teacher.trim(),
+                        campus = campus.trim(),
+                        note = note.trim()
+                    )).copy(
+                        name = name.trim(),
+                        weekday = weekday,
+                        secStart = secStart,
+                        secEnd = secEnd,
+                        weekStart = weekStart,
+                        weekEnd = weekEnd,
+                        parity = parity,
+                        room = room.trim(),
+                        teacher = teacher.trim(),
+                        campus = campus.trim(),
+                        note = note.trim()
+                    )
+
+                    onSave(finalCourse)
+                },
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+            ) {
+                Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp), tint = Color.Black)
+                Spacer(Modifier.width(4.dp))
+                Text("保存", color = Color.Black, fontWeight = FontWeight.Bold)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("取消") }
+        }
+    )
+}
+
+@Composable
+fun NumberDropdownSelector(
+    label: String,
+    suffix: String,
+    currentValue: Int,
+    range: IntRange,
+    modifier: Modifier = Modifier,
+    onValueChange: (Int) -> Unit
+) {
+    var expanded by remember { mutableStateOf(false) }
+
+    Box(modifier = modifier) {
+        OutlinedCard(
+            modifier = Modifier.fillMaxWidth().clickable { expanded = true },
+            shape = RoundedCornerShape(8.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = "$label $currentValue $suffix",
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Icon(
+                    Icons.Default.ArrowDropDown,
+                    contentDescription = null,
+                    modifier = Modifier.size(18.dp),
+                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                )
+            }
+        }
+
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+            modifier = Modifier.heightIn(max = 220.dp)
+        ) {
+            range.forEach { num ->
+                DropdownMenuItem(
+                    text = {
+                        Text(
+                            "$label $num $suffix",
+                            fontWeight = if (num == currentValue) FontWeight.Bold else FontWeight.Normal,
+                            color = if (num == currentValue) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                        )
+                    },
+                    onClick = {
+                        onValueChange(num)
+                        expanded = false
+                    }
+                )
+            }
+        }
     }
 }
 
@@ -487,7 +1028,8 @@ fun CourseReminderDialog(
     var remindEnabled by remember { mutableStateOf(ScheduleManager.remindEnabled) }
     var dismissRemindEnabled by remember { mutableStateOf(ScheduleManager.dismissRemindEnabled) }
     var remindMinutes by remember { mutableIntStateOf(ScheduleManager.remindMinutes) }
-    val minuteOptions = listOf(10, 15, 20, 25, 30)
+    val minuteOptions = listOf(10, 20, 30)
+    var showCustomReminderDialog by remember { mutableStateOf(false) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -535,21 +1077,69 @@ fun CourseReminderDialog(
                     )
                 }
 
-                // 提前时间选择
+                // 提前时间选择（等宽等高，统一规格）
                 if (remindEnabled) {
                     Column {
                         Text("提前提醒时间：", fontSize = 12.sp, fontWeight = FontWeight.Medium)
                         Spacer(Modifier.height(6.dp))
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
+                            val isCustomSelected = !minuteOptions.contains(remindMinutes)
+
                             minuteOptions.forEach { mins ->
-                                FilterChip(
-                                    selected = (remindMinutes == mins),
-                                    onClick = { remindMinutes = mins },
-                                    label = { Text("${mins}m", fontSize = 12.sp) },
-                                    modifier = Modifier.padding(horizontal = 2.dp)
+                                val isSelected = (remindMinutes == mins)
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(34.dp)
+                                        .clip(RoundedCornerShape(10.dp))
+                                        .background(
+                                            if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.22f)
+                                            else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+                                        )
+                                        .then(
+                                            if (isSelected) Modifier.border(1.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(10.dp))
+                                            else Modifier
+                                        )
+                                        .clickable { remindMinutes = mins },
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = "${mins}m",
+                                        fontSize = 12.sp,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                        color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                                        maxLines = 1
+                                    )
+                                }
+                            }
+
+                            // 自定义提前时长入口（规格与其他按钮完全一致）
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(34.dp)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(
+                                        if (isCustomSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.22f)
+                                        else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
+                                    )
+                                    .then(
+                                        if (isCustomSelected) Modifier.border(1.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(10.dp))
+                                        else Modifier
+                                    )
+                                    .clickable { showCustomReminderDialog = true },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = if (isCustomSelected) "${remindMinutes}m" else "自定义",
+                                    fontSize = 11.sp,
+                                    fontWeight = if (isCustomSelected) FontWeight.Bold else FontWeight.Normal,
+                                    color = if (isCustomSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                                    maxLines = 1
                                 )
                             }
                         }
@@ -618,4 +1208,108 @@ fun CourseReminderDialog(
             }
         }
     )
+
+    if (showCustomReminderDialog) {
+        var tempMinutes by remember { mutableIntStateOf(remindMinutes) }
+        val minLimit = 5
+        val maxLimit = 60
+
+        AlertDialog(
+            onDismissRequest = { showCustomReminderDialog = false },
+            containerColor = MaterialTheme.colorScheme.surface,
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        Icons.Default.Tune,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = "自定义提前提醒时间",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 17.sp,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+            },
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        text = "提前 $tempMinutes 分钟",
+                        fontSize = 28.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(Modifier.height(14.dp))
+
+                    Slider(
+                        value = tempMinutes.toFloat(),
+                        onValueChange = { tempMinutes = it.toInt().coerceIn(minLimit, maxLimit) },
+                        valueRange = minLimit.toFloat()..maxLimit.toFloat(),
+                        colors = SliderDefaults.colors(
+                            thumbColor = MaterialTheme.colorScheme.primary,
+                            activeTrackColor = MaterialTheme.colorScheme.primary
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Spacer(Modifier.height(6.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceEvenly
+                    ) {
+                        OutlinedButton(
+                            onClick = { tempMinutes = (tempMinutes - 5).coerceAtLeast(minLimit) },
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                            modifier = Modifier.widthIn(min = 44.dp)
+                        ) {
+                            Text("-5", fontSize = 12.sp)
+                        }
+                        OutlinedButton(
+                            onClick = { tempMinutes = (tempMinutes - 1).coerceAtLeast(minLimit) },
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                            modifier = Modifier.widthIn(min = 44.dp)
+                        ) {
+                            Text("-1", fontSize = 12.sp)
+                        }
+                        OutlinedButton(
+                            onClick = { tempMinutes = (tempMinutes + 1).coerceAtMost(maxLimit) },
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                            modifier = Modifier.widthIn(min = 44.dp)
+                        ) {
+                            Text("+1", fontSize = 12.sp)
+                        }
+                        OutlinedButton(
+                            onClick = { tempMinutes = (tempMinutes + 5).coerceAtMost(maxLimit) },
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                            modifier = Modifier.widthIn(min = 44.dp)
+                        ) {
+                            Text("+5", fontSize = 12.sp)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        remindMinutes = tempMinutes
+                        showCustomReminderDialog = false
+                    }
+                ) {
+                    Text("确定", color = Color.Black)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showCustomReminderDialog = false }) {
+                    Text("取消", color = Color.Gray)
+                }
+            }
+        )
+    }
 }

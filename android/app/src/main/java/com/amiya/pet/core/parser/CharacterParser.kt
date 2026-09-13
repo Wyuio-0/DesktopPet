@@ -20,9 +20,9 @@ object CharacterParser {
                 } catch (e: Exception) {
                     false
                 }
-            } ?: listOf("amiya", "yuyuananjielina", "shenglinchuxue")
+            } ?: listOf("amiya")
         } catch (e: Exception) {
-            listOf("amiya", "yuyuananjielina", "shenglinchuxue")
+            listOf("amiya")
         }
     }
 

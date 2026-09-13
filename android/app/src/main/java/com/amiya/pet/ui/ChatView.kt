@@ -45,6 +45,11 @@ import kotlinx.coroutines.launch
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ChatScreen(
+    showGuideDialog: Boolean = false,
+    onDismissGuideDialog: () -> Unit = {},
+    showSettingsDialog: Boolean = false,
+    onDismissSettingsDialog: () -> Unit = {},
+    clearHistoryTrigger: Int = 0,
     onCheckUpdate: () -> Unit = {},
     onToggleTheme: () -> Unit = {},
     isDark: Boolean = true,
@@ -55,11 +60,16 @@ fun ChatScreen(
     val scope = rememberCoroutineScope()
     val brain = remember { AmiyaBrain.getInstance(context) }
     val prefs = remember { context.getSharedPreferences("amiya_pet_prefs", Context.MODE_PRIVATE) }
-    var showGuideDialog by remember { mutableStateOf(!prefs.getBoolean("has_seen_guide_v1", false)) }
     var chatList by remember { mutableStateOf(brain.chatHistory) }
     var inputText by remember { mutableStateOf("") }
     var isSending by remember { mutableStateOf(false) }
-    var showSettingsDialog by remember { mutableStateOf(false) }
+
+    LaunchedEffect(clearHistoryTrigger) {
+        if (clearHistoryTrigger > 0) {
+            brain.clearHistory()
+            chatList = emptyList()
+        }
+    }
 
     val listState = rememberLazyListState()
 
@@ -128,52 +138,11 @@ fun ChatScreen(
         }
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("与桌宠互动", fontWeight = FontWeight.Bold, fontSize = 18.sp)
-                    }
-                },
-                actions = {
-                    IconButton(onClick = { showGuideDialog = true }) {
-                        Icon(
-                            imageVector = Icons.Default.Campaign,
-                            contentDescription = "公告与使用指南",
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                    }
-                    IconButton(onClick = {
-                        brain.clearHistory()
-                        chatList = emptyList()
-                    }) {
-                        Icon(Icons.Default.DeleteOutline, contentDescription = "清空对话", tint = MaterialTheme.colorScheme.onSurface)
-                    }
-                    IconButton(onClick = onCheckUpdate) {
-                        Icon(Icons.Default.CloudDownload, contentDescription = "检查更新", tint = MaterialTheme.colorScheme.onSurface)
-                    }
-                    IconButton(onClick = onToggleTheme) {
-                        if (isDark) {
-                            Icon(Icons.Default.Brightness7, contentDescription = "切换到浅色模式", tint = MaterialTheme.colorScheme.onSurface)
-                        } else {
-                            Icon(Icons.Default.Brightness4, contentDescription = "切换到深色模式", tint = MaterialTheme.colorScheme.onSurface)
-                        }
-                    }
-                    IconButton(onClick = { showSettingsDialog = true }) {
-                        Icon(Icons.Default.Settings, contentDescription = "设置", tint = MaterialTheme.colorScheme.onSurface)
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.surface)
-            )
-        },
-        containerColor = MaterialTheme.colorScheme.background
-    ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-        ) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+    ) {
             // Chat messages
             Box(modifier = Modifier.weight(1f)) {
                 if (chatList.isEmpty()) {
@@ -293,7 +262,6 @@ fun ChatScreen(
                 }
             }
         }
-    }
 
     if (showSettingsDialog) {
         var baseUrl by remember { mutableStateOf(brain.baseUrl) }
@@ -303,7 +271,7 @@ fun ChatScreen(
         var showAdvancedRelay by remember { mutableStateOf(false) }
 
         AlertDialog(
-            onDismissRequest = { showSettingsDialog = false },
+            onDismissRequest = onDismissSettingsDialog,
             containerColor = MaterialTheme.colorScheme.surface,
             title = { Text("综合设置", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface) },
             text = {
@@ -431,7 +399,7 @@ fun ChatScreen(
                     Spacer(modifier = Modifier.height(4.dp))
                     OutlinedButton(
                         onClick = {
-                            showSettingsDialog = false
+                            onDismissSettingsDialog()
                             onCheckUpdate()
                         },
                         modifier = Modifier.fillMaxWidth()
@@ -450,12 +418,12 @@ fun ChatScreen(
                     brain.apiKey = apiKey
                     brain.model = model
                     brain.publicRelayUrl = publicRelayUrl.trim().ifBlank { AmiyaBrain.DEFAULT_PUBLIC_RELAY_URL }
-                    showSettingsDialog = false
+                    onDismissSettingsDialog()
                 }) {
                     Text("保存", color = Color.Black)
                 }
             },
-            dismissButton = { TextButton(onClick = { showSettingsDialog = false }) { Text("取消", color = Color.Gray) } }
+            dismissButton = { TextButton(onClick = onDismissSettingsDialog) { Text("取消", color = Color.Gray) } }
         )
     }
 
@@ -463,7 +431,7 @@ fun ChatScreen(
         UserGuideDialog(
             onDismiss = {
                 prefs.edit().putBoolean("has_seen_guide_v1", true).apply()
-                showGuideDialog = false
+                onDismissGuideDialog()
             }
         )
     }

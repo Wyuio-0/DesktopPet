@@ -123,6 +123,11 @@ class NotesManager private constructor(private val context: Context) {
         return note
     }
 
+    fun addNote(note: Note) {
+        _notes.add(0, note)
+        saveNotes()
+    }
+
     fun updateNote(id: String, content: String, title: String? = null, pinned: Boolean? = null): Note? {
         val note = _notes.find { it.id == id } ?: return null
         note.content = content

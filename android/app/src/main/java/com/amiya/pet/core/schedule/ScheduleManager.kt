@@ -87,7 +87,8 @@ object ScheduleManager {
                     room = c.optString("room", ""),
                     teacher = c.optString("teacher", ""),
                     campus = c.optString("campus", ""),
-                    note = c.optString("note", "")
+                    note = c.optString("note", ""),
+                    id = c.optString("id", UUID.randomUUID().toString())
                 ))
             }
             courses = courseList
@@ -122,6 +123,7 @@ object ScheduleManager {
             val coursesArray = JSONArray()
             for (c in courses) {
                 val cObj = JSONObject()
+                cObj.put("id", c.id)
                 cObj.put("name", c.name)
                 cObj.put("weekday", c.weekday)
                 cObj.put("sec_start", c.secStart)
@@ -148,6 +150,32 @@ object ScheduleManager {
         } catch (e: Exception) {
             e.printStackTrace()
         }
+    }
+
+    fun addCourse(course: Course, context: Context) {
+        if (termStart == null) {
+            val cal = Calendar.getInstance()
+            val dayOfWeek = cal.get(Calendar.DAY_OF_WEEK)
+            val diff = if (dayOfWeek == Calendar.SUNDAY) -6 else Calendar.MONDAY - dayOfWeek
+            cal.add(Calendar.DAY_OF_YEAR, diff)
+            cal.set(Calendar.HOUR_OF_DAY, 0)
+            cal.set(Calendar.MINUTE, 0)
+            cal.set(Calendar.SECOND, 0)
+            cal.set(Calendar.MILLISECOND, 0)
+            termStart = cal.time
+        }
+        courses = courses + course
+        save(context)
+    }
+
+    fun updateCourse(course: Course, context: Context) {
+        courses = courses.map { if (it.id == course.id) course else it }
+        save(context)
+    }
+
+    fun deleteCourse(courseId: String, context: Context) {
+        courses = courses.filterNot { it.id == courseId }
+        save(context)
     }
 
     fun getWeekNo(date: Date = Date()): Int? {

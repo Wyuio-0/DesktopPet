@@ -13,7 +13,8 @@ data class Course(
     val room: String = "",
     val teacher: String = "",
     val campus: String = "",
-    val note: String = ""
+    val note: String = "",
+    val id: String = java.util.UUID.randomUUID().toString()
 ) {
     fun activeOn(weekNo: Int): Boolean {
         if (weekNo < weekStart || weekNo > weekEnd) return false

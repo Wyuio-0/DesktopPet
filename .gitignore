@@ -34,6 +34,7 @@ schedule_raw.json
 *_schedule*.json
 
 # Local scratch / audit scripts
+scratch/
 scratch_*.py
 scratch_*.json
 

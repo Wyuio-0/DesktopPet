@@ -354,3 +354,33 @@ class Schedule:
             lines.append("无时间课程（网课）：")
             lines.extend("  - " + n for n in self.notes)
         return "\n".join(lines)
+
+    # ── 增删改 ─────────────────────────────────────────────────────
+
+    def add_course(self, course):
+        """新增一门课程并保存。"""
+        self.courses.append(course)
+        return self.save()
+
+    def update_course(self, old_course, new_course):
+        """修改指定课程并保存。"""
+        for i, c in enumerate(self.courses):
+            if c is old_course or (c.name == old_course.name and
+                                   c.weekday == old_course.weekday and
+                                   c.sec_start == old_course.sec_start and
+                                   c.week_start == old_course.week_start):
+                self.courses[i] = new_course
+                return self.save()
+        return False
+
+    def delete_course(self, target_course):
+        """删除指定课程并保存。"""
+        for i, c in enumerate(self.courses):
+            if c is target_course or (c.name == target_course.name and
+                                   c.weekday == target_course.weekday and
+                                   c.sec_start == target_course.sec_start and
+                                   c.week_start == target_course.week_start):
+                del self.courses[i]
+                return self.save()
+        return False
+

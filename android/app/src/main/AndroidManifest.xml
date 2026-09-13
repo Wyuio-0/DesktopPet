@@ -25,6 +25,7 @@
         android:label="阿米娅桌宠"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
+        android:usesCleartextTraffic="true"
         android:theme="@android:style/Theme.Material.Light.NoActionBar">
 
         <!-- FileProvider 用于安全安装 APK -->
@@ -72,6 +73,16 @@
             <meta-data
                 android:name="android.appwidget.provider"
                 android:resource="@xml/schedule_widget_info" />
+        </receiver>
+
+        <!-- 桌面桌宠 ADB 极速调试广播接收器 (TEST_ACTION，零编译毫秒级指令注入) -->
+        <receiver
+            android:name=".floating.PetDebugReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.amiya.pet.TEST_ACTION" />
+                <action android:name="com.amiya.pet.ACTION_RESTORE_PET" />
+            </intent-filter>
         </receiver>
 
     </application>
