@@ -122,6 +122,8 @@ class PetWindow(QtWidgets.QWidget):
     # Emitted from the AI worker thread when a reminder is scheduled; the queued
     # connection marshals it onto the UI thread where QTimer is safe to use.
     reminder_requested = QtCore.pyqtSignal(int, str)
+    pomodoro_requested = QtCore.pyqtSignal(int, int, int)
+    stop_focus_requested = QtCore.pyqtSignal()
     # AI 敏感操作确认：worker 线程通过它把"弹确认框"的请求投递到 GUI 线程。
     confirm_dialog_requested = QtCore.pyqtSignal(object)
     # 跨端协同网络事件信号
@@ -245,10 +247,16 @@ class PetWindow(QtWidgets.QWidget):
         self.weather_coord = PetWeatherCoordinator(self)
         self.music_coord = PetMusicCoordinator(self)
 
-        # AI 定时提醒路由
+        # AI 定时提醒与番茄钟专注路由
         self.reminder_requested.connect(
             self.focus_mgr.schedule_reminder, QtCore.Qt.QueuedConnection)
         actions.set_scheduler(self.reminder_requested.emit)
+        self.pomodoro_requested.connect(
+            self.focus_mgr.start_pomodoro, QtCore.Qt.QueuedConnection)
+        actions.set_pomodoro_starter(self.pomodoro_requested.emit)
+        self.stop_focus_requested.connect(
+            self.focus_mgr.stop_focus, QtCore.Qt.QueuedConnection)
+        actions.set_focus_stopper(self.stop_focus_requested.emit)
 
         self.play("start")
         self._setup_hotkey()

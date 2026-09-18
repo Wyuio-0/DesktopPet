@@ -20,8 +20,10 @@ MARGIN = 8
 GAP = 4              # 课程块之间的垂直与水平微间隙
 MAX_SECTIONS = 13    # 一天最多 13 节课
 
-# 列序：周日 -> 周一 -> ... -> 周六（weekday 7, 1, 2, 3, 4, 5, 6，对齐手机端）
-_COL_WEEKDAYS = [7, 1, 2, 3, 4, 5, 6]
+# 列序选项：周日开始 vs 周一开始
+COL_WEEKDAYS_SUNDAY = [7, 1, 2, 3, 4, 5, 6]
+COL_WEEKDAYS_MONDAY = [1, 2, 3, 4, 5, 6, 7]
+_COL_WEEKDAYS = COL_WEEKDAYS_SUNDAY  # 兼容旧引用
 _DAY_LABELS = {1: "周一", 2: "周二", 3: "周三", 4: "周四", 5: "周五", 6: "周六", 7: "周日"}
 
 # 对齐移动端的 10 种 Material Design 护眼课程配色板
@@ -50,6 +52,7 @@ class TimetableView(QtWidgets.QWidget):
         self._schedule = None
         self._eff_week = 1
         self._preview_note = False
+        self._week_start_day = "sunday"
         self._courses = {wd: [] for wd in range(1, 8)}
         self._notes = []
         self._color_of = {}
@@ -67,12 +70,18 @@ class TimetableView(QtWidgets.QWidget):
         self.setAutoFillBackground(True)
         self.setMinimumSize(600, 480)
 
+    @property
+    def col_weekdays(self):
+        """当前视图生效的星期列序列。"""
+        return COL_WEEKDAYS_MONDAY if self._week_start_day == "monday" else COL_WEEKDAYS_SUNDAY
+
     # ── 数据绑定 ──────────────────────────────────────────────────────
 
     def set_data(self, sched, display_week):
         """填充课表数据并重绘，计算当前周对应的实际公历日期与今天高亮。"""
         self._schedule = sched
         self._eff_week = max(1, int(display_week or 1))
+        self._week_start_day = getattr(sched, "week_start_day", "sunday")
         current_week_no = sched.week_no() or 0
         self._preview_note = current_week_no < 1
         self._notes = list(sched.notes)
@@ -96,24 +105,27 @@ class TimetableView(QtWidgets.QWidget):
 
     def _calculate_dates(self, sched, current_week_no):
         """换算本周 7 天的公历月日 (M.d)。
-        对齐 Android：列序为 周日(7), 周一(1), 周二(2), 周三(3), 周四(4), 周五(5), 周六(6)。
-        无论学期起始日设置为何时，严格以今日真实星期与自然周为锚点对齐。
+        支持周日开始 (7, 1..6) 或周一开始 (1..7)。
+        严格以今日真实星期与自然周为锚点对齐。
         """
         self._dates = [""] * 7
         self._today_col_idx = -1
         today = date.today()
         today_iso = today.isoweekday()  # 1=Mon .. 7=Sun
 
-        # 本自然周的周日（周日的 offset 为 0，其余为 isoweekday()）
-        offset_to_sun = 0 if today_iso == 7 else today_iso
-        cur_week_sun = today - timedelta(days=offset_to_sun)
+        if self._week_start_day == "monday":
+            offset_to_start = today_iso - 1
+        else:
+            offset_to_start = 0 if today_iso == 7 else today_iso
 
-        # 依据 eff_week 与 current_week_no 的周差推算目标周的周日
+        cur_week_start = today - timedelta(days=offset_to_start)
+
+        # 依据 eff_week 与 current_week_no 的周差推算目标周的起始日
         week_diff = self._eff_week - max(1, current_week_no)
-        target_sun = cur_week_sun + timedelta(weeks=week_diff)
+        target_start = cur_week_start + timedelta(weeks=week_diff)
 
         for i in range(7):
-            cur_day = target_sun + timedelta(days=i)
+            cur_day = target_start + timedelta(days=i)
             self._dates[i] = f"{cur_day.month}.{cur_day.day}"
             if cur_day == today:
                 self._today_col_idx = i
@@ -150,7 +162,7 @@ class TimetableView(QtWidgets.QWidget):
         return QtCore.QRect(x, y, w, h)
 
     def _col_w(self):
-        return self._grid_rect().width() / len(_COL_WEEKDAYS)
+        return self._grid_rect().width() / len(self.col_weekdays)
 
     def _row_h(self):
         return self._grid_rect().height() / MAX_SECTIONS
@@ -197,7 +209,7 @@ class TimetableView(QtWidgets.QWidget):
             p.drawLine(g.left(), y, g.right(), y)
 
         # 纵向分隔线
-        for c in range(len(_COL_WEEKDAYS) + 1):
+        for c in range(len(self.col_weekdays) + 1):
             x = round(g.left() + c * col_w)
             p.drawLine(x, g.top(), x, g.bottom())
 
@@ -213,7 +225,7 @@ class TimetableView(QtWidgets.QWidget):
         col_w = self._col_w()
         g = self._grid_rect()
 
-        for i, wd in enumerate(_COL_WEEKDAYS):
+        for i, wd in enumerate(self.col_weekdays):
             col_x = round(g.left() + i * col_w)
             is_today = (i == self._today_col_idx)
             header_rect = QtCore.QRect(col_x + 2, MARGIN + 2, round(col_w) - 4, HEADER_H - 4)
@@ -285,8 +297,8 @@ class TimetableView(QtWidgets.QWidget):
         col_w = self._col_w()
         row_h = self._row_h()
 
-        # 遍历每一列（周日 ~ 周六）
-        for i, wd in enumerate(_COL_WEEKDAYS):
+        # 遍历每一列（周日 ~ 周六 或 周一 ~ 周日）
+        for i, wd in enumerate(self.col_weekdays):
             col_x = round(g.left() + i * col_w)
             active_courses = [c for c in self._courses[wd] if c.active_on(self._eff_week)]
 
@@ -304,38 +316,80 @@ class TimetableView(QtWidgets.QWidget):
                         p.setPen(QtGui.QPen(QtGui.QColor("#00B0FF"), 1, QtCore.Qt.DashLine))
                         p.drawRoundedRect(slot_rect, 4, 4)
 
-            # 绘制课程卡片
-            for c in active_courses:
-                x = col_x + 2
-                y = round(g.top() + (c.sec_start - 1) * row_h + 1)
-                h = round((c.sec_end - c.sec_start + 1) * row_h - GAP)
-                w = round(col_w) - 4
-                rect = QtCore.QRect(x, y, w, h)
-                self._card_rects.append((rect, c))
+            # 绘制课程卡片（支持重叠课程水平等分并列排布，彻底杜绝互相遮挡）
+            sorted_courses = sorted(active_courses, key=lambda c: (c.sec_start, -(c.sec_end - c.sec_start)))
+            clusters = []
+            for c in sorted_courses:
+                placed = False
+                for cl in clusters:
+                    if any(max(c.sec_start, x.sec_start) <= min(c.sec_end, x.sec_end) for x in cl):
+                        cl.append(c)
+                        placed = True
+                        break
+                if not placed:
+                    clusters.append([c])
 
-                base_color = self._color_of.get(c.name, COURSE_COLORS[0])
-                is_hovered = (self._hovered_course == c)
+            for cl in clusters:
+                slots = []
+                c_slots = {}
+                for c in cl:
+                    assigned = False
+                    for s_idx, end_sec in enumerate(slots):
+                        if end_sec < c.sec_start:
+                            slots[s_idx] = c.sec_end
+                            c_slots[c] = s_idx
+                            assigned = True
+                            break
+                    if not assigned:
+                        c_slots[c] = len(slots)
+                        slots.append(c.sec_end)
+                total_slots = len(slots)
 
-                # 卡片背景绘制：微渐变或悬浮增亮
-                card_color = QtGui.QColor(base_color)
-                if is_hovered:
-                    card_color = card_color.lighter(115)
+                for c in cl:
+                    slot_idx = c_slots[c]
+                    sub_w = (col_w - 4) / total_slots
+                    x = col_x + 2 + slot_idx * sub_w
+                    y = round(g.top() + (c.sec_start - 1) * row_h + 1)
+                    h = round((c.sec_end - c.sec_start + 1) * row_h - GAP)
+                    w = round(sub_w - (1 if total_slots > 1 else 0))
+                    rect = QtCore.QRect(round(x), y, max(4, w), max(4, h))
+                    self._card_rects.append((rect, c))
 
-                p.setBrush(QtGui.QBrush(card_color))
-                border_color = QtGui.QColor(card_color).lighter(130) if is_hovered else QtGui.QColor(card_color).darker(110)
-                p.setPen(QtGui.QPen(border_color, 1))
-                p.drawRoundedRect(rect, 6, 6)
+                    base_color = self._color_of.get(c.name, COURSE_COLORS[0])
+                    is_hovered = (self._hovered_course == c)
 
-                # 绘制卡片内排版文字（彻底修复文字截断）
-                self._paint_course_card_content(p, rect, c)
+                    # 卡片背景绘制：微渐变或悬浮增亮
+                    card_color = QtGui.QColor(base_color)
+                    if is_hovered:
+                        card_color = card_color.lighter(115)
+
+                    p.setBrush(QtGui.QBrush(card_color))
+                    border_color = QtGui.QColor(card_color).lighter(130) if is_hovered else QtGui.QColor(card_color).darker(110)
+                    p.setPen(QtGui.QPen(border_color, 1))
+                    p.drawRoundedRect(rect, 6, 6)
+
+                    # 绘制卡片内排版文字（彻底修复文字截断与重叠）
+                    self._paint_course_card_content(p, rect, c)
 
     def _paint_course_card_content(self, p, rect, c):
         """精准排版课程名称与地点，自适应高度与宽度，绝不腰斩截断文字。"""
         inner = rect.adjusted(5, 5, -5, -4)
-        if inner.height() < 16 or inner.width() < 20:
+        if inner.height() < 16 or inner.width() < 14:
             return
 
         total_h = inner.height()
+
+        # 自定义时间标记 (如 📌15:00-17:00)
+        custom_time = getattr(c, "custom_time", "")
+        top_offset = 0
+        if custom_time and total_h >= 45:
+            p.setFont(QtGui.QFont(theme.FONT, 7, QtGui.QFont.Bold))
+            p.setPen(QtGui.QColor("#FFE082"))
+            rfm = QtGui.QFontMetrics(p.font())
+            time_text = rfm.elidedText("📌" + custom_time, QtCore.Qt.ElideRight, inner.width())
+            time_rect = QtCore.QRect(inner.left(), inner.top(), inner.width(), 13)
+            p.drawText(time_rect, QtCore.Qt.AlignHCenter | QtCore.Qt.AlignTop, time_text)
+            top_offset = 14
 
         # 单节短卡片（高度很小）：居中显示一行课程名
         if total_h < 40:
@@ -348,24 +402,24 @@ class TimetableView(QtWidgets.QWidget):
 
         # 常规 2 节及以上课程卡片：上部课程名称，下部教室地点
         # 1. 课程名：根据可用高度分配行数（最多 2 或 3 行）
-        name_font = QtGui.QFont(theme.FONT, 10, QtGui.QFont.Bold)
+        name_font = QtGui.QFont(theme.FONT, 10 if inner.width() >= 50 else 8, QtGui.QFont.Bold)
         p.setFont(name_font)
         fm = QtGui.QFontMetrics(name_font)
         line_h = fm.lineSpacing()
 
         has_room = bool(c.room)
         reserved_bottom = 20 if has_room else 0
-        avail_name_h = max(line_h, total_h - reserved_bottom)
+        avail_name_h = max(line_h, total_h - reserved_bottom - top_offset)
         max_lines = max(1, avail_name_h // line_h)
 
-        name_rect = QtCore.QRect(inner.left(), inner.top(), inner.width(), max_lines * line_h)
+        name_rect = QtCore.QRect(inner.left(), inner.top() + top_offset, inner.width(), max_lines * line_h)
         p.setPen(QtGui.QColor(255, 255, 255))
         p.drawText(name_rect, QtCore.Qt.AlignHCenter | QtCore.Qt.AlignTop | QtCore.Qt.TextWordWrap, c.name)
 
         # 2. 教室与地点（@理学楼-401）
         if has_room and total_h >= 45:
             room_text = f"@{c.room}"
-            p.setFont(QtGui.QFont(theme.FONT, 8, QtGui.QFont.Normal))
+            p.setFont(QtGui.QFont(theme.FONT, 8 if inner.width() >= 50 else 7, QtGui.QFont.Normal))
             p.setPen(QtGui.QColor(240, 245, 255, 220))
             rfm = QtGui.QFontMetrics(p.font())
             elided_room = rfm.elidedText(room_text, QtCore.Qt.ElideRight, inner.width())

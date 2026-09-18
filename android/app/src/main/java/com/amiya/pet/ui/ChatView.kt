@@ -3,6 +3,7 @@ package com.amiya.pet.ui
 import android.content.Context
 import android.widget.Toast
 import com.amiya.pet.floating.FloatingPetManager
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -39,8 +40,25 @@ import androidx.compose.ui.unit.sp
 import com.amiya.pet.R
 import com.amiya.pet.core.ai.AmiyaBrain
 import com.amiya.pet.core.ai.ChatMessage
+import com.amiya.pet.core.schedule.Course
 import com.amiya.pet.core.schedule.ScheduleManager
 import kotlinx.coroutines.launch
+
+data class AiProviderPreset(
+    val name: String,
+    val baseUrl: String,
+    val defaultModel: String,
+    val tag: String? = null
+)
+
+val AI_PROVIDER_PRESETS = listOf(
+    AiProviderPreset("智谱 GLM", "https://open.bigmodel.cn/api/paas/v4", "glm-4-flash", "永久免费"),
+    AiProviderPreset("DeepSeek", "https://api.deepseek.com", "deepseek-chat", "高智商·实惠"),
+    AiProviderPreset("Kimi", "https://api.moonshot.cn", "moonshot-v1-8k", "长文本"),
+    AiProviderPreset("通义千问", "https://dashscope.aliyuncs.com/compatible-mode/v1", "qwen-plus", "阿里大模型"),
+    AiProviderPreset("OpenAI", "https://api.openai.com", "gpt-4o-mini", "官方原版"),
+    AiProviderPreset("本地 Ollama", "http://10.0.2.2:11434/v1", "qwen2.5:7b", "本地私有")
+)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -54,7 +72,10 @@ fun ChatScreen(
     onToggleTheme: () -> Unit = {},
     isDark: Boolean = true,
     initialPrompt: String? = null,
-    onConsumeInitialPrompt: () -> Unit = {}
+    onConsumeInitialPrompt: () -> Unit = {},
+    onNavigateToSchedule: (weekNo: Int?) -> Unit = {},
+    onNavigateToFocus: () -> Unit = {},
+    onNavigateToNotes: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -115,12 +136,21 @@ fun ChatScreen(
                     chatList = current.dropLast(1) + updated
                 }
             }
-            // 流式结束，更新状态
+            // 流式结束，更新状态并同步课程数据
             val current = chatList
             if (current.isNotEmpty() && current.last().role == "assistant") {
+                val lastAssistantInBrain = brain.chatHistory.lastOrNull { it.role == "assistant" }
                 val updated = current.last().copy(
+                    content = lastAssistantInBrain?.content ?: current.last().content,
+                    reasoningContent = lastAssistantInBrain?.reasoningContent ?: current.last().reasoningContent,
                     isThinking = false,
-                    isStreaming = false
+                    isStreaming = false,
+                    addedCourse = lastAssistantInBrain?.addedCourse,
+                    deletedCourse = lastAssistantInBrain?.deletedCourse,
+                    modifiedCourse = lastAssistantInBrain?.modifiedCourse,
+                    oldCourse = lastAssistantInBrain?.oldCourse,
+                    startedPomodoroMinutes = lastAssistantInBrain?.startedPomodoroMinutes,
+                    createdNote = lastAssistantInBrain?.createdNote
                 )
                 chatList = current.dropLast(1) + updated
             }
@@ -194,7 +224,13 @@ fun ChatScreen(
                         modifier = Modifier.fillMaxSize()
                     ) {
                         items(chatList) { message ->
-                            ChatBubbleItem(message = message, isDark = isDark)
+                            ChatBubbleItem(
+                                message = message,
+                                isDark = isDark,
+                                onNavigateToSchedule = onNavigateToSchedule,
+                                onNavigateToFocus = onNavigateToFocus,
+                                onNavigateToNotes = onNavigateToNotes
+                            )
                         }
                     }
                 }
@@ -208,6 +244,27 @@ fun ChatScreen(
                     .padding(horizontal = 12.dp, vertical = 4.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
+                QuickPromptChip("🍅 开启25m专注", {
+                    sendMessage("阿米娅，开启25分钟专注。")
+                })
+                QuickPromptChip("📝 记一下买笔", {
+                    sendMessage("阿米娅，记一下买笔。")
+                })
+                QuickPromptChip("📅 总结明日日程", {
+                    sendMessage("阿米娅，总结下我明天的所有待办和课程。")
+                })
+                QuickPromptChip("➕ 录入课程", {
+                    inputText = "阿米娅，帮我添加一门课程：周三第3-4节在教三201的高等数学"
+                })
+                QuickPromptChip("📌 录入组会/活动", {
+                    inputText = "阿米娅，周四下午14:15到15:30在综合楼402开实验室组会"
+                })
+                QuickPromptChip("✏️ 调整时间/地点", {
+                    inputText = "阿米娅，把周四下午的实验室组会改到周五下午两点"
+                })
+                QuickPromptChip("🗑️ 取消行程", {
+                    inputText = "阿米娅，帮我把周五下午的实验室组会取消"
+                })
                 if (courseCount > 0) {
                     QuickPromptChip("📊 课表学情分析", {
                         sendMessage("阿米娅，请结合我导入的课表数据，全面分析我的学习负荷与课程节奏，并给出科学的自习与作息规划建议。")
@@ -269,6 +326,8 @@ fun ChatScreen(
         var model by remember { mutableStateOf(brain.model) }
         var publicRelayUrl by remember { mutableStateOf(brain.publicRelayUrl) }
         var showAdvancedRelay by remember { mutableStateOf(false) }
+        var isTesting by remember { mutableStateOf(false) }
+        var testResult by remember { mutableStateOf<Pair<Boolean, String>?>(null) }
 
         AlertDialog(
             onDismissRequest = onDismissSettingsDialog,
@@ -280,6 +339,50 @@ fun ChatScreen(
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     Text("AI 模型配置", color = MaterialTheme.colorScheme.primary, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+
+                    Text("快捷供应商选项（点击一键填入地址与模型）：", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        AI_PROVIDER_PRESETS.forEach { preset ->
+                            val isSelected = baseUrl.trim().removeSuffix("/") == preset.baseUrl.removeSuffix("/")
+                            FilterChip(
+                                selected = isSelected,
+                                onClick = {
+                                    baseUrl = preset.baseUrl
+                                    model = preset.defaultModel
+                                },
+                                label = {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(preset.name, fontSize = 12.sp)
+                                        if (preset.tag != null) {
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Surface(
+                                                shape = RoundedCornerShape(4.dp),
+                                                color = if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.25f) else MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+                                            ) {
+                                                Text(
+                                                    text = preset.tag,
+                                                    fontSize = 9.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = MaterialTheme.colorScheme.primary,
+                                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                                )
+                                            }
+                                        }
+                                    }
+                                },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.2f),
+                                    selectedLabelColor = MaterialTheme.colorScheme.primary
+                                )
+                            )
+                        }
+                    }
+
                     OutlinedTextField(
                         value = baseUrl, 
                         onValueChange = { baseUrl = it }, 
@@ -314,6 +417,70 @@ fun ChatScreen(
                             unfocusedTextColor = MaterialTheme.colorScheme.onSurface
                         )
                     )
+
+                    // ⚡ 测试连通性按钮与智能诊断区
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        OutlinedButton(
+                            onClick = {
+                                isTesting = true
+                                testResult = null
+                                scope.launch {
+                                    val res = brain.testConnection(baseUrl, model, apiKey)
+                                    testResult = res
+                                    isTesting = false
+                                }
+                            },
+                            enabled = !isTesting,
+                            shape = RoundedCornerShape(8.dp),
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                contentColor = MaterialTheme.colorScheme.primary
+                            )
+                        ) {
+                            if (isTesting) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(14.dp),
+                                    color = MaterialTheme.colorScheme.primary,
+                                    strokeWidth = 2.dp
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("测试中...", fontSize = 12.sp)
+                            } else {
+                                Text("⚡ 测试连通性", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+
+                    testResult?.let { (success, message) ->
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = if (success) Color(0xFF1B382B) else Color(0xFF3E1F24),
+                            border = BorderStroke(1.dp, if (success) Color(0xFF2E7D32) else Color(0xFFD32F2F)),
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.Top
+                            ) {
+                                Text(
+                                    text = if (success) "✓" else "✕",
+                                    color = if (success) Color(0xFF4CAF50) else Color(0xFFFF5252),
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp,
+                                    modifier = Modifier.padding(top = 1.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = message,
+                                    color = if (success) Color(0xFFE8F5E9) else Color(0xFFFFEBEE),
+                                    fontSize = 11.sp,
+                                    lineHeight = 15.sp
+                                )
+                            }
+                        }
+                    }
 
                     // 可折叠高级公共中转配置（用于 Laf 或国内免翻墙自建网关）
                     Row(
@@ -490,7 +657,13 @@ class TacticalBubbleShape(
  * 微信式左右对称排版 + 方案A【罗德岛战术终端】气泡 + 纯透明底浮动头像
  */
 @Composable
-fun ChatBubbleItem(message: ChatMessage, isDark: Boolean = true) {
+fun ChatBubbleItem(
+    message: ChatMessage,
+    isDark: Boolean = true,
+    onNavigateToSchedule: (weekNo: Int?) -> Unit = {},
+    onNavigateToFocus: () -> Unit = {},
+    onNavigateToNotes: () -> Unit = {}
+) {
     val isUser = message.role == "user"
 
     // 方案A 配色自适应系统：
@@ -701,6 +874,427 @@ fun ChatBubbleItem(message: ChatMessage, isDark: Boolean = true) {
                                 color = bubbleText.copy(alpha = 0.7f),
                                 fontFamily = FontFamily.Monospace
                             )
+                        }
+
+                        // 如果本次交互成功录入课程，渲染 PRTS 战术课表卡片与快速跳转按钮
+                        val added = message.addedCourse
+                        if (added != null) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = MaterialTheme.colorScheme.primary.copy(alpha = if (isDark) 0.15f else 0.10f),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, bubbleAccent.copy(alpha = 0.45f)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(modifier = Modifier.padding(10.dp)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(
+                                            imageVector = Icons.Default.CheckCircle,
+                                            contentDescription = null,
+                                            tint = bubbleAccent,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(
+                                            text = "PRTS 课表数据已同步增补",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = bubbleAccent
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                    Text(
+                                        text = if (added.customTime.isNotBlank()) "📌 ${added.name}" else "📚 ${added.name}",
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = bubbleText
+                                    )
+                                    val dayName = when (added.weekday) {
+                                        1 -> "周一"; 2 -> "周二"; 3 -> "周三"; 4 -> "周四"; 5 -> "周五"; 6 -> "周六"; 7 -> "周日"; else -> "周${added.weekday}"
+                                    }
+                                    if (added.customTime.isNotBlank()) {
+                                        Text(
+                                            text = "⏰ 📌 [$dayName ${added.customTime}] (吸附至第 ${added.secStart}-${added.secEnd} 节)",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = bubbleAccent
+                                        )
+                                    } else {
+                                        Text(
+                                            text = "⏰ $dayName 第 ${added.secStart}-${added.secEnd} 节",
+                                            fontSize = 11.sp,
+                                            color = bubbleText.copy(alpha = 0.85f)
+                                        )
+                                    }
+                                    if (added.room.isNotBlank()) {
+                                        Text(
+                                            text = "📍 教室: ${added.room}",
+                                            fontSize = 11.sp,
+                                            color = bubbleText.copy(alpha = 0.85f)
+                                        )
+                                    }
+                                    if (added.teacher.isNotBlank()) {
+                                        Text(
+                                            text = "👤 教师: ${added.teacher}",
+                                            fontSize = 11.sp,
+                                            color = bubbleText.copy(alpha = 0.85f)
+                                        )
+                                    }
+                                    val parityText = when (added.parity) {
+                                        "odd" -> "单周"
+                                        "even" -> "双周"
+                                        else -> "全周"
+                                    }
+                                    val weekText = if (added.weekStart == added.weekEnd) "第 ${added.weekStart} 周" else "第 ${added.weekStart}~${added.weekEnd} 周"
+                                    Text(
+                                        text = "🗓️ 周次: $weekText ($parityText)",
+                                        fontSize = 11.sp,
+                                        color = bubbleText.copy(alpha = 0.85f)
+                                    )
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Button(
+                                        onClick = { onNavigateToSchedule(added.weekStart) },
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(32.dp),
+                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = bubbleAccent,
+                                            contentColor = if (isDark) Color.Black else Color.White
+                                        ),
+                                        shape = RoundedCornerShape(6.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.CalendarMonth,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(14.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text(
+                                            text = "在课表中查看 ➔",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        // 如果本次交互删除了日程，渲染 PRTS 警示战术卡片
+                        val deleted = message.deletedCourse
+                        if (deleted != null) {
+                            val delColor = if (isDark) Color(0xFFF87171) else Color(0xFFDC2626)
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = delColor.copy(alpha = if (isDark) 0.15f else 0.10f),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, delColor.copy(alpha = 0.45f)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(modifier = Modifier.padding(10.dp)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(
+                                            imageVector = Icons.Default.DeleteOutline,
+                                            contentDescription = null,
+                                            tint = delColor,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(
+                                            text = "PRTS 课表行程已取消 / 注销",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = delColor
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                    Text(
+                                        text = "❌ ${deleted.name}",
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = bubbleText
+                                    )
+                                    val dayName = when (deleted.weekday) {
+                                        1 -> "周一"; 2 -> "周二"; 3 -> "周三"; 4 -> "周四"; 5 -> "周五"; 6 -> "周六"; 7 -> "周日"; else -> "周${deleted.weekday}"
+                                    }
+                                    val timeDesc = if (deleted.customTime.isNotBlank()) "📌 [$dayName ${deleted.customTime}]" else "$dayName 第 ${deleted.secStart}-${deleted.secEnd} 节"
+                                    Text(
+                                        text = "⏰ $timeDesc",
+                                        fontSize = 11.sp,
+                                        color = bubbleText.copy(alpha = 0.85f)
+                                    )
+                                    if (deleted.room.isNotBlank()) {
+                                        Text(
+                                            text = "📍 原地点: ${deleted.room}",
+                                            fontSize = 11.sp,
+                                            color = bubbleText.copy(alpha = 0.85f)
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Surface(
+                                        shape = RoundedCornerShape(4.dp),
+                                        color = delColor.copy(alpha = 0.2f),
+                                        modifier = Modifier.padding(top = 2.dp)
+                                    ) {
+                                        Text(
+                                            text = "已从课表注销移除",
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = delColor,
+                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        // 如果本次交互修改了日程，渲染 PRTS 变更战术卡片
+                        val modified = message.modifiedCourse
+                        if (modified != null) {
+                            val modColor = if (isDark) Color(0xFFFBBF24) else Color(0xFFD97706)
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = modColor.copy(alpha = if (isDark) 0.15f else 0.10f),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, modColor.copy(alpha = 0.45f)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(modifier = Modifier.padding(10.dp)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(
+                                            imageVector = Icons.Default.EditCalendar,
+                                            contentDescription = null,
+                                            tint = modColor,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(
+                                            text = "PRTS 课表行程已调整变更",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = modColor
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                    Text(
+                                        text = if (modified.customTime.isNotBlank()) "📌 ${modified.name}" else "📚 ${modified.name}",
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = bubbleText
+                                    )
+                                    val dayName = when (modified.weekday) {
+                                        1 -> "周一"; 2 -> "周二"; 3 -> "周三"; 4 -> "周四"; 5 -> "周五"; 6 -> "周六"; 7 -> "周日"; else -> "周${modified.weekday}"
+                                    }
+                                    val oldCourse = message.oldCourse
+                                    if (oldCourse != null && (oldCourse.weekday != modified.weekday || oldCourse.secStart != modified.secStart || oldCourse.customTime != modified.customTime)) {
+                                        val oldDayName = when (oldCourse.weekday) {
+                                            1 -> "周一"; 2 -> "周二"; 3 -> "周三"; 4 -> "周四"; 5 -> "周五"; 6 -> "周六"; 7 -> "周日"; else -> "周${oldCourse.weekday}"
+                                        }
+                                        val oldTimeDesc = if (oldCourse.customTime.isNotBlank()) "[$oldDayName ${oldCourse.customTime}]" else "$oldDayName 第 ${oldCourse.secStart}-${oldCourse.secEnd} 节"
+                                        Text(
+                                            text = "⏳ 原时间: $oldTimeDesc",
+                                            fontSize = 10.sp,
+                                            color = bubbleText.copy(alpha = 0.6f)
+                                        )
+                                    }
+                                    if (modified.customTime.isNotBlank()) {
+                                        Text(
+                                            text = "⏰ 新时间: 📌 [$dayName ${modified.customTime}] (吸附至第 ${modified.secStart}-${modified.secEnd} 节)",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = modColor
+                                        )
+                                    } else {
+                                        Text(
+                                            text = "⏰ 新时间: $dayName 第 ${modified.secStart}-${modified.secEnd} 节",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            color = modColor
+                                        )
+                                    }
+                                    if (modified.room.isNotBlank()) {
+                                        Text(
+                                            text = "📍 教室: ${modified.room}",
+                                            fontSize = 11.sp,
+                                            color = bubbleText.copy(alpha = 0.85f)
+                                        )
+                                    }
+                                    val weekText = if (modified.weekStart == modified.weekEnd) "第 ${modified.weekStart} 周" else "第 ${modified.weekStart}~${modified.weekEnd} 周"
+                                    Text(
+                                        text = "🗓️ 周次: $weekText",
+                                        fontSize = 11.sp,
+                                        color = bubbleText.copy(alpha = 0.85f)
+                                    )
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Button(
+                                        onClick = { onNavigateToSchedule(modified.weekStart) },
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(32.dp),
+                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = modColor,
+                                            contentColor = if (isDark) Color.Black else Color.White
+                                        ),
+                                        shape = RoundedCornerShape(6.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.CalendarMonth,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(14.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text(
+                                            text = "在课表中查看 ➔",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        // 如果本次交互启动了专注番茄钟，渲染 PRTS 战术专注卡片
+                        val pomoMinutes = message.startedPomodoroMinutes
+                        if (pomoMinutes != null) {
+                            val pomoColor = if (isDark) Color(0xFFFF5252) else Color(0xFFE53935)
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = pomoColor.copy(alpha = if (isDark) 0.15f else 0.10f),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, pomoColor.copy(alpha = 0.45f)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(modifier = Modifier.padding(10.dp)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(
+                                            imageVector = Icons.Default.Timer,
+                                            contentDescription = null,
+                                            tint = pomoColor,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(
+                                            text = "PRTS 专注任务已部署",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = pomoColor
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                    Text(
+                                        text = "🍅 专注时长：$pomoMinutes 分钟",
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = bubbleText
+                                    )
+                                    Text(
+                                        text = "⏱️ 悬浮桌宠倒计时徽章与后台状态栏已同步激活",
+                                        fontSize = 11.sp,
+                                        color = bubbleText.copy(alpha = 0.85f)
+                                    )
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Button(
+                                        onClick = onNavigateToFocus,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(32.dp),
+                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = pomoColor,
+                                            contentColor = Color.White
+                                        ),
+                                        shape = RoundedCornerShape(6.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Timer,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(14.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text(
+                                            text = "前往专注看板 ➔",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        // 如果本次交互记录了灵感便签，渲染 PRTS 便签归档卡片
+                        val note = message.createdNote
+                        if (note != null) {
+                            val noteColor = if (isDark) Color(0xFF10B981) else Color(0xFF059669)
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = noteColor.copy(alpha = if (isDark) 0.15f else 0.10f),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, noteColor.copy(alpha = 0.45f)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(modifier = Modifier.padding(10.dp)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(
+                                            imageVector = Icons.Default.EditNote,
+                                            contentDescription = null,
+                                            tint = noteColor,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(
+                                            text = "罗德岛灵感便签已归档",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = noteColor
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                    Text(
+                                        text = "📝 《${note.title}》",
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = bubbleText
+                                    )
+                                    if (note.content.isNotBlank() && note.content != note.title) {
+                                        Text(
+                                            text = if (note.content.length > 45) note.content.take(45) + "…" else note.content,
+                                            fontSize = 11.sp,
+                                            color = bubbleText.copy(alpha = 0.85f)
+                                        )
+                                    }
+                                    Text(
+                                        text = "🕒 记录于 ${note.updatedAt}",
+                                        fontSize = 10.sp,
+                                        color = bubbleText.copy(alpha = 0.6f)
+                                    )
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Button(
+                                        onClick = onNavigateToNotes,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(32.dp),
+                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = noteColor,
+                                            contentColor = Color.White
+                                        ),
+                                        shape = RoundedCornerShape(6.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.EditNote,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(14.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text(
+                                            text = "在便签本中查看 ➔",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                }
+                            }
                         }
                     } else {
                         Text(

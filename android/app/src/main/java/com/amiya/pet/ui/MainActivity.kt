@@ -39,6 +39,7 @@ import com.amiya.pet.core.schedule.ScheduleManager
 import com.amiya.pet.floating.FloatingPetManager
 import com.amiya.pet.service.AppBackgroundService
 import com.amiya.pet.widget.ScheduleWidgetProvider
+import java.util.Date
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
@@ -163,6 +164,7 @@ class MainActivity : ComponentActivity() {
                 var showIcsExportDialog by remember { mutableStateOf(false) }
                 var showExamScheduleView by remember { mutableStateOf(false) }
                 var showSyncDialog by remember { mutableStateOf(false) }
+                var showTermStartDialog by remember { mutableStateOf(false) }
 
                 // 对话界面顶栏状态
                 var showChatGuideDialog by remember { mutableStateOf(false) }
@@ -193,6 +195,8 @@ class MainActivity : ComponentActivity() {
                                     when (selectedTab) {
                                         MainTab.SCHEDULE -> {
                                             // 课表管理：顶栏与周次选择合二为一，左右箭头紧贴周次，极大节省空间
+                                            val realWeek = ScheduleManager.getWeekNo() ?: 1
+                                            val isThisWeek = (scheduleWeek == realWeek)
                                             Row(verticalAlignment = Alignment.CenterVertically) {
                                                 IconButton(
                                                     onClick = { if (scheduleWeek > 1) scheduleWeek-- },
@@ -214,19 +218,34 @@ class MainActivity : ComponentActivity() {
                                                 ) {
                                                     Icon(Icons.Default.ChevronRight, "下一周", tint = MaterialTheme.colorScheme.onSurface, modifier = Modifier.size(20.dp))
                                                 }
-                                                Spacer(Modifier.width(6.dp))
-                                                Surface(
-                                                    shape = RoundedCornerShape(12.dp),
-                                                    color = Color(0xFFFF9100).copy(alpha = 0.2f),
-                                                    modifier = Modifier.clickable { showExamScheduleView = true }
-                                                ) {
-                                                    Row(
-                                                        verticalAlignment = Alignment.CenterVertically,
-                                                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 4.dp)
+                                                if (isThisWeek) {
+                                                    Surface(
+                                                        shape = RoundedCornerShape(10.dp),
+                                                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)
                                                     ) {
-                                                        Icon(Icons.Default.Timer, contentDescription = null, tint = Color(0xFFFF9100), modifier = Modifier.size(13.dp))
-                                                        Spacer(Modifier.width(3.dp))
-                                                        Text("期末考", color = Color(0xFFFF9100), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                                        Text(
+                                                            "本周",
+                                                            color = MaterialTheme.colorScheme.primary,
+                                                            fontSize = 11.sp,
+                                                            fontWeight = FontWeight.Bold,
+                                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                                            maxLines = 1
+                                                        )
+                                                    }
+                                                } else {
+                                                    Surface(
+                                                        shape = RoundedCornerShape(10.dp),
+                                                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.22f),
+                                                        modifier = Modifier.clickable { scheduleWeek = realWeek }
+                                                    ) {
+                                                        Row(
+                                                            verticalAlignment = Alignment.CenterVertically,
+                                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                        ) {
+                                                            Icon(Icons.Default.Today, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(12.dp))
+                                                            Spacer(Modifier.width(2.dp))
+                                                            Text("回本周", color = MaterialTheme.colorScheme.primary, fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                                                        }
                                                     }
                                                 }
                                             }
@@ -245,15 +264,14 @@ class MainActivity : ComponentActivity() {
                             actions = {
                                 when (selectedTab) {
                                     MainTab.SCHEDULE -> {
-                                        // 课表管理顶栏操作：跨端互联 + AI学情分析 + 更多功能折叠菜单
-                                        IconButton(onClick = { showSyncDialog = true }) {
+                                        // 课表管理顶栏操作：期末考倒计时 + AI学情分析 + 更多功能折叠菜单
+                                        IconButton(onClick = { showExamScheduleView = true }) {
                                             Icon(
-                                                Icons.Default.Devices,
-                                                contentDescription = "跨端协同",
-                                                tint = MaterialTheme.colorScheme.primary
+                                                Icons.Default.Timer,
+                                                contentDescription = "期末考倒计时",
+                                                tint = Color(0xFFFF9100)
                                             )
                                         }
-
                                         IconButton(onClick = {
                                             pendingChatPrompt = "阿米娅，请结合我导入的课表数据，全面分析我的学习情况与课程负荷，并给出科学的学习与作息规划建议。"
                                             selectedTab = MainTab.CHAT
@@ -296,6 +314,24 @@ class MainActivity : ComponentActivity() {
                                                     onClick = {
                                                         showScheduleMenu = false
                                                         showReminderDialog = true
+                                                    }
+                                                )
+                                                DropdownMenuItem(
+                                                    text = { Text("设置学期开学日") },
+                                                    leadingIcon = { Icon(Icons.Default.EditCalendar, null) },
+                                                    onClick = {
+                                                        showScheduleMenu = false
+                                                        showTermStartDialog = true
+                                                    }
+                                                )
+                                                DropdownMenuItem(
+                                                    text = { Text(if (ScheduleManager.weekStartDay == "monday") "周起始日：周一开始 (点击切换)" else "周起始日：周日开始 (点击切换)") },
+                                                    leadingIcon = { Icon(Icons.Default.ViewWeek, null) },
+                                                    onClick = {
+                                                        showScheduleMenu = false
+                                                        val nextDay = if (ScheduleManager.weekStartDay == "monday") "sunday" else "monday"
+                                                        ScheduleManager.setWeekStartDay(nextDay, context)
+                                                        Toast.makeText(context, if (nextDay == "monday") "课表已切换为周一开始" else "课表已切换为周日开始", Toast.LENGTH_SHORT).show()
                                                     }
                                                 )
                                                 DropdownMenuItem(
@@ -462,7 +498,20 @@ class MainActivity : ComponentActivity() {
                                 onToggleTheme = { toggleTheme() },
                                 isDark = isDark,
                                 initialPrompt = pendingChatPrompt,
-                                onConsumeInitialPrompt = { pendingChatPrompt = null }
+                                onConsumeInitialPrompt = { pendingChatPrompt = null },
+                                onNavigateToSchedule = { targetWeek ->
+                                    if (targetWeek != null) {
+                                        scheduleWeek = targetWeek
+                                    }
+                                    showExamScheduleView = false
+                                    selectedTab = MainTab.SCHEDULE
+                                },
+                                onNavigateToFocus = {
+                                    selectedTab = MainTab.FOCUS
+                                },
+                                onNavigateToNotes = {
+                                    selectedTab = MainTab.NOTES
+                                }
                             )
                             MainTab.FOCUS -> PomodoroScreen()
                         }
@@ -479,6 +528,99 @@ class MainActivity : ComponentActivity() {
                 if (showSyncDialog) {
                     SyncDialog(
                         onDismiss = { showSyncDialog = false }
+                    )
+                }
+
+                if (showTermStartDialog) {
+                    val currentStartStr = remember {
+                        val s = ScheduleManager.termStart ?: Date()
+                        java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).format(ScheduleManager.normalizeToSunday(s))
+                    }
+                    var inputDateStr by remember { mutableStateOf(currentStartStr) }
+                    var parseError by remember { mutableStateOf("") }
+
+                    val previewInfo = remember(inputDateStr) {
+                        try {
+                            val format = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault())
+                            format.isLenient = false
+                            val parsed = format.parse(inputDateStr.trim())
+                            if (parsed != null) {
+                                val norm = ScheduleManager.normalizeToSunday(parsed)
+                                val normStr = format.format(norm)
+                                val targetNorm = ScheduleManager.normalizeToSunday(Date())
+                                val diffMs = targetNorm.time - norm.time
+                                val calcWeek = if (diffMs < 0) 0 else (diffMs / (24L * 3600 * 1000) / 7).toInt() + 1
+                                "校准第 1 周起始日 (周日): $normStr\n推算今日归属: 第 $calcWeek 周"
+                            } else ""
+                        } catch (e: Exception) {
+                            "日期格式有误 (需为 YYYY-MM-DD)"
+                        }
+                    }
+
+                    AlertDialog(
+                        onDismissRequest = { showTermStartDialog = false },
+                        containerColor = MaterialTheme.colorScheme.surface,
+                        title = {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.DateRange, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                                Spacer(Modifier.width(8.dp))
+                                Text("设置学期开学日期", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                            }
+                        },
+                        text = {
+                            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                Text(
+                                    text = "请设置本学期第 1 周的公历日期。无论您输入该周的哪一天，系统都会智能校准对齐至该周起始日（周日）。",
+                                    fontSize = 13.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                OutlinedTextField(
+                                    value = inputDateStr,
+                                    onValueChange = { inputDateStr = it; parseError = "" },
+                                    label = { Text("开学第 1 周周日 (YYYY-MM-DD)") },
+                                    singleLine = true,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                                if (previewInfo.isNotEmpty()) {
+                                    Text(
+                                        text = previewInfo,
+                                        fontSize = 12.sp,
+                                        color = if (previewInfo.contains("有误")) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                                if (parseError.isNotEmpty()) {
+                                    Text(parseError, color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+                                }
+                            }
+                        },
+                        confirmButton = {
+                            Button(
+                                onClick = {
+                                    try {
+                                        val format = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault())
+                                        format.isLenient = false
+                                        val parsed = format.parse(inputDateStr.trim())
+                                        if (parsed != null) {
+                                            ScheduleManager.setTermStartDate(parsed, context)
+                                            scheduleWeek = ScheduleManager.getWeekNo() ?: 1
+                                            showTermStartDialog = false
+                                            Toast.makeText(context, "学期开学日已更新，当前自动切至第 $scheduleWeek 周", Toast.LENGTH_SHORT).show()
+                                        } else {
+                                            parseError = "日期解析失败，请检查格式"
+                                        }
+                                    } catch (e: Exception) {
+                                        parseError = "请输入正确的日期格式 (如 2026-09-07)"
+                                    }
+                                }
+                            ) {
+                                Text("保存生效")
+                            }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { showTermStartDialog = false }) {
+                                Text("取消")
+                            }
+                        }
                     )
                 }
 

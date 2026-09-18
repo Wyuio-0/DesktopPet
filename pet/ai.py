@@ -15,11 +15,13 @@ PERSONA = (
     "像日常聊天，不要长篇大论，不要使用括号动作描写或表情符号，只用中文回答。"
     "当博士需要时，你可以调用提供的工具帮他操作电脑（打开程序、网页、搜索、"
     "调音量、控制媒体、锁屏、截图、报时、设置定时提醒、查看电脑状态、在当前"
-    "窗口打字、读写剪贴板、管理窗口），也能帮他查课表与分析学情负荷"
-    "（query_schedule，包括查今天/本周课程与全面学情分析analyze）、管理作业和考试（query_tasks / add_task）。"
-    "在博士询问学情分析或作息建议时，请条理清晰地基于真实排课展开分析并给出切实的规划指导。"
-    "重要：只要博士的要求能用工具完成——尤其是设置提醒/闹钟/番茄钟（set_reminder）、"
-    "查课表、添加作业截止（add_task）、开程序、开网页这类操作——"
+    "窗口打字、读写剪贴板、管理窗口），也能帮他开启专注番茄钟（start_pomodoro / stop_focus）、"
+    "速记灵感便签（create_sticky_note / read_sticky_notes）、"
+    "查课表与分析学情负荷（query_schedule，包括查今天/本周课程与全面学情分析analyze）、"
+    "汇总今天或明天的日程（agenda_summary）、管理作业和考试（query_tasks / add_task）。"
+    "在博士询问学情分析、作息建议或明日日程时，请条理清晰地基于真实排课与待办展开分析并给出切实的规划指导。"
+    "重要：只要博士的要求能用工具完成——尤其是启动番茄钟（start_pomodoro）、记便签（create_sticky_note）、"
+    "查日程汇总（agenda_summary）、设置提醒（set_reminder）、添加作业截止（add_task）这类操作——"
     "你必须实际调用对应的工具，绝不能只用嘴答应而不调用。"
     "先调用工具，再根据工具返回的结果回话。"
     "同时，你拥有长程记忆档案本：当博士向你介绍个人姓名称呼、职业身份、习惯偏好、"
@@ -38,7 +40,83 @@ FALLBACK = [
 ]
 
 
-DEFAULT_PUBLIC_RELAY_URL = "https://wmntwvrw57.sealosbja.site/v1/chat/completions"
+# 公共免 Key 线路主备容灾端点：
+# 1. 主节点（Sealos 国内北京高速直连集群，免翻快速）
+# 2. 备用节点（Cloudflare Worker 国际 Serverless 备用集群）
+PUBLIC_RELAY_ENDPOINTS = [
+    "https://wmntwvrw57.sealosbja.site/v1/chat/completions",
+    "https://amiya-ai-relay.wyuio-0.workers.dev/v1/chat/completions",
+]
+DEFAULT_PUBLIC_RELAY_URL = PUBLIC_RELAY_ENDPOINTS[0]
+
+
+def get_candidate_relays(custom_relay=""):
+    """获取按优先级排序的候选公共网关端点列表。"""
+    relays = []
+    if custom_relay and str(custom_relay).strip():
+        resolved_custom = resolve_chat_endpoint(str(custom_relay).strip())
+        relays.append(resolved_custom)
+    for ep in PUBLIC_RELAY_ENDPOINTS:
+        resolved_ep = resolve_chat_endpoint(ep)
+        if resolved_ep not in relays:
+            relays.append(resolved_ep)
+    return relays
+
+
+def resolve_chat_endpoint(base):
+    """规范化端点 URL 格式，自适应补全 /v1/chat/completions 或 /chat/completions。"""
+    base = (base or "").strip().rstrip("/")
+    if base.endswith("/chat/completions"):
+        return base
+    elif "/paas/v4" in base:
+        return base + "/chat/completions"
+    elif base.endswith("/v1"):
+        return base + "/chat/completions"
+    return base + "/v1/chat/completions"
+
+
+def diagnose_network_error(e, url="", has_custom_key=False):
+    """根据网络与 HTTP 异常提供精确诊断与智能分流操作建议。"""
+    code = getattr(e, "code", None)
+    e_str = str(e).lower()
+    url_lower = (url or "").lower()
+    is_domestic = any(d in url_lower for d in [
+        "bigmodel.cn", "deepseek.com", "moonshot.cn", "aliyuncs.com", "dashscope", "sealos", "bja.site"
+    ])
+
+    if code == 401:
+        return "（API 认证失败 [HTTP 401]：您的 API Key 无效或未生效，请在「模型配置」中核对密钥。）"
+    if code == 403:
+        return "（访问被拒绝 [HTTP 403]：该模型接口无权限或 IP 受限，请检查服务商控制台权限与账户余额。）"
+    if code == 404:
+        return "（接口端点未找到 [HTTP 404]：请检查模型配置中的接口地址（Base URL）是否正确。）"
+    if code == 429:
+        return "（请求频控 [HTTP 429]：当前模型额度已耗尽或请求过于频繁，请稍后再试或检查账户余额。）"
+    if code in (500, 502, 503, 504):
+        if not has_custom_key:
+            return f"（公共免 Key 线路临时维护中 [HTTP {code}]，多节点轮询均未响应。建议在设置中点击「智谱 GLM [永久免费]」标签一键换用个人专属免翻线路。）"
+        return f"（服务商服务端暂时不可用 [HTTP {code}]，请稍后重试或检查服务商状态页。）"
+
+    if "ssl" in e_str or "certificate" in e_str:
+        return "（安全握手失败：SSL 证书校验异常，通常由 VPN/代理或中间人拦截引起。建议将 AI 服务商域名加入代理软件的「直连」规则。）"
+
+    if "getaddrinfo" in e_str or "nodename" in e_str or "dns" in e_str:
+        return "（域名解析失败：DNS 无法解析接口地址，请检查网络连接或系统代理分流规则。）"
+
+    if "timed out" in e_str or "timeout" in e_str:
+        if is_domestic:
+            return "（连接超时：国内模型接口响应超时。若开启了 VPN/代理，国内域名可能被绕路延迟，建议将该域名设为「直连」规则。）"
+        return "（连接超时：无法在规定时间内连上模型端点，请检查网络稳定性或代理设置。）"
+
+    if "connection refused" in e_str or "10061" in e_str:
+        if any(h in url_lower for h in ("localhost", "127.0.0.1", "10.0.2.2")):
+            return "（连接被拒绝 (本地服务未启动)：无法连接到本地 Ollama，请确保本地 Ollama 正在运行且端口正确。）"
+        return "（连接被拒绝：目标端点拒绝连接，请检查端口与网络代理分流设置。）"
+
+    if not has_custom_key:
+        return "（公共 AI 线路暂不可用/网络连接异常，建议在「模型配置」中点击「智谱 GLM [永久免费]」一键换用专属免翻线路。）"
+    return f"（网络连接出错了，博士稍后再试：{type(e).__name__}）"
+
 
 
 def load_ai_config(char_dir):
@@ -98,6 +176,16 @@ class AmiyaBrain:
         except Exception:
             return ""
 
+    def _schedule_context(self):
+        """获取博士今日与明日日程、排课、待办及便签的上下文（或空串）。"""
+        try:
+            from .actions import agenda_summary
+            today_s = agenda_summary("today")
+            tmr_s = agenda_summary("tomorrow")
+            return f"\n\n【博士真实排课、待办与日程数据】：\n{today_s}\n\n{tmr_s}"
+        except Exception:
+            return ""
+
     @property
     def has_custom_key(self):
         return bool(self.cfg.get("api_key"))
@@ -135,19 +223,57 @@ class AmiyaBrain:
         self.history = []
         self._save_history()
 
+    def _try_local_intent(self, user_text):
+        """本地轻量离线意图路由（专注番茄钟、灵感便签、日程汇总）。
+        返回生成的阿米娅回复字符串；若未匹配到意图则返回 None。
+        """
+        import re
+        trimmed = (user_text or "").strip()
+        if not trimmed:
+            return None
+
+        # 1. 专注 / 番茄钟
+        if any(k in trimmed for k in ("专注", "番茄钟")) or ("自习" in trimmed and any(k in trimmed for k in ("开启", "开始", "来个", "进入", "设置", "定时"))):
+            m = re.search(r"(\d+)\s*(?:分钟|min|m)", trimmed, re.I)
+            mins = int(m.group(1)) if m else 25
+            mins = max(1, min(mins, 180))
+            return actions.start_pomodoro(work_minutes=mins, break_minutes=5, rounds=4)
+
+        # 停止专注
+        if any(k in trimmed for k in ("停止专注", "取消专注", "结束专注", "停止番茄钟", "结束番茄钟", "停止计时")):
+            return actions.stop_focus()
+
+        # 2. 便签备忘速记
+        if any(trimmed.startswith(k) or k in trimmed for k in ("记一下", "备忘录记一下", "记便签", "记录一下", "随手记", "记个备忘", "记在便签")):
+            clean_text = re.sub(r"^(?:阿米娅|请|帮我|麻烦)?(?:记一下|备忘录记一下|备忘|记录一下|记便签|随手记|记个备忘|记在便签)[:：\s]*", "", trimmed).strip()
+            if clean_text:
+                title = clean_text[:15] + "…" if len(clean_text) > 15 else clean_text
+                return actions.create_sticky_note(content=clean_text, title=title)
+            return "好的博士，请问具体要记下什么内容呢？阿米娅随时为您记录。"
+
+        # 3. 日程汇总
+        if ("明天" in trimmed or "明日" in trimmed) and any(k in trimmed for k in ("总结", "汇报", "待办", "课程", "安排", "课表", "日程", "早报")):
+            return actions.agenda_summary("tomorrow")
+        if ("今天" in trimmed or "今日" in trimmed) and any(k in trimmed for k in ("总结", "汇报", "待办", "课程", "安排", "课表", "日程", "早报")):
+            return actions.agenda_summary("today")
+
+        return None
+
     def reply(self, user_text):
         """Blocking call — run this off the UI thread."""
         self.history.append({"role": "user", "content": user_text})
         if not self.online:
-            text = self._fallback_reply()
+            text = self._fallback_reply(user_text)
         else:
             try:
                 text = self._call_llm()
             except Exception as e:
-                if self.has_custom_key:
-                    text = f"（连接出错了，博士稍后再试）{type(e).__name__}"
+                local_res = self._try_local_intent(user_text)
+                if local_res:
+                    text = local_res
                 else:
-                    text = self._fallback_reply()
+                    target_url = self.cfg.get("base_url") if self.has_custom_key else (self.cfg.get("public_relay_url") or DEFAULT_PUBLIC_RELAY_URL)
+                    text = diagnose_network_error(e, url=target_url, has_custom_key=self.has_custom_key)
         self.history.append({"role": "assistant", "content": text})
         # keep only the last N turns to bound the context (cut at a safe
         # boundary so tool rounds aren't orphaned)
@@ -164,17 +290,19 @@ class AmiyaBrain:
         """
         self.history.append({"role": "user", "content": user_text})
         if not self.online:
-            text = self._fallback_reply()
+            text = self._fallback_reply(user_text)
             if on_delta:
                 on_delta(text)
         else:
             try:
                 text = self._call_llm_stream(on_delta)
             except Exception as e:
-                if self.has_custom_key:
-                    text = f"（连接出错了，博士稍后再试）{type(e).__name__}"
+                local_res = self._try_local_intent(user_text)
+                if local_res:
+                    text = local_res
                 else:
-                    text = self._fallback_reply()
+                    target_url = self.cfg.get("base_url") if self.has_custom_key else (self.cfg.get("public_relay_url") or DEFAULT_PUBLIC_RELAY_URL)
+                    text = diagnose_network_error(e, url=target_url, has_custom_key=self.has_custom_key)
                 if on_delta:
                     on_delta(text)
         self.history.append({"role": "assistant", "content": text})
@@ -182,7 +310,10 @@ class AmiyaBrain:
         self._save_history()
         return text
 
-    def _fallback_reply(self):
+    def _fallback_reply(self, user_text=""):
+        local_res = self._try_local_intent(user_text)
+        if local_res:
+            return local_res
         text = self.fallback[self._fallback_i % len(self.fallback)]
         self._fallback_i += 1
         return text
@@ -190,15 +321,16 @@ class AmiyaBrain:
     def _call_llm(self):
         """Chat with an optional tool-call loop (max 4 tool rounds)."""
         use_tools = self.cfg.get("allow_actions", True) and self.has_custom_key
+        sched_ctx = self._schedule_context()
         if self.has_custom_key:
-            system_content = self.persona + self._knowledge_context() + self._profile_context()
+            system_content = self.persona + self._knowledge_context() + self._profile_context() + sched_ctx
         else:
             system_content = (
                 "你是《明日方舟》中的阿米娅，罗德岛的公开领袖。你温柔、坚定、富有责任感，"
                 "面对博士时既尊敬又亲近。你称呼对方为「博士」，自称「阿米娅」或「我」。"
                 "你说话礼貌、真诚，偶尔流露少女的关心与坚强。回答简洁自然，一般一到三句话，"
                 "像日常聊天，不要长篇大论，不要使用括号动作描写或表情符号，只用中文回答。"
-            )
+            ) + sched_ctx
         system = {"role": "system", "content": system_content}
         msgs = [system] + list(self.history)
         for _ in range(4):
@@ -216,30 +348,18 @@ class AmiyaBrain:
         msg = self._post(msgs, False)
         return (msg.get("content") or "好的，博士。").strip()
 
-    def _target_endpoint_and_headers(self, stream=False, use_tools=False, msgs=None):
+    def _target_endpoint_and_headers(self, stream=False, use_tools=False, msgs=None, target_url=None):
         has_custom = self.has_custom_key
         if has_custom:
-            base = self.cfg["base_url"].rstrip("/")
-            if base.endswith("/chat/completions"):
-                url = base
-            elif base.endswith("/v1"):
-                url = base + "/chat/completions"
-            else:
-                url = base + "/v1/chat/completions"
+            url = resolve_chat_endpoint(target_url or self.cfg.get("base_url", ""))
             model = self.cfg.get("model", "deepseek-chat")
             headers = {
                 "Content-Type": "application/json",
-                "Authorization": "Bearer " + self.cfg["api_key"],
+                "Authorization": "Bearer " + self.cfg.get("api_key", ""),
                 "User-Agent": "AmiyaDesktopPet/1.0"
             }
         else:
-            relay = (self.cfg.get("public_relay_url") or DEFAULT_PUBLIC_RELAY_URL).rstrip("/")
-            if relay.endswith("/chat/completions"):
-                url = relay
-            elif relay.endswith("/v1"):
-                url = relay + "/chat/completions"
-            else:
-                url = relay + "/v1/chat/completions"
+            url = resolve_chat_endpoint(target_url or self.cfg.get("public_relay_url") or DEFAULT_PUBLIC_RELAY_URL)
             model = "glm-4-flash"
             headers = {
                 "Content-Type": "application/json",
@@ -257,11 +377,29 @@ class AmiyaBrain:
         return url, headers, json.dumps(payload).encode("utf-8")
 
     def _post(self, msgs, use_tools):
-        url, headers, body = self._target_endpoint_and_headers(stream=False, use_tools=use_tools, msgs=msgs)
-        req = urllib.request.Request(url, data=body, method="POST", headers=headers)
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-        return data["choices"][0]["message"]
+        if self.has_custom_key:
+            endpoints = [resolve_chat_endpoint(self.cfg.get("base_url", ""))]
+        else:
+            endpoints = get_candidate_relays(self.cfg.get("public_relay_url"))
+
+        last_err = None
+        for i, ep in enumerate(endpoints):
+            try:
+                url, headers, body = self._target_endpoint_and_headers(
+                    stream=False, use_tools=use_tools, msgs=msgs, target_url=ep
+                )
+                req = urllib.request.Request(url, data=body, method="POST", headers=headers)
+                with urllib.request.urlopen(req, timeout=30) as resp:
+                    data = json.loads(resp.read().decode("utf-8"))
+                return data["choices"][0]["message"]
+            except Exception as e:
+                last_err = e
+                # 若还有备用节点可供容灾，则继续静默 failover 重试
+                if i < len(endpoints) - 1:
+                    continue
+                raise last_err
+        if last_err:
+            raise last_err
 
     def _call_llm_stream(self, on_delta):
         """Streaming chat with an optional tool-call loop (max 4 rounds).
@@ -270,15 +408,16 @@ class AmiyaBrain:
         streams its content tokens out through on_delta as they arrive.
         """
         use_tools = self.cfg.get("allow_actions", True) and self.has_custom_key
+        sched_ctx = self._schedule_context()
         if self.has_custom_key:
-            system_content = self.persona + self._knowledge_context() + self._profile_context()
+            system_content = self.persona + self._knowledge_context() + self._profile_context() + sched_ctx
         else:
             system_content = (
                 "你是《明日方舟》中的阿米娅，罗德岛的公开领袖。你温柔、坚定、富有责任感，"
                 "面对博士时既尊敬又亲近。你称呼对方为「博士」，自称「阿米娅」或「我」。"
                 "你说话礼貌、真诚，偶尔流露少女的关心与坚强。回答简洁自然，一般一到三句话，"
                 "像日常聊天，不要长篇大论，不要使用括号动作描写或表情符号，只用中文回答。"
-            )
+            ) + sched_ctx
         system = {"role": "system", "content": system_content}
         msgs = [system] + list(self.history)
         for _ in range(4):
@@ -315,10 +454,36 @@ class AmiyaBrain:
             self.history.append(tool_msg)
 
     def _post_stream(self, msgs, use_tools, on_delta):
-        url, headers, body = self._target_endpoint_and_headers(stream=True, use_tools=use_tools, msgs=msgs)
-        req = urllib.request.Request(url, data=body, method="POST", headers=headers)
-        with urllib.request.urlopen(req, timeout=60) as resp:
-            return _consume_stream(resp, on_delta)
+        if self.has_custom_key:
+            endpoints = [resolve_chat_endpoint(self.cfg.get("base_url", ""))]
+        else:
+            endpoints = get_candidate_relays(self.cfg.get("public_relay_url"))
+
+        last_err = None
+        for i, ep in enumerate(endpoints):
+            emitted = False
+            def wrapped_on_delta(content):
+                nonlocal emitted
+                if content:
+                    emitted = True
+                if on_delta:
+                    on_delta(content)
+
+            try:
+                url, headers, body = self._target_endpoint_and_headers(
+                    stream=True, use_tools=use_tools, msgs=msgs, target_url=ep
+                )
+                req = urllib.request.Request(url, data=body, method="POST", headers=headers)
+                with urllib.request.urlopen(req, timeout=60) as resp:
+                    return _consume_stream(resp, wrapped_on_delta)
+            except Exception as e:
+                last_err = e
+                # 若已经吐出有效 token 或已经是最后一个候选节点，则不再静默 failover，抛出异常
+                if emitted or i == len(endpoints) - 1:
+                    raise last_err
+                continue
+        if last_err:
+            raise last_err
 
 
 def _trim_history(turns, max_turns):

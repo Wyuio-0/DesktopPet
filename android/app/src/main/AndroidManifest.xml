@@ -82,6 +82,7 @@
             <intent-filter>
                 <action android:name="com.amiya.pet.TEST_ACTION" />
                 <action android:name="com.amiya.pet.ACTION_RESTORE_PET" />
+                <action android:name="com.amiya.pet.ACTION_ADD_COURSE_NL" />
             </intent-filter>
         </receiver>
 

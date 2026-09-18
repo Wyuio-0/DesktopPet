@@ -37,4 +37,5 @@ def test_brain_free_relay_offline_fallback():
         # When network fails, brain should gracefully return a fallback voice line
         with patch("urllib.request.urlopen", side_effect=Exception("Network unreachable")):
             reply = brain.reply("你好")
-            assert reply in brain.fallback
+            assert "公共 AI 线路暂不可用" in reply or reply in brain.fallback
+

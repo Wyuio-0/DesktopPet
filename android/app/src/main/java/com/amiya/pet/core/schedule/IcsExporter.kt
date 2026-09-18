@@ -93,8 +93,9 @@ object IcsExporter {
             for (weekNo in c.weekStart..c.weekEnd) {
                 if (!c.activeOn(weekNo)) continue
 
-                // 计算具体公历日期：termStart 为第 1 周周一，c.weekday (1=周一, 7=周日)
-                val dayOffset = (weekNo - 1) * 7 + (c.weekday - 1)
+                // 计算具体公历日期：termStart 为第 1 周周日，c.weekday (1=周一..6=周六, 7=周日)
+                val dayOffsetInWeek = if (c.weekday == 7) 0 else c.weekday
+                val dayOffset = (weekNo - 1) * 7 + dayOffsetInWeek
                 val cal = Calendar.getInstance(TimeZone.getTimeZone("Asia/Shanghai")).apply {
                     time = termStart
                     add(Calendar.DAY_OF_YEAR, dayOffset)

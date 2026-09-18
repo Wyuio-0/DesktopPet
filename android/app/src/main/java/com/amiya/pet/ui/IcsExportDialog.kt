@@ -37,19 +37,9 @@ fun IcsExportDialog(
     val context = LocalContext.current
     val scrollState = rememberScrollState()
 
-    // 默认开学日期（若未设定则使用本周周一）
+    // 默认开学日期（若未设定则使用本周周日）
     var currentTermStart by remember {
-        val start = ScheduleManager.termStart ?: run {
-            val cal = Calendar.getInstance()
-            val dayOfWeek = cal.get(Calendar.DAY_OF_WEEK)
-            val diff = if (dayOfWeek == Calendar.SUNDAY) -6 else Calendar.MONDAY - dayOfWeek
-            cal.add(Calendar.DAY_OF_YEAR, diff)
-            cal.set(Calendar.HOUR_OF_DAY, 0)
-            cal.set(Calendar.MINUTE, 0)
-            cal.set(Calendar.SECOND, 0)
-            cal.set(Calendar.MILLISECOND, 0)
-            cal.time
-        }
+        val start = ScheduleManager.termStart ?: ScheduleManager.normalizeToSunday(Date())
         mutableStateOf(start)
     }
 

@@ -59,7 +59,7 @@ fun ScheduleScreen(
         mutableStateOf(true)
     }
 
-    val courses = remember(refreshTrigger, isDataLoaded) {
+    val courses = remember(refreshTrigger, isDataLoaded, ScheduleManager.coursesVersion) {
         ScheduleManager.courses
     }
     
@@ -320,6 +320,57 @@ fun ScheduleScreen(
     }
 }
 
+private data class LayoutCourse(
+    val course: Course,
+    val slotIdx: Int,
+    val totalSlots: Int
+)
+
+private fun layoutDayCourses(courses: List<Course>): List<LayoutCourse> {
+    if (courses.isEmpty()) return emptyList()
+    val sorted = courses.sortedWith(compareBy({ it.secStart }, { -(it.secEnd - it.secStart) }))
+    val clusters = mutableListOf<MutableList<Course>>()
+    for (c in sorted) {
+        var placed = false
+        for (cl in clusters) {
+            if (cl.any { maxOf(c.secStart, it.secStart) <= minOf(c.secEnd, it.secEnd) }) {
+                cl.add(c)
+                placed = true
+                break
+            }
+        }
+        if (!placed) {
+            clusters.add(mutableListOf(c))
+        }
+    }
+
+    val result = mutableListOf<LayoutCourse>()
+    for (cl in clusters) {
+        val slots = mutableListOf<Int>()
+        val cSlots = mutableMapOf<Course, Int>()
+        for (c in cl) {
+            var assigned = false
+            for (sIdx in slots.indices) {
+                if (slots[sIdx] < c.secStart) {
+                    slots[sIdx] = c.secEnd
+                    cSlots[c] = sIdx
+                    assigned = true
+                    break
+                }
+            }
+            if (!assigned) {
+                cSlots[c] = slots.size
+                slots.add(c.secEnd)
+            }
+        }
+        val total = slots.size
+        for (c in cl) {
+            result.add(LayoutCourse(c, cSlots[c] ?: 0, total))
+        }
+    }
+    return result
+}
+
 @Composable
 fun TimetableGrid(
     weekNo: Int,
@@ -330,8 +381,13 @@ fun TimetableGrid(
     onSelectCourse: (Course) -> Unit,
     onAddCourseAt: (weekday: Int, section: Int) -> Unit
 ) {
-    val weekDays = listOf("日", "一", "二", "三", "四", "五", "六")
-    val courses = ScheduleManager.courses
+    val isMondayFirst = ScheduleManager.weekStartDay == "monday"
+    val weekDays = if (isMondayFirst) listOf("一", "二", "三", "四", "五", "六", "日") else listOf("日", "一", "二", "三", "四", "五", "六")
+    val dayOrder = if (isMondayFirst) listOf(1, 2, 3, 4, 5, 6, 7) else listOf(7, 1, 2, 3, 4, 5, 6)
+
+    val courses = remember(refreshTrigger, ScheduleManager.coursesVersion) {
+        ScheduleManager.courses
+    }
 
     var showTime by remember { mutableStateOf(false) }
 
@@ -341,26 +397,35 @@ fun TimetableGrid(
     val currentIsoWeekday = if (todayIdx == Calendar.SUNDAY) 7 else todayIdx - 1
     val isCurrentWeek = (weekNo == realWeekNo)
     val currentMins = cal.get(Calendar.HOUR_OF_DAY) * 60 + cal.get(Calendar.MINUTE)
-    val dayOrder = listOf(7, 1, 2, 3, 4, 5, 6)
 
-    val dates = remember(weekNo, refreshTrigger) {
-        val start = ScheduleManager.termStart
-        if (start != null) {
-            val cal = Calendar.getInstance()
-            cal.time = start
-            cal.add(Calendar.DAY_OF_YEAR, (weekNo - 1) * 7)
-            val dayOfWeek = cal.get(Calendar.DAY_OF_WEEK)
-            cal.add(Calendar.DAY_OF_YEAR, Calendar.SUNDAY - dayOfWeek)
-            
-            val result = mutableListOf<String>()
-            for (i in 0..6) {
-                result.add(java.text.SimpleDateFormat("M.d", java.util.Locale.getDefault()).format(cal.time))
-                cal.add(Calendar.DAY_OF_YEAR, 1)
-            }
-            result
-        } else {
-            List(7) { "" }
+    val dates = remember(weekNo, refreshTrigger, ScheduleManager.termStart, ScheduleManager.weekStartDay) {
+        val today = Calendar.getInstance().apply {
+            set(Calendar.HOUR_OF_DAY, 0)
+            set(Calendar.MINUTE, 0)
+            set(Calendar.SECOND, 0)
+            set(Calendar.MILLISECOND, 0)
         }
+        val currentDow = today.get(Calendar.DAY_OF_WEEK) // SUNDAY=1, MONDAY=2, ... SATURDAY=7
+        val offsetToStart = if (isMondayFirst) {
+            if (currentDow == Calendar.SUNDAY) 6 else currentDow - Calendar.MONDAY
+        } else {
+            currentDow - Calendar.SUNDAY
+        }
+        val curWeekStart = (today.clone() as Calendar).apply {
+            add(Calendar.DAY_OF_YEAR, -offsetToStart)
+        }
+        val curWeekNo = ScheduleManager.getWeekNo() ?: 1
+        val weekDiff = weekNo - curWeekNo
+        val targetStart = (curWeekStart.clone() as Calendar).apply {
+            add(Calendar.DAY_OF_YEAR, weekDiff * 7)
+        }
+        val result = mutableListOf<String>()
+        val sdf = java.text.SimpleDateFormat("M.d", java.util.Locale.getDefault())
+        for (i in 0..6) {
+            result.add(sdf.format(targetStart.time))
+            targetStart.add(Calendar.DAY_OF_YEAR, 1)
+        }
+        result
     }
 
     // Gesture state
@@ -372,8 +437,9 @@ fun TimetableGrid(
                 val isToday = isCurrentWeek && currentIsoWeekday == dayOrder[idx]
                 Column(
                     modifier = Modifier.weight(1f)
-                        .clip(RoundedCornerShape(4.dp))
-                        .background(if (isToday) MaterialTheme.colorScheme.primary.copy(alpha=0.3f) else Color.Transparent)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(if (isToday) MaterialTheme.colorScheme.primary.copy(alpha=0.25f) else Color.Transparent)
+                        .then(if (isToday) Modifier.border(1.dp, MaterialTheme.colorScheme.primary.copy(alpha=0.6f), RoundedCornerShape(6.dp)) else Modifier)
                         .padding(vertical = 2.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
@@ -413,92 +479,122 @@ fun TimetableGrid(
                 }
             }
         ) {
-            val rowH = maxHeight / 13
-            // Background grid lines and row numbers
-            Column(modifier = Modifier.fillMaxSize()) {
-                for (i in 1..13) {
-                    val rawTimeInfo = ScheduleManager.sections[i.toString()] ?: ""
-                    var isCurrentSlot = false
-                    if (isCurrentWeek && rawTimeInfo.contains(":")) {
-                        try {
-                            val timePart = rawTimeInfo.split("\n").first().split("-").first().trim()
-                            val parts = timePart.split(":")
-                            val startMins = parts[0].toInt() * 60 + parts[1].toInt()
-                            if (currentMins in startMins..(startMins + 45)) {
-                                isCurrentSlot = true
-                            }
-                        } catch(e: Exception){}
-                    }
+            val isConstrained = maxHeight < 560.dp
+            val rowH = if (isConstrained) 46.dp else maxHeight / 13
+            val totalGridH = rowH * 13
+            val gridScrollState = rememberScrollState()
 
-                    Box(modifier = Modifier.fillMaxWidth().height(rowH).background(if (isCurrentSlot) MaterialTheme.colorScheme.primary.copy(alpha=0.15f) else Color.Transparent)) {
-                        Box(
-                            modifier = Modifier
-                                .width(38.dp)
-                                .fillMaxHeight()
-                                .clickable { showTime = !showTime }
-                                .background(if (isCurrentSlot) MaterialTheme.colorScheme.primary.copy(alpha=0.3f) else Color.Transparent)
-                                .align(Alignment.CenterStart),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            val rawTimeText = ScheduleManager.sections[i.toString()] ?: "$i"
-                            val displayTime = if (!showTime) i.toString() else {
-                                if (rawTimeText.contains("-") || rawTimeText.contains("\n")) {
-                                    rawTimeText.replace("-", "\n")
-                                } else if (rawTimeText.contains(":")) {
-                                    try {
-                                        val parts = rawTimeText.split(":")
-                                        val h = parts[0].toInt()
-                                        val m = parts[1].toInt()
-                                        val endM = h * 60 + m + 45
-                                        val eH = endM / 60
-                                        val eM = endM % 60
-                                        "$rawTimeText\n${String.format(Locale.getDefault(), "%02d:%02d", eH, eM)}"
-                                    } catch(e: Exception) { rawTimeText }
-                                } else rawTimeText
-                            }
-                            Text(
-                                text = displayTime,
-                                color = if (isCurrentSlot) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onBackground.copy(alpha = 0.65f),
-                                fontSize = if (showTime) 9.sp else 11.sp,
-                                lineHeight = 11.sp,
-                                fontWeight = if (isCurrentSlot) FontWeight.Bold else FontWeight.Normal,
-                                textAlign = TextAlign.Center
-                            )
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(if (isConstrained) totalGridH else maxHeight)
+                    .then(if (isConstrained) Modifier.verticalScroll(gridScrollState) else Modifier)
+            ) {
+                // Background grid lines and row numbers
+                Column(modifier = Modifier.fillMaxSize()) {
+                    for (i in 1..13) {
+                        val rawTimeInfo = ScheduleManager.sections[i.toString()] ?: ""
+                        var isCurrentSlot = false
+                        var isTimeNow = false
+                        if (rawTimeInfo.contains(":")) {
+                            try {
+                                val timePart = rawTimeInfo.split("\n").first().split("-").first().trim()
+                                val parts = timePart.split(":")
+                                val startMins = parts[0].toInt() * 60 + parts[1].toInt()
+                                val nextStartMins = if (i < 13) {
+                                    val nextTime = ScheduleManager.sections[(i + 1).toString()] ?: ""
+                                    if (nextTime.contains(":")) {
+                                        val np = nextTime.split("\n").first().split("-").first().trim().split(":")
+                                        np[0].toInt() * 60 + np[1].toInt()
+                                    } else startMins + 45
+                                } else startMins + 45
+
+                                if (currentMins in startMins until nextStartMins) {
+                                    isTimeNow = true
+                                    if (isCurrentWeek) {
+                                        isCurrentSlot = true
+                                    }
+                                }
+                            } catch(e: Exception){}
                         }
-                        Box(modifier = Modifier.fillMaxSize().padding(start = 38.dp)) {
-                            Spacer(modifier = Modifier.fillMaxWidth().height(1.dp).background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f)).align(Alignment.TopCenter))
+
+                        Box(modifier = Modifier.fillMaxWidth().height(rowH).background(if (isCurrentSlot) MaterialTheme.colorScheme.primary.copy(alpha=0.15f) else Color.Transparent)) {
+                            Box(
+                                modifier = Modifier
+                                    .width(38.dp)
+                                    .fillMaxHeight()
+                                    .clickable { showTime = !showTime }
+                                    .background(
+                                        if (isCurrentSlot) MaterialTheme.colorScheme.primary.copy(alpha=0.35f)
+                                        else if (isTimeNow) MaterialTheme.colorScheme.primary.copy(alpha=0.15f)
+                                        else Color.Transparent
+                                    )
+                                    .align(Alignment.CenterStart),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                val rawTimeText = ScheduleManager.sections[i.toString()] ?: "$i"
+                                val displayTime = if (!showTime) i.toString() else {
+                                    if (rawTimeText.contains("-") || rawTimeText.contains("\n")) {
+                                        rawTimeText.replace("-", "\n")
+                                    } else if (rawTimeText.contains(":")) {
+                                        try {
+                                            val parts = rawTimeText.split(":")
+                                            val h = parts[0].toInt()
+                                            val m = parts[1].toInt()
+                                            val endM = h * 60 + m + 45
+                                            val eH = endM / 60
+                                            val eM = endM % 60
+                                            "$rawTimeText\n${String.format(Locale.getDefault(), "%02d:%02d", eH, eM)}"
+                                        } catch(e: Exception) { rawTimeText }
+                                    } else rawTimeText
+                                }
+                                Text(
+                                    text = displayTime,
+                                    color = if (isCurrentSlot || isTimeNow) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onBackground.copy(alpha = 0.65f),
+                                    fontSize = if (showTime) 9.sp else 11.sp,
+                                    lineHeight = 11.sp,
+                                    fontWeight = if (isCurrentSlot || isTimeNow) FontWeight.Bold else FontWeight.Normal,
+                                    textAlign = TextAlign.Center
+                                )
+                            }
+                            Box(modifier = Modifier.fillMaxSize().padding(start = 38.dp)) {
+                                Spacer(modifier = Modifier.fillMaxWidth().height(1.dp).background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f)).align(Alignment.TopCenter))
+                            }
                         }
                     }
                 }
-            }
-            // Courses overlay & Empty clickable slots
-            Row(modifier = Modifier.matchParentSize().padding(start = 38.dp)) {
-                for (wd in listOf(7, 1, 2, 3, 4, 5, 6)) {
-                    Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
-                        val dayCourses = ScheduleManager.getCoursesOn(wd, weekNo)
+                // Courses overlay & Empty clickable slots
+                Row(modifier = Modifier.matchParentSize().padding(start = 38.dp)) {
+                    for (wd in dayOrder) {
+                        Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
+                            val dayCourses = ScheduleManager.getCoursesOn(wd, weekNo)
+                            val layoutCourses = remember(dayCourses) { layoutDayCourses(dayCourses) }
 
-                        // 1. Clickable empty slots to quickly add a course
-                        for (sec in 1..13) {
-                            val isOccupied = dayCourses.any { sec in it.secStart..it.secEnd }
-                            if (!isOccupied) {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .offset(y = rowH * (sec - 1))
-                                        .height(rowH)
-                                        .clickable { onAddCourseAt(wd, sec) }
+                            // 1. Clickable empty slots to quickly add a course
+                            for (sec in 1..13) {
+                                val isOccupied = dayCourses.any { sec in it.secStart..it.secEnd }
+                                if (!isOccupied) {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .offset(y = rowH * (sec - 1))
+                                            .height(rowH)
+                                            .clickable { onAddCourseAt(wd, sec) }
+                                    )
+                                }
+                            }
+
+                            // 2. Render active courses with collision sub-columns
+                            for (lc in layoutCourses) {
+                                CourseBlock(
+                                    course = lc.course,
+                                    color = colorMap[lc.course.name] ?: Color.Gray,
+                                    rowH = rowH,
+                                    slotIdx = lc.slotIdx,
+                                    totalSlots = lc.totalSlots,
+                                    onClick = { onSelectCourse(lc.course) }
                                 )
                             }
-                        }
-
-                        // 2. Render active courses
-                        for (c in dayCourses) {
-                            CourseBlock(
-                                course = c,
-                                color = colorMap[c.name] ?: Color.Gray,
-                                rowH = rowH,
-                                onClick = { onSelectCourse(c) }
-                            )
                         }
                     }
                 }
@@ -512,27 +608,67 @@ fun CourseBlock(
     course: Course,
     color: Color,
     rowH: androidx.compose.ui.unit.Dp,
+    slotIdx: Int = 0,
+    totalSlots: Int = 1,
     onClick: () -> Unit
 ) {
     val topOff = rowH * (course.secStart - 1)
     val height = rowH * (course.secEnd - course.secStart + 1)
+    val isAiAdded = course.note.contains("AI")
 
-    Box(
-        modifier = Modifier
-            .padding(1.dp)
-            .offset(y = topOff)
-            .height(height)
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(6.dp))
-            .background(color)
-            .clickable(onClick = onClick)
-            .padding(2.dp)
-    ) {
-        Column(modifier = Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
-            Text(course.name, color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center, maxLines = 3, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
-            if (course.room.isNotEmpty() && height > rowH * 1.5f) {
-                Spacer(Modifier.height(2.dp))
-                Text("@${course.room}", color = Color(0xFFEEEEEE), fontSize = 9.sp, textAlign = TextAlign.Center, maxLines = 2)
+    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+        val totalW = maxWidth
+        val subW = totalW / totalSlots
+        val xOff = subW * slotIdx
+
+        Box(
+            modifier = Modifier
+                .offset(x = xOff, y = topOff)
+                .size(width = subW, height = height)
+                .padding(1.dp)
+                .clip(RoundedCornerShape(6.dp))
+                .background(color)
+                .clickable(onClick = onClick)
+                .padding(2.dp)
+        ) {
+            Column(modifier = Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
+                if (course.customTime.isNotBlank()) {
+                    val timeDisplay = if (height > rowH * 1.5f && course.customTime.contains("-")) {
+                        val parts = course.customTime.split("-")
+                        "📌${parts[0]}\n~${parts[1]}"
+                    } else {
+                        "📌${course.customTime}"
+                    }
+                    Text(
+                        text = timeDisplay,
+                        color = Color(0xFFFFEB3B),
+                        fontSize = if (totalSlots > 1) 6.5.sp else 7.5.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        textAlign = TextAlign.Center,
+                        lineHeight = 8.sp,
+                        maxLines = 2
+                    )
+                }
+                val displayName = if (isAiAdded) "✨ ${course.name}" else course.name
+                Text(
+                    displayName,
+                    color = Color.White,
+                    fontSize = if (totalSlots > 1) 8.5.sp else 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    textAlign = TextAlign.Center,
+                    maxLines = 3,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                )
+                if (course.room.isNotEmpty() && height > rowH * 1.5f) {
+                    Spacer(Modifier.height(1.dp))
+                    Text(
+                        "@${course.room}",
+                        color = Color(0xFFEEEEEE),
+                        fontSize = if (totalSlots > 1) 7.5.sp else 9.sp,
+                        textAlign = TextAlign.Center,
+                        maxLines = 2
+                    )
+                }
             }
         }
     }
@@ -569,7 +705,12 @@ fun CourseDetailDialog(
                 Text(course.name, color = color, fontWeight = FontWeight.Bold, fontSize = 18.sp)
                 Spacer(Modifier.height(12.dp))
 
-                DetailItem(icon = Icons.Default.AccessTime, label = "时间", value = "$weekdayStr 第 ${course.secStart}-${course.secEnd} 节")
+                if (course.customTime.isNotBlank()) {
+                    DetailItem(icon = Icons.Default.Schedule, label = "活动时间", value = "📌 ${course.customTime} (准时提醒)")
+                    DetailItem(icon = Icons.Default.AccessTime, label = "吸附节次", value = "$weekdayStr 第 ${course.secStart}-${course.secEnd} 节")
+                } else {
+                    DetailItem(icon = Icons.Default.AccessTime, label = "时间", value = "$weekdayStr 第 ${course.secStart}-${course.secEnd} 节")
+                }
                 DetailItem(icon = Icons.Default.DateRange, label = "周次", value = "第 ${course.weekStart}-${course.weekEnd} 周 ($parityStr)")
                 if (course.room.isNotEmpty()) {
                     DetailItem(icon = Icons.Default.LocationOn, label = "教室", value = course.room)
@@ -581,7 +722,11 @@ fun CourseDetailDialog(
                     DetailItem(icon = Icons.Default.School, label = "校区", value = course.campus)
                 }
                 if (course.note.isNotEmpty()) {
-                    DetailItem(icon = Icons.Default.Notes, label = "备注", value = course.note)
+                    DetailItem(
+                        icon = if (course.note.contains("AI")) Icons.Default.AutoAwesome else Icons.Default.Notes,
+                        label = if (course.note.contains("AI")) "来源" else "备注",
+                        value = course.note
+                    )
                 }
             }
         },
@@ -676,14 +821,15 @@ fun CourseEditDialog(
     var teacher by remember { mutableStateOf(initialCourse?.teacher ?: "") }
     var note by remember { mutableStateOf(initialCourse?.note ?: "") }
     var campus by remember { mutableStateOf(initialCourse?.campus ?: "") }
+    var customTime by remember { mutableStateOf(initialCourse?.customTime ?: "") }
 
     var hasError by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf("") }
 
     val isEditing = (initialCourse != null)
     val weekdayList = listOf(
-        Pair(1, "一"), Pair(2, "二"), Pair(3, "三"),
-        Pair(4, "四"), Pair(5, "五"), Pair(6, "六"), Pair(7, "日")
+        Pair(7, "日"), Pair(1, "一"), Pair(2, "二"), Pair(3, "三"),
+        Pair(4, "四"), Pair(5, "五"), Pair(6, "六")
     )
     val parityOptions = listOf(
         Pair("all", "全部周"),
@@ -894,6 +1040,18 @@ fun CourseEditDialog(
                     singleLine = true
                 )
 
+                Spacer(Modifier.height(8.dp))
+
+                // 9. 真实活动时间 (选填)
+                OutlinedTextField(
+                    value = customTime,
+                    onValueChange = { customTime = it },
+                    label = { Text("真实活动时间 (选填)") },
+                    placeholder = { Text("如：14:15-15:30（提醒将严格按此时刻推送）") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+
                 if (errorMessage.isNotEmpty()) {
                     Spacer(Modifier.height(6.dp))
                     Text(errorMessage, color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
@@ -928,7 +1086,8 @@ fun CourseEditDialog(
                         room = room.trim(),
                         teacher = teacher.trim(),
                         campus = campus.trim(),
-                        note = note.trim()
+                        note = note.trim(),
+                        customTime = customTime.trim()
                     )).copy(
                         name = name.trim(),
                         weekday = weekday,
@@ -940,7 +1099,8 @@ fun CourseEditDialog(
                         room = room.trim(),
                         teacher = teacher.trim(),
                         campus = campus.trim(),
-                        note = note.trim()
+                        note = note.trim(),
+                        customTime = customTime.trim()
                     )
 
                     onSave(finalCourse)

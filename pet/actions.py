@@ -616,6 +616,51 @@ def set_reminder(delay_minutes=None, delay_seconds=None, message="时间到了")
     return f"好的博士，{_fmt_delay(total)}后我会提醒您：{message}"
 
 
+# ── 专注番茄钟钩子（由 UI 层注入，保持解耦）────────────────────────
+
+_pomodoro_starter = None
+_focus_stopper = None
+
+
+def set_pomodoro_starter(fn):
+    """注册启动番茄钟回调 fn(work_minutes, break_minutes, rounds)。"""
+    global _pomodoro_starter
+    _pomodoro_starter = fn
+
+
+def set_focus_stopper(fn):
+    """注册停止专注回调 fn()。"""
+    global _focus_stopper
+    _focus_stopper = fn
+
+
+def start_pomodoro(work_minutes=25, break_minutes=5, rounds=4):
+    """启动番茄钟专注倒计时与休息循环。"""
+    try:
+        work = int(work_minutes) if work_minutes else 25
+        brk = int(break_minutes) if break_minutes else 5
+        r = int(rounds) if rounds else 4
+        if work <= 0 or brk <= 0 or r <= 0:
+            return "番茄钟时长与轮数需要是正整数哦，博士。"
+        if _pomodoro_starter:
+            _pomodoro_starter(work, brk, r)
+            return f"好的博士！阿米娅已为您开启番茄钟：第 1 轮专注 {work} 分钟，休息 {brk} 分钟，共 {r} 轮。请专心工作，阿米娅会为您计时的！"
+        return "专注番茄钟组件暂未就绪。"
+    except Exception as e:
+        return f"启动番茄钟失败：{type(e).__name__}"
+
+
+def stop_focus():
+    """停止当前所有专注计时。"""
+    try:
+        if _focus_stopper:
+            _focus_stopper()
+            return "好的博士，已经为您停止了专注计时。"
+        return "当前没有正在运行的专注计时。"
+    except Exception as e:
+        return f"停止专注失败：{type(e).__name__}"
+
+
 # ── 课表 / 待办数据源（由 UI 层注入，保持本模块与 Qt 解耦）────────────
 
 _schedule_provider = None
@@ -758,38 +803,78 @@ def query_tasks():
     return tasks.dump_text(limit=15)
 
 
-def today_summary():
-    """一键汇总今日安排：今天的课程 + 待办/考试 + 最近考试倒计时。"""
+def agenda_summary(scope="today"):
+    """一键汇总今日或明日安排：课程 + 待办/考试 + 便签 + 考试倒计时。"""
+    from datetime import timedelta
+    scope = (scope or "today").strip().lower()
+    is_tomorrow = scope in ("tomorrow", "tmr", "mingtian", "明天")
     sched = _schedule_provider() if _schedule_provider else None
     tasks = _tasks_provider() if _tasks_provider else None
     parts = []
 
-    # 今天的课程
-    if sched is not None and sched.courses:
-        week_no = sched.week_no()
-        courses = sched.today(week_no)
-        parts.append(_fmt_courses("今天", courses, sched, week_no)
-                     if courses else "今天没有课。")
+    label = "明天" if is_tomorrow else "今天"
+    now = datetime.now()
+    target_date = now + timedelta(days=1) if is_tomorrow else now
+    target_wd = target_date.isoweekday()
+    days = ["", "周一", "周二", "周三", "周四", "周五", "周六", "周日"]
+    date_str = target_date.strftime("%m月%d日")
 
-    # 待办（未完成的作业/考试）
+    parts.append(f"【博士{label}（{date_str} {days[target_wd]}）日程综合看板】")
+
+    # 1. 课程安排
+    if sched is not None and sched.courses:
+        eff_week = sched.week_no(target_date.date()) if hasattr(sched, "week_no") else sched.week_no()
+        courses = [c for c in sched.courses_on(target_wd, eff_week) if c.active_on(eff_week)] if eff_week else sched.courses_on(target_wd, None)
+        if courses:
+            parts.append(f"📅 {label}课程（第 {eff_week} 周）：\n" + _fmt_courses(label, courses, sched, eff_week))
+        else:
+            parts.append(f"📅 {label}课程：{label}没有课（全天没有安排排课），博士可以自由安排整块自习或休息。")
+    elif sched is None:
+        parts.append(f"📅 {label}课程：课表组件暂未载入，{label}没有安排课程（{label}没有课）。")
+    else:
+        parts.append(f"📅 {label}课程：{label}没有课（尚未导入课表数据，没有安排课程）。")
+
+    # 2. 待办（未完成的作业/考试）
     if tasks is not None:
-        upcoming = tasks.upcoming(limit=8)
+        upcoming = tasks.upcoming(limit=6)
         if upcoming:
-            lines = ["今日待办："]
+            lines = [f"📋 待办与临近截止："]
             for t in upcoming:
                 tag = "考试" if t.kind == "exam" else "作业"
-                lines.append("  %s《%s》%s 截止" % (
-                    tag, t.title, t.due.strftime("%m-%d %H:%M")))
+                lines.append(f"  - [{tag}]《{t.title}》{t.due.strftime('%m-%d %H:%M')} 截止")
             parts.append("\n".join(lines))
+        else:
+            parts.append(f"📋 待办与临近截止：{label}没有安排待办任务，博士可以休息一下。")
         exams = tasks.exams()
         if exams:
             t = exams[0]
-            days = max((t.due - datetime.now()).days, 0)
-            parts.append("最近的考试：%s，还有 %d 天。" % (t.title, days))
+            days_left = max((t.due - datetime.now()).days, 0)
+            parts.append(f"🎯 期末/近期备考倒计时：\n  - 《{t.title}》还有 {days_left} 天（{t.due.strftime('%m-%d %H:%M')}）")
+    else:
+        parts.append(f"📋 待办与临近截止：待办组件暂未载入，{label}没有安排待办。")
 
-    if not parts:
-        return "今天没有安排，博士可以自由安排。"
+    # 3. 灵感便签
+    try:
+        from .notes import get_notes_manager
+        notes = get_notes_manager().list_notes()
+        if notes:
+            note_lines = ["📝 灵感便签备忘（最新）："]
+            for n in notes[:3]:
+                pin = "📌 " if n.pinned else ""
+                snip = n.content.strip().replace("\n", " ")
+                if len(snip) > 35:
+                    snip = snip[:35] + "…"
+                note_lines.append(f"  - {pin}{n.title}：{snip}")
+            parts.append("\n".join(note_lines))
+    except Exception:
+        pass
+
     return "\n\n".join(parts)
+
+
+def today_summary():
+    """一键汇总今日安排（兼容接口）。"""
+    return agenda_summary(scope="today")
 
 
 def add_task(title, due, course="", kind="homework"):
@@ -973,6 +1058,8 @@ _HANDLERS = {
     "get_datetime": get_datetime, "set_reminder": set_reminder,
     "query_schedule": query_schedule, "query_tasks": query_tasks,
     "add_task": add_task, "today_summary": today_summary,
+    "agenda_summary": agenda_summary,
+    "start_pomodoro": start_pomodoro, "stop_focus": stop_focus,
     "system_status": system_status, "type_text": type_text,
     "clipboard": clipboard, "window_control": window_control,
     "update_doctor_profile": update_doctor_profile,
@@ -1090,6 +1177,20 @@ TOOLS = [
         ["title", "due"]),
     _fn("today_summary",
         "一键汇总博士今天的安排：今天的课程、待办作业/考试、最近考试倒计时"),
+    _fn("agenda_summary",
+        "一键汇总博士今天或明天的综合日程看板（课程排期、待办作业/考试、灵感便签、期末考试倒计时）",
+        {"scope": {"type": "string", "enum": ["today", "tomorrow"],
+                   "description": "today=今天日程, tomorrow=明天日程，默认today"}},
+        []),
+    _fn("start_pomodoro",
+        "启动番茄钟专注倒计时与休息轮次循环（可自定义专注分钟数、休息分钟数和总轮数）",
+        {"work_minutes": {"type": "integer", "description": "每轮专注分钟数，默认25"},
+         "break_minutes": {"type": "integer", "description": "每轮休息分钟数，默认5"},
+         "rounds": {"type": "integer", "description": "总循环轮数，默认4"}},
+        []),
+    _fn("stop_focus",
+        "停止当前正在运行的番茄钟或专注倒计时",
+        {}, []),
     _fn("system_status",
         "获取电脑当前状态（只读，安全）：前台窗口、电量、CPU/内存/磁盘占用、开机时长"),
     _fn("type_text",

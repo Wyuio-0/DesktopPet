@@ -313,15 +313,20 @@ class InfoPanel(QtWidgets.QWidget):
         self.week_label.setStyleSheet("color: #00B0FF; font-size: 15px; font-weight: bold;")
         self.btn_cur_week = QtWidgets.QPushButton("回到本周", page)
         self.btn_next_week = QtWidgets.QPushButton("下一周 ▶", page)
+        self.btn_week_start = QtWidgets.QPushButton(page)
+        self.btn_week_start.setObjectName("WeekStartBtn")
+        self.btn_week_start.setToolTip("切换周课表起始日：周日 / 周一")
 
         self.btn_prev_week.clicked.connect(self._prev_week)
         self.btn_cur_week.clicked.connect(self._go_current_week)
         self.btn_next_week.clicked.connect(self._next_week)
+        self.btn_week_start.clicked.connect(self._toggle_week_start_day)
 
         nav.addWidget(self.btn_prev_week)
         nav.addWidget(self.week_label, 1)
         nav.addWidget(self.btn_cur_week)
         nav.addWidget(self.btn_next_week)
+        nav.addWidget(self.btn_week_start)
         self.week_nav_widget = QtWidgets.QWidget(page)
         self.week_nav_widget.setLayout(nav)
         lay.addWidget(self.week_nav_widget)
@@ -479,6 +484,14 @@ class InfoPanel(QtWidgets.QWidget):
         self.btn_prev_week.setEnabled(self._display_week > 1)
         self.btn_next_week.setEnabled(self._display_week < self._max_week)
         self.btn_cur_week.setEnabled(self._display_week != real_week and real_week >= 1)
+        is_sun = getattr(s, "week_start_day", "sunday") == "sunday"
+        self.btn_week_start.setText("起始: 周日" if is_sun else "起始: 周一")
+
+    def _toggle_week_start_day(self):
+        s = self.owner.schedule
+        new_day = "monday" if getattr(s, "week_start_day", "sunday") == "sunday" else "sunday"
+        s.set_week_start_day(new_day)
+        self._render_week()
 
     def _prev_week(self):
         if self._display_week > 1:

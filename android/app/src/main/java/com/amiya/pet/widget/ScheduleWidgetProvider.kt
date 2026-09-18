@@ -102,8 +102,8 @@ class ScheduleWidgetProvider : AppWidgetProvider() {
                         views.setViewVisibility(R.id.widget_has_courses_container, View.GONE)
                         views.setViewVisibility(R.id.widget_empty_container, View.VISIBLE)
 
-                        val tomorrowWeekday = if (todayWeekday == 7) 1 else todayWeekday + 1
-                        val tomorrowWeekNo = if (todayWeekday == 7) weekNo + 1 else weekNo
+                        val tomorrowWeekday = if (todayWeekday == 6) 7 else if (todayWeekday == 7) 1 else todayWeekday + 1
+                        val tomorrowWeekNo = if (todayWeekday == 6) weekNo + 1 else weekNo
                         val tomorrowCourses = ScheduleManager.getCoursesOn(tomorrowWeekday, tomorrowWeekNo)
                         if (tomorrowCourses.isNotEmpty()) {
                             val firstTomorrow = tomorrowCourses.first()
@@ -153,8 +153,8 @@ class ScheduleWidgetProvider : AppWidgetProvider() {
                             views.setViewVisibility(R.id.widget_has_courses_container, View.GONE)
                             views.setViewVisibility(R.id.widget_empty_container, View.VISIBLE)
 
-                            val tomorrowWeekday = if (todayWeekday == 7) 1 else todayWeekday + 1
-                            val tomorrowWeekNo = if (todayWeekday == 7) weekNo + 1 else weekNo
+                            val tomorrowWeekday = if (todayWeekday == 6) 7 else if (todayWeekday == 7) 1 else todayWeekday + 1
+                            val tomorrowWeekNo = if (todayWeekday == 6) weekNo + 1 else weekNo
                             val tomorrowCourses = ScheduleManager.getCoursesOn(tomorrowWeekday, tomorrowWeekNo)
                             if (tomorrowCourses.isNotEmpty()) {
                                 val firstTomorrow = tomorrowCourses.first()

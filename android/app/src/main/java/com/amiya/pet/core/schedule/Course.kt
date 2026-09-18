@@ -14,8 +14,12 @@ data class Course(
     val teacher: String = "",
     val campus: String = "",
     val note: String = "",
+    val customTime: String = "", // 自定义精确时间，如 "14:15-15:30"
     val id: String = java.util.UUID.randomUUID().toString()
 ) {
+    val isActivity: Boolean
+        get() = customTime.isNotBlank()
+
     fun activeOn(weekNo: Int): Boolean {
         if (weekNo < weekStart || weekNo > weekEnd) return false
         return when (parity) {
@@ -27,6 +31,17 @@ data class Course(
 
     fun startTime(weekNo: Int, sections: Map<String, String>): Pair<Int, Int>? {
         if (!activeOn(weekNo)) return null
+        if (customTime.isNotBlank() && customTime.contains(":")) {
+            try {
+                val startPart = customTime.split("-", "~", "至", "到").first().trim()
+                val parts = startPart.split(":")
+                if (parts.size >= 2) {
+                    val h = parts[0].trim().toInt()
+                    val m = parts[1].trim().toInt()
+                    if (h in 0..23 && m in 0..59) return Pair(h, m)
+                }
+            } catch (ignored: Exception) {}
+        }
         val timeStr = sections[secStart.toString()] ?: return null
         return try {
             val parts = timeStr.split(":")

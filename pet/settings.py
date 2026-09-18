@@ -71,7 +71,7 @@ class Settings:
     _KNOWN_KEYS = frozenset({
         "volume", "voice_enabled", "tts_on", "character", "exam_badge",
         "clone_manual_autostop", "check_updates", "knowledge_embed",
-        "pet_pos", "schema_version",
+        "pet_pos", "week_start_day", "schema_version",
     })
     _KNOWN_PREFIXES = ("perm_", "hotkeys_")
 

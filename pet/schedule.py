@@ -22,6 +22,7 @@ sjkList 里的"无时间无地点"课（网课）不参与提醒，仅作展示�
 import json
 import os
 import re
+import uuid
 from datetime import date, datetime, timedelta
 
 from .settings import config_dir
@@ -81,22 +82,25 @@ class Course:
 
     __slots__ = ("name", "weekday", "sec_start", "sec_end",
                  "week_start", "week_end", "parity",
-                 "room", "teacher", "campus", "note")
+                 "room", "teacher", "campus", "note",
+                 "custom_time", "id")
 
     def __init__(self, name, weekday, sec_start, sec_end,
-                 week_start, week_end, parity, room="", teacher="",
-                 campus="", note=""):
+                 week_start=1, week_end=20, parity="all", room="", teacher="",
+                 campus="", note="", custom_time="", id=None):
         self.name = name
         self.weekday = int(weekday)          # 1=周一 ... 7=周日
         self.sec_start = int(sec_start)
         self.sec_end = int(sec_end)
         self.week_start = int(week_start)
         self.week_end = int(week_end)
-        self.parity = parity                 # 'all' / 'odd' / 'even'
+        self.parity = parity or "all"        # 'all' / 'odd' / 'even'
         self.room = room
         self.teacher = teacher
         self.campus = campus
         self.note = note
+        self.custom_time = str(custom_time or "").strip()
+        self.id = str(id).strip() if id else uuid.uuid4().hex
 
     def active_on(self, week_no):
         """第 week_no 周是否上课（含单双周规则）。"""
@@ -111,13 +115,19 @@ class Course:
     def start_time(self, week_no, sections):
         """第 week_no 周本节课的开始时刻 (hour, minute)，或 None（不在表内/本周不上）。
 
-        对 sections 里手写的时刻做范围校验（0<=h<24、0<=m<60），非法值返回
-        None——否则调用方（如 window._sched_tick 的 datetime.replace）会因
-        hour=24 之类的值抛 ValueError，而 Qt 定时器槽里的未捕获异常会直接
-        终止整个应用。
+        对 sections 里手写的时刻或 custom_time 做范围校验（0<=h<24、0<=m<60）。
         """
         if not self.active_on(week_no):
             return None
+        if self.custom_time and ":" in self.custom_time:
+            try:
+                start_part = re.split(r"[-~至到/]", self.custom_time)[0].strip()
+                hh, mm = start_part.split(":")
+                h, m = int(hh), int(mm)
+                if 0 <= h < 24 and 0 <= m < 60:
+                    return (h, m)
+            except Exception:
+                pass
         hhmm = sections.get(str(self.sec_start))
         if not hhmm:
             return None
@@ -133,7 +143,10 @@ class Course:
     def display(self, sections=None, show_weeks=True):
         """一行展示文本，例如「1-2节 计算机组成与体系结构A @3区2-217」。
         节次区间换算时刻（若有 sections 且两端都在表内）。"""
-        secs = "%d-%d节" % (self.sec_start, self.sec_end)
+        if self.custom_time:
+            secs = "📌[%s] %d-%d节" % (self.custom_time, self.sec_start, self.sec_end)
+        else:
+            secs = "%d-%d节" % (self.sec_start, self.sec_end)
         when = ""
         if sections:
             a = sections.get(str(self.sec_start))
@@ -205,6 +218,7 @@ class Schedule:
         self.term_start = None            # date
         self.sections = dict(DEFAULT_SECTIONS)
         self.remind_minutes = 10          # 上课前多少分钟提醒
+        self.week_start_day = "sunday"    # 周课表起始日: "sunday" / "monday"
         self.courses = []
         self.notes = []                   # 无时间课说明文本
         self.load()
@@ -237,6 +251,9 @@ class Schedule:
             sec_map["13"] = "20:10"
         self.sections = sec_map
         self.remind_minutes = max(1, int(data.get("remind_minutes", 10) or 10))
+        self.week_start_day = str(data.get("week_start_day", "sunday")).lower()
+        if self.week_start_day not in ("monday", "sunday"):
+            self.week_start_day = "sunday"
         self.courses = []
         for c in data.get("courses", []):
             try:
@@ -246,13 +263,15 @@ class Schedule:
                     week_start=c["week_start"], week_end=c["week_end"],
                     parity=c.get("parity", "all"),
                     room=c.get("room", ""), teacher=c.get("teacher", ""),
-                    campus=c.get("campus", ""), note=c.get("note", "")))
+                    campus=c.get("campus", ""), note=c.get("note", ""),
+                    custom_time=c.get("custom_time", ""),
+                    id=c.get("id")))
             except (KeyError, TypeError, ValueError):
                 continue
         self.notes = list(data.get("notes", []))
 
     def save(self, term="", term_start=None, courses=None, notes=None,
-             sections=None):
+             sections=None, week_start_day=None):
         if courses is not None:
             self.courses = courses
         if notes is not None:
@@ -263,11 +282,16 @@ class Schedule:
             self.term_start = term_start
         if sections:
             self.sections = sections
+        if week_start_day is not None:
+            start_day = str(week_start_day).lower()
+            if start_day in ("monday", "sunday"):
+                self.week_start_day = start_day
         payload = {
             "term": self.term,
             "term_start": self.term_start.isoformat() if self.term_start else "",
             "sections": self.sections,
             "remind_minutes": self.remind_minutes,
+            "week_start_day": self.week_start_day,
             "courses": [self._course_dict(c) for c in self.courses],
             "notes": self.notes,
         }
@@ -283,13 +307,23 @@ class Schedule:
         except Exception:
             return False
 
+    def set_week_start_day(self, start_day):
+        """设置周课表起始日 ('sunday' 或 'monday') 并保存。"""
+        start_day = str(start_day).lower()
+        if start_day not in ("monday", "sunday"):
+            start_day = "sunday"
+        self.week_start_day = start_day
+        return self.save()
+
     @staticmethod
     def _course_dict(c):
         return {"name": c.name, "weekday": c.weekday,
                 "sec_start": c.sec_start, "sec_end": c.sec_end,
                 "week_start": c.week_start, "week_end": c.week_end,
                 "parity": c.parity, "room": c.room, "teacher": c.teacher,
-                "campus": c.campus, "note": c.note}
+                "campus": c.campus, "note": c.note,
+                "custom_time": getattr(c, "custom_time", ""),
+                "id": getattr(c, "id", "")}
 
     # ── 查询 ───────────────────────────────────────────────────────
 
@@ -314,14 +348,15 @@ class Schedule:
         return self.courses_on(date.today().isoweekday(), week_no)
 
     def next_class(self, now=None, week_no=None):
-        """从 now 起最近的下一节课（含当前周），返回 (course, weekday, week_no,
-        start_datetime) 或 None（本周没有后续课）。"""
+        """从 now 起最近的下一节课（若本周无后续课，自动跨周推算下一周首节课），返回 (course, weekday, week_no,
+        start_datetime) 或 None（整学期已无后续课）。"""
         now = now or datetime.now()
         if week_no is None:
             week_no = self.week_no(now.date())
         if not week_no or week_no <= 0:
             return None
         today_idx = now.isoweekday()
+        # 1. 优先查本周剩余天
         for offset in range(0, 7 - today_idx + 1):
             weekday = today_idx + offset
             if weekday > 7:
@@ -335,6 +370,21 @@ class Schedule:
                     .replace(hour=hm[0], minute=hm[1])
                 if target > now:
                     return (c, weekday, week_no, target)
+
+        # 2. 本周已无后续课，跨周推算下一周 (week_no + 1)
+        next_week = week_no + 1
+        days_until_next_monday = 8 - today_idx
+        for offset in range(days_until_next_monday, days_until_next_monday + 7):
+            day = now.date() + timedelta(days=offset)
+            weekday = day.isoweekday()
+            for c in self.courses_on(weekday, next_week):
+                hm = c.start_time(next_week, self.sections)
+                if hm is None:
+                    continue
+                target = datetime.combine(day, datetime.min.time()) \
+                    .replace(hour=hm[0], minute=hm[1])
+                if target > now:
+                    return (c, weekday, next_week, target)
         return None
 
     def dump_text(self, week_no=None):
@@ -357,6 +407,24 @@ class Schedule:
 
     # ── 增删改 ─────────────────────────────────────────────────────
 
+    @staticmethod
+    def _course_matches(c, target):
+        if c is target:
+            return True
+        c_id = getattr(c, "id", None)
+        t_id = getattr(target, "id", None)
+        if c_id and t_id and c_id == t_id:
+            return True
+        return (c.name == target.name and
+                c.weekday == target.weekday and
+                c.sec_start == target.sec_start and
+                c.sec_end == target.sec_end and
+                c.week_start == target.week_start and
+                c.week_end == target.week_end and
+                c.parity == target.parity and
+                c.room == target.room and
+                getattr(c, "custom_time", "") == getattr(target, "custom_time", ""))
+
     def add_course(self, course):
         """新增一门课程并保存。"""
         self.courses.append(course)
@@ -365,10 +433,7 @@ class Schedule:
     def update_course(self, old_course, new_course):
         """修改指定课程并保存。"""
         for i, c in enumerate(self.courses):
-            if c is old_course or (c.name == old_course.name and
-                                   c.weekday == old_course.weekday and
-                                   c.sec_start == old_course.sec_start and
-                                   c.week_start == old_course.week_start):
+            if self._course_matches(c, old_course):
                 self.courses[i] = new_course
                 return self.save()
         return False
@@ -376,10 +441,7 @@ class Schedule:
     def delete_course(self, target_course):
         """删除指定课程并保存。"""
         for i, c in enumerate(self.courses):
-            if c is target_course or (c.name == target_course.name and
-                                   c.weekday == target_course.weekday and
-                                   c.sec_start == target_course.sec_start and
-                                   c.week_start == target_course.week_start):
+            if self._course_matches(c, target_course):
                 del self.courses[i]
                 return self.save()
         return False

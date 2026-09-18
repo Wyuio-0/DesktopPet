@@ -17,6 +17,18 @@ class PetDebugReceiver : BroadcastReceiver() {
         } else if (intent.action == "com.amiya.pet.ACTION_RESTORE_PET") {
             Log.d("PetDebug", "Received ACTION_RESTORE_PET")
             FloatingPetManager.restoreFromRest(context)
+        } else if (intent.action == "com.amiya.pet.ACTION_ADD_COURSE_NL") {
+            val text = intent.getStringExtra("text") ?: ""
+            Log.d("PetDebug", "Received ACTION_ADD_COURSE_NL: text=$text")
+            if (text.isNotEmpty()) {
+                com.amiya.pet.core.schedule.ScheduleManager.ensureLoaded(context)
+                Log.d("PetDebug", "DEBUG: termStart=${com.amiya.pet.core.schedule.ScheduleManager.termStart}, weekNo=${com.amiya.pet.core.schedule.ScheduleManager.getWeekNo()}")
+                val course = com.amiya.pet.core.schedule.ScheduleManager.parseCourseFromNaturalLanguage(text)
+                if (course != null) {
+                    com.amiya.pet.core.schedule.ScheduleManager.addCourse(course, context)
+                    Log.d("PetDebug", "Added course via NL: ${course.name}, weekday=${course.weekday}, sec=${course.secStart}-${course.secEnd}, week=${course.weekStart}~${course.weekEnd}, customTime=${course.customTime}")
+                }
+            }
         }
     }
 }
