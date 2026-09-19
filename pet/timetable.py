@@ -60,6 +60,7 @@ class TimetableView(QtWidgets.QWidget):
         self._date_objs = []         # 7 列对应的 date 对象
         self._today_col_idx = -1     # 今天的列索引 (0..6)
         self._current_sec = -1       # 当前时间落入的节次 (1..13)
+        self._max_sections = MAX_SECTIONS
 
         # 鼠标交互跟踪
         self._card_rects = []        # [(QRect, Course)]
@@ -87,6 +88,28 @@ class TimetableView(QtWidgets.QWidget):
         self._preview_note = current_week_no < 1
         self._notes = list(sched.notes)
         self._courses = {wd: sched.courses_on(wd, None) for wd in range(1, 8)}
+
+        # 动态自适应本周课表最大节数 (8..13)
+        max_sec = 0
+        for wd in range(1, 8):
+            for c in sched.courses_on(wd, self._eff_week):
+                if c.sec_end > max_sec:
+                    max_sec = c.sec_end
+        for adj in getattr(sched, "adjustments", []):
+            if adj.get("type") == "substitute" and adj.get("target_week") == self._eff_week:
+                t_wd = adj.get("target_weekday")
+                if t_wd:
+                    for c in sched.courses_on(t_wd, self._eff_week):
+                        if c.sec_end > max_sec:
+                            max_sec = c.sec_end
+        if max_sec <= 8:
+            self._max_sections = 8
+        elif max_sec <= 10:
+            self._max_sections = 10
+        elif max_sec <= 12:
+            self._max_sections = 12
+        else:
+            self._max_sections = 13
 
         # 配色映射
         self._color_of = {}
@@ -142,7 +165,7 @@ class TimetableView(QtWidgets.QWidget):
         now = datetime.now()
         cur_mins = now.hour * 60 + now.minute
         secs = getattr(sched, "sections", {}) or {}
-        for r in range(1, MAX_SECTIONS + 1):
+        for r in range(1, self._max_sections + 1):
             t_str = secs.get(str(r), "")
             if ":" in t_str:
                 try:
@@ -168,7 +191,7 @@ class TimetableView(QtWidgets.QWidget):
         return self._grid_rect().width() / len(self.col_weekdays)
 
     def _row_h(self):
-        return self._grid_rect().height() / MAX_SECTIONS
+        return self._grid_rect().height() / self._max_sections
 
     # ── 绘制主入口 ────────────────────────────────────────────────────
 
@@ -207,7 +230,7 @@ class TimetableView(QtWidgets.QWidget):
         # 横向分隔线
         pen_line = QtGui.QPen(QtGui.QColor("#1E2532"), 1)
         p.setPen(pen_line)
-        for r in range(MAX_SECTIONS + 1):
+        for r in range(self._max_sections + 1):
             y = round(g.top() + r * row_h)
             p.drawLine(g.left(), y, g.right(), y)
 
@@ -276,7 +299,7 @@ class TimetableView(QtWidgets.QWidget):
         row_h = self._row_h()
         secs = getattr(self._schedule, "sections", {}) or {}
 
-        for r in range(MAX_SECTIONS):
+        for r in range(self._max_sections):
             sec = r + 1
             is_cur = (sec == self._current_sec)
             y = round(g.top() + r * row_h)
@@ -340,7 +363,7 @@ class TimetableView(QtWidgets.QWidget):
                 continue
 
             # 记录空白可点击格
-            for sec in range(1, MAX_SECTIONS + 1):
+            for sec in range(1, self._max_sections + 1):
                 occupied = any(c.sec_start <= sec <= c.sec_end for c in active_courses)
                 if not occupied:
                     slot_y = round(g.top() + (sec - 1) * row_h)

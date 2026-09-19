@@ -511,7 +511,37 @@ fun TimetableGrid(
             }
         }
         Spacer(Modifier.height(4.dp))
-        BoxWithConstraints(modifier = Modifier.weight(1f).fillMaxWidth().padding(end = 8.dp, bottom = 16.dp)
+        val weekMaxSec = remember(weekNo, courses, refreshTrigger, dateObjects) {
+            var maxSec = 0
+            for ((colIdx, wd) in dayOrder.withIndex()) {
+                val colDate = dateObjects.getOrNull(colIdx) ?: Date()
+                val (dayCourses, adj) = ScheduleManager.getCoursesForGrid(colDate, wd, weekNo)
+                if (adj?.type != "suspend") {
+                    for (c in dayCourses) {
+                        if (c.secEnd > maxSec) {
+                            maxSec = c.secEnd
+                        }
+                    }
+                }
+            }
+            maxSec
+        }
+
+        val totalSections = remember(weekMaxSec, ScheduleManager.maxSectionsConfig) {
+            val cfg = ScheduleManager.maxSectionsConfig
+            if (cfg > 0) {
+                maxOf(cfg, weekMaxSec).coerceIn(8, 13)
+            } else {
+                when {
+                    weekMaxSec <= 8 -> 8
+                    weekMaxSec <= 10 -> 10
+                    weekMaxSec <= 12 -> 12
+                    else -> 13
+                }
+            }
+        }
+
+        BoxWithConstraints(modifier = Modifier.weight(1f).fillMaxWidth().padding(end = 6.dp, bottom = 4.dp)
             .pointerInput(Unit) {
                 detectHorizontalDragGestures(
                     onDragEnd = { dragAccumulator = 0f },
@@ -529,20 +559,20 @@ fun TimetableGrid(
                 }
             }
         ) {
-            val isConstrained = maxHeight < 560.dp
-            val rowH = if (isConstrained) 46.dp else maxHeight / 13
-            val totalGridH = rowH * 13
+            val isExtremeLandscape = maxHeight < 240.dp
+            val rowH = if (isExtremeLandscape) 42.dp else maxHeight / totalSections
+            val totalGridH = rowH * totalSections
             val gridScrollState = rememberScrollState()
 
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(if (isConstrained) totalGridH else maxHeight)
-                    .then(if (isConstrained) Modifier.verticalScroll(gridScrollState) else Modifier)
+                    .height(if (isExtremeLandscape) totalGridH else maxHeight)
+                    .then(if (isExtremeLandscape) Modifier.verticalScroll(gridScrollState) else Modifier)
             ) {
                 // Background grid lines and row numbers
                 Column(modifier = Modifier.fillMaxSize()) {
-                    for (i in 1..13) {
+                    for (i in 1..totalSections) {
                         val rawTimeInfo = ScheduleManager.sections[i.toString()] ?: ""
                         var isCurrentSlot = false
                         var isTimeNow = false
@@ -551,7 +581,7 @@ fun TimetableGrid(
                                 val timePart = rawTimeInfo.split("\n").first().split("-").first().trim()
                                 val parts = timePart.split(":")
                                 val startMins = parts[0].toInt() * 60 + parts[1].toInt()
-                                val nextStartMins = if (i < 13) {
+                                val nextStartMins = if (i < totalSections) {
                                     val nextTime = ScheduleManager.sections[(i + 1).toString()] ?: ""
                                     if (nextTime.contains(":")) {
                                         val np = nextTime.split("\n").first().split("-").first().trim().split(":")
@@ -601,8 +631,8 @@ fun TimetableGrid(
                                 Text(
                                     text = displayTime,
                                     color = if (isCurrentSlot || isTimeNow) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onBackground.copy(alpha = 0.65f),
-                                    fontSize = if (showTime) 9.sp else 11.sp,
-                                    lineHeight = 11.sp,
+                                    fontSize = if (showTime) (if (totalSections > 10) 8.sp else 9.sp) else (if (totalSections > 10) 10.sp else 11.sp),
+                                    lineHeight = if (showTime) 9.sp else 11.sp,
                                     fontWeight = if (isCurrentSlot || isTimeNow) FontWeight.Bold else FontWeight.Normal,
                                     textAlign = TextAlign.Center
                                 )
@@ -659,7 +689,7 @@ fun TimetableGrid(
                                 }
                             } else {
                                 // 1. Clickable empty slots to quickly add a course
-                                for (sec in 1..13) {
+                                for (sec in 1..totalSections) {
                                     val isOccupied = dayCourses.any { sec in it.secStart..it.secEnd }
                                     if (!isOccupied) {
                                         Box(
@@ -1578,4 +1608,59 @@ fun CourseReminderDialog(
             }
         )
     }
+}
+
+@Composable
+fun SectionConfigDialog(
+    currentConfig: Int,
+    onDismiss: () -> Unit,
+    onSelect: (Int) -> Unit
+) {
+    val options = listOf(
+        Pair(0, "🌟 智能自适应（按本周课程自适应 8~13 节，一屏看全免滑动）"),
+        Pair(8, "固定 8 节（仅展示上午+下午白天时段）"),
+        Pair(10, "固定 10 节（含常规 2 节晚自习）"),
+        Pair(12, "固定 12 节（含 4 节晚课）"),
+        Pair(13, "固定 13 节（完整 13 节全天排课）")
+    )
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("课表每日显示节数", fontWeight = FontWeight.Bold, fontSize = 18.sp) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    text = "无论选择何种节数，课表均会自动等比例缩放填满单屏，彻底避免上下滑动。",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(Modifier.height(4.dp))
+                options.forEach { (value, label) ->
+                    val isSelected = (currentConfig == value)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .clickable { onSelect(value) }
+                            .padding(vertical = 10.dp, horizontal = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        RadioButton(
+                            selected = isSelected,
+                            onClick = { onSelect(value) }
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            text = label,
+                            fontSize = 13.sp,
+                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                            color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("完成") }
+        }
+    )
 }
