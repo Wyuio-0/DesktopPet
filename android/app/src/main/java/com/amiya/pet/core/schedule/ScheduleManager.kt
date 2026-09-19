@@ -66,6 +66,7 @@ object ScheduleManager {
     var sections: Map<String, String> = defaultSections.toMap()
     var remindEnabled: Boolean = true
     var dismissRemindEnabled: Boolean = true
+    var liveClassEnabled: Boolean = true
     var remindMinutes: Int = 20
     var weekStartDay: String = "sunday"
     var courses: List<Course> = emptyList()
@@ -153,6 +154,7 @@ object ScheduleManager {
 
             remindEnabled = data.optBoolean("remind_enabled", true)
             dismissRemindEnabled = data.optBoolean("dismiss_remind_enabled", true)
+            liveClassEnabled = data.optBoolean("live_class_enabled", true)
             remindMinutes = data.optInt("remind_minutes", 20)
             val wsd = data.optString("week_start_day", "sunday").lowercase(Locale.getDefault())
             weekStartDay = if (wsd in listOf("monday", "sunday")) wsd else "sunday"
@@ -219,6 +221,7 @@ object ScheduleManager {
             data.put("sections", secObj)
             data.put("remind_enabled", remindEnabled)
             data.put("dismiss_remind_enabled", dismissRemindEnabled)
+            data.put("live_class_enabled", liveClassEnabled)
             data.put("remind_minutes", remindMinutes)
             data.put("week_start_day", weekStartDay)
 

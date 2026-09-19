@@ -28,6 +28,7 @@ import com.amiya.pet.core.focus.PomodoroMode
 import com.amiya.pet.core.focus.PomodoroState
 import com.amiya.pet.core.focus.PomodoroStatus
 import com.amiya.pet.core.focus.PomodoroTimer
+import com.amiya.pet.core.system.BatteryOptimizationHelper
 
 @Composable
 fun PomodoroScreen() {
@@ -36,6 +37,8 @@ fun PomodoroScreen() {
     var workMinutes by remember { mutableIntStateOf(prefs.getInt("pref_pomodoro_work_mins", 25)) }
     var breakMinutes by remember { mutableIntStateOf(prefs.getInt("pref_pomodoro_break_mins", 5)) }
     var showCustomDialog by remember { mutableStateOf(false) }
+    var showKeepAliveDialogInPomodoro by remember { mutableStateOf(false) }
+    val isIgnoringBattery = remember { BatteryOptimizationHelper.isIgnoringBatteryOptimizations(context) }
 
     val status by PomodoroTimer.status.collectAsState()
     val isWork = status.mode == PomodoroMode.WORK
@@ -147,6 +150,30 @@ fun PomodoroScreen() {
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
                 )
+            }
+
+            if (!isIgnoringBattery) {
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = Color(0xFFF59E0B).copy(alpha = 0.12f),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { showKeepAliveDialogInPomodoro = true }
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Default.BatteryAlert, contentDescription = null, tint = Color(0xFFF59E0B), modifier = Modifier.size(15.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            "提示：手机智能省电可能在息屏时限制倒计时，点此开启无限制守护 >",
+                            fontSize = 11.sp,
+                            color = Color(0xFFD97706),
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
             }
 
             // 模式选择与快捷时长
@@ -313,6 +340,12 @@ fun PomodoroScreen() {
                     Text("取消", color = Color.Gray)
                 }
             }
+        )
+    }
+
+    if (showKeepAliveDialogInPomodoro) {
+        BackgroundKeepAliveDialog(
+            onDismiss = { showKeepAliveDialogInPomodoro = false }
         )
     }
 }

@@ -791,7 +791,7 @@ object FloatingPetManager {
     /**
      * 状态机自适应评估逻辑
      */
-    private fun evaluateAndApplyState(context: Context) {
+    fun evaluateAndApplyState(context: Context) {
         if (isDragging) return
 
         // 手动测试模式优先 (供用户点选体验所有 5 个表情差分)

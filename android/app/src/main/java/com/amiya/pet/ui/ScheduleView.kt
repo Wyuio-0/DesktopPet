@@ -1,6 +1,8 @@
 package com.amiya.pet.ui
 
 import android.widget.Toast
+import com.amiya.pet.core.system.AlarmScheduler
+import com.amiya.pet.core.system.BatteryOptimizationHelper
 import com.amiya.pet.service.AppBackgroundService
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -277,11 +279,14 @@ fun ScheduleScreen(
     if (showReminderDialog) {
         CourseReminderDialog(
             onDismiss = onDismissReminderDialog,
-            onSave = { enabled, dismissEnabled, mins ->
+            onSave = { enabled, dismissEnabled, liveEnabled, mins ->
                 ScheduleManager.remindEnabled = enabled
                 ScheduleManager.dismissRemindEnabled = dismissEnabled
+                ScheduleManager.liveClassEnabled = liveEnabled
                 ScheduleManager.remindMinutes = mins
                 ScheduleManager.save(context)
+                AlarmScheduler.scheduleNextCourseReminder(context)
+                AppBackgroundService.updateLiveClassProgressNotification(context)
                 Toast.makeText(context, "课表提醒设置已保存", Toast.LENGTH_SHORT).show()
                 onDismissReminderDialog()
             }
@@ -1291,11 +1296,12 @@ fun NumberDropdownSelector(
 @Composable
 fun CourseReminderDialog(
     onDismiss: () -> Unit,
-    onSave: (Boolean, Boolean, Int) -> Unit
+    onSave: (Boolean, Boolean, Boolean, Int) -> Unit
 ) {
     val context = LocalContext.current
     var remindEnabled by remember { mutableStateOf(ScheduleManager.remindEnabled) }
     var dismissRemindEnabled by remember { mutableStateOf(ScheduleManager.dismissRemindEnabled) }
+    var liveClassEnabled by remember { mutableStateOf(ScheduleManager.liveClassEnabled) }
     var remindMinutes by remember { mutableIntStateOf(ScheduleManager.remindMinutes) }
     val minuteOptions = listOf(10, 20, 30)
     var showCustomReminderDialog by remember { mutableStateOf(false) }
@@ -1435,6 +1441,39 @@ fun CourseReminderDialog(
 
                 HorizontalDivider()
 
+                // 上课实时进度锁屏通知开关 (Live Activity 效果)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("上课实时进度锁屏通知", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                            Spacer(Modifier.width(6.dp))
+                            Surface(
+                                shape = RoundedCornerShape(4.dp),
+                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
+                            ) {
+                                Text(
+                                    "灵动微卡片",
+                                    fontSize = 10.sp,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                )
+                            }
+                        }
+                        Text("上课时在通知栏与锁屏常驻倒计时进度条，下课自动移除", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Switch(
+                        checked = liveClassEnabled,
+                        onCheckedChange = { liveClassEnabled = it }
+                    )
+                }
+
+                HorizontalDivider()
+
                 // 测试按钮
                 Text("通知效果测试：", fontSize = 12.sp, fontWeight = FontWeight.Medium)
                 Row(
@@ -1462,11 +1501,88 @@ fun CourseReminderDialog(
                         Text("测试下课关怀", fontSize = 11.sp)
                     }
                 }
+
+                OutlinedButton(
+                    onClick = {
+                        AppBackgroundService.sendTestLiveClassNotification(context)
+                        Toast.makeText(context, "已发送上课实时进度卡片，请下拉通知栏查看", Toast.LENGTH_SHORT).show()
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    contentPadding = PaddingValues(vertical = 4.dp, horizontal = 6.dp)
+                ) {
+                    Icon(Icons.Default.HourglassTop, contentDescription = null, modifier = Modifier.size(14.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("测试上课实时进度卡片 (Live Activity)", fontSize = 11.sp)
+                }
+
+                HorizontalDivider()
+
+                // 后台保活与准点保障状态卡片
+                var showKeepAliveDialogInReminder by remember { mutableStateOf(false) }
+                val isIgnoringBattery = BatteryOptimizationHelper.isIgnoringBatteryOptimizations(context)
+                val canScheduleAlarm = BatteryOptimizationHelper.canScheduleExactAlarms(context)
+                val isAllGuaranteed = isIgnoringBattery && canScheduleAlarm
+
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = if (isAllGuaranteed) Color(0xFF10B981).copy(alpha = 0.12f) else Color(0xFFF59E0B).copy(alpha = 0.12f),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(10.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    Icons.Default.Security,
+                                    contentDescription = null,
+                                    tint = if (isAllGuaranteed) Color(0xFF10B981) else Color(0xFFF59E0B),
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(Modifier.width(6.dp))
+                                Text("提醒准点保障与防休眠", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                            }
+                            Text(
+                                if (isAllGuaranteed) "✅ 已开启无限制" else "⚠️ 手机省电限制中",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (isAllGuaranteed) Color(0xFF059669) else Color(0xFFD97706)
+                            )
+                        }
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            if (isAllGuaranteed) "阿米娅已获得忽略电池优化与精准闹钟权限，息屏休眠仍可准点提醒。"
+                            else "手机智能省电可能会在息屏后冻结进程导致提醒延迟，建议授权后台无限制运行。",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            lineHeight = 15.sp
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        OutlinedButton(
+                            onClick = { showKeepAliveDialogInReminder = true },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(vertical = 4.dp)
+                        ) {
+                            Icon(Icons.Default.Tune, contentDescription = null, modifier = Modifier.size(14.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text(if (isAllGuaranteed) "查看后台保活与各品牌指南" else "一键配置后台保活与精准闹钟", fontSize = 11.sp)
+                        }
+                    }
+                }
+
+                if (showKeepAliveDialogInReminder) {
+                    BackgroundKeepAliveDialog(
+                        onDismiss = { showKeepAliveDialogInReminder = false }
+                    )
+                }
             }
         },
         confirmButton = {
             Button(
-                onClick = { onSave(remindEnabled, dismissRemindEnabled, remindMinutes) }
+                onClick = { onSave(remindEnabled, dismissRemindEnabled, liveClassEnabled, remindMinutes) }
             ) {
                 Text("保存设置")
             }

@@ -32,6 +32,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.core.content.ContextCompat
 import com.amiya.pet.core.update.DownloadProgress
+import com.amiya.pet.core.focus.PomodoroTimer
 import com.amiya.pet.core.sync.SyncManager
 import com.amiya.pet.core.update.ReleaseInfo
 import com.amiya.pet.core.update.UpdateManager
@@ -53,6 +54,7 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         ScheduleWidgetProvider.sendUpdateBroadcast(this)
         FloatingPetManager.checkAndSync(this)
+        PomodoroTimer.refreshTime()
     }
 
     override fun onDestroy() {
@@ -102,6 +104,9 @@ class MainActivity : ComponentActivity() {
                 notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
             }
         }
+
+        // 初始化番茄钟保活上下文
+        PomodoroTimer.init(applicationContext)
 
         // 启动前台服务
         val serviceIntent = Intent(this, AppBackgroundService::class.java)
@@ -196,6 +201,7 @@ class MainActivity : ComponentActivity() {
                 var showImageImportDialog by remember { mutableStateOf(false) }
                 var showImportDialog by remember { mutableStateOf(false) }
                 var showReminderDialog by remember { mutableStateOf(false) }
+                var showKeepAliveDialog by remember { mutableStateOf(false) }
                 var showAddCourseDialog by remember { mutableStateOf(false) }
                 var showIcsExportDialog by remember { mutableStateOf(false) }
                 var showExamScheduleView by remember { mutableStateOf(false) }
@@ -358,6 +364,14 @@ class MainActivity : ComponentActivity() {
                                                     onClick = {
                                                         showScheduleMenu = false
                                                         showReminderDialog = true
+                                                    }
+                                                )
+                                                DropdownMenuItem(
+                                                    text = { Text("后台保活与准点守护") },
+                                                    leadingIcon = { Icon(Icons.Default.Security, null) },
+                                                    onClick = {
+                                                        showScheduleMenu = false
+                                                        showKeepAliveDialog = true
                                                     }
                                                 )
                                                 DropdownMenuItem(
@@ -569,6 +583,12 @@ class MainActivity : ComponentActivity() {
                     IcsExportDialog(
                         courses = ScheduleManager.courses,
                         onDismiss = { showIcsExportDialog = false }
+                    )
+                }
+
+                if (showKeepAliveDialog) {
+                    BackgroundKeepAliveDialog(
+                        onDismiss = { showKeepAliveDialog = false }
                     )
                 }
 
