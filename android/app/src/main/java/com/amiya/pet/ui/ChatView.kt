@@ -150,7 +150,8 @@ fun ChatScreen(
                     modifiedCourse = lastAssistantInBrain?.modifiedCourse,
                     oldCourse = lastAssistantInBrain?.oldCourse,
                     startedPomodoroMinutes = lastAssistantInBrain?.startedPomodoroMinutes,
-                    createdNote = lastAssistantInBrain?.createdNote
+                    createdNote = lastAssistantInBrain?.createdNote,
+                    adjustedScheduleList = lastAssistantInBrain?.adjustedScheduleList
                 )
                 chatList = current.dropLast(1) + updated
             }
@@ -1289,6 +1290,84 @@ fun ChatBubbleItem(
                                         Spacer(modifier = Modifier.width(4.dp))
                                         Text(
                                             text = "在便签本中查看 ➔",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        // 如果本次交互应用了教学安排调整，渲染 PRTS 教学日程调整战术卡片
+                        val adjList = message.adjustedScheduleList
+                        if (!adjList.isNullOrEmpty()) {
+                            val adjColor = if (isDark) Color(0xFF00E5FF) else Color(0xFF0097A7)
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Surface(
+                                shape = RoundedCornerShape(8.dp),
+                                color = adjColor.copy(alpha = if (isDark) 0.15f else 0.10f),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, adjColor.copy(alpha = 0.45f)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(modifier = Modifier.padding(10.dp)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(
+                                            imageVector = Icons.Default.CalendarMonth,
+                                            contentDescription = null,
+                                            tint = adjColor,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(
+                                            text = "PRTS 教学安排调整已生效（共 ${adjList.size} 天）",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = adjColor
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                    adjList.take(6).forEach { adj ->
+                                        val typeDesc = if (adj.type == "suspend") "🏖️ 停课" else "🔄 ${adj.reason.ifEmpty { "调课" }}"
+                                        Text(
+                                            text = "• ${adj.date} ➔ $typeDesc",
+                                            fontSize = 11.sp,
+                                            color = bubbleText.copy(alpha = 0.9f)
+                                        )
+                                    }
+                                    if (adjList.size > 6) {
+                                        Text(
+                                            text = "… 及其他 ${adjList.size - 6} 天调整",
+                                            fontSize = 10.sp,
+                                            color = bubbleText.copy(alpha = 0.6f)
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    val targetWeek = adjList.firstOrNull()?.let { a ->
+                                        try {
+                                            val d = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).parse(a.date)
+                                            if (d != null) ScheduleManager.getWeekNo(d) else null
+                                        } catch (e: Exception) { null }
+                                    } ?: (ScheduleManager.getWeekNo() ?: 1)
+                                    Button(
+                                        onClick = { onNavigateToSchedule(targetWeek) },
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(32.dp),
+                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = adjColor,
+                                            contentColor = if (isDark) Color.Black else Color.White
+                                        ),
+                                        shape = RoundedCornerShape(6.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.CalendarMonth,
+                                            contentDescription = null,
+                                            modifier = Modifier.size(14.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text(
+                                            text = "前往课表查看调整效果 ➔",
                                             fontSize = 11.sp,
                                             fontWeight = FontWeight.Bold
                                         )

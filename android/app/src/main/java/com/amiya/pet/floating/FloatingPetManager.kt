@@ -973,10 +973,7 @@ object FloatingPetManager {
         return try {
             ScheduleManager.load(context)
             val cal = Calendar.getInstance()
-            val dayOfWeek = cal.get(Calendar.DAY_OF_WEEK)
-            val todayWeekday = if (dayOfWeek == Calendar.SUNDAY) 7 else dayOfWeek - 1
-            val weekNo = ScheduleManager.getWeekNo() ?: 1
-            val todayCourses = ScheduleManager.getCoursesOn(todayWeekday, weekNo)
+            val todayCourses = ScheduleManager.getCoursesForDay(cal.time)
             val curTotalMin = cal.get(Calendar.HOUR_OF_DAY) * 60 + cal.get(Calendar.MINUTE)
 
             for (c in todayCourses) {
@@ -1284,10 +1281,7 @@ object FloatingPetManager {
         return try {
             ScheduleManager.load(context)
             val cal = Calendar.getInstance()
-            val dayOfWeek = cal.get(Calendar.DAY_OF_WEEK)
-            val todayWeekday = if (dayOfWeek == Calendar.SUNDAY) 7 else dayOfWeek - 1
-            val weekNo = ScheduleManager.getWeekNo() ?: 1
-            val todayCourses = ScheduleManager.getCoursesOn(todayWeekday, weekNo)
+            val todayCourses = ScheduleManager.getCoursesForDay(cal.time)
 
             ExamManager.load(context)
             val nextExam = ExamManager.getNextUpcomingExam()

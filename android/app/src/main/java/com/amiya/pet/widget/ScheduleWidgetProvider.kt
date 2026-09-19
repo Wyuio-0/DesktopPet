@@ -97,14 +97,13 @@ class ScheduleWidgetProvider : AppWidgetProvider() {
                     views.setTextViewText(R.id.widget_empty_title, "📚 暂无课表数据")
                     views.setTextViewText(R.id.widget_empty_desc, "点击进入阿米娅手动添加或导入课表")
                 } else {
-                    val todayCourses = ScheduleManager.getCoursesOn(todayWeekday, weekNo)
+                    val todayCourses = ScheduleManager.getCoursesForDay(Date())
                     if (todayCourses.isEmpty()) {
                         views.setViewVisibility(R.id.widget_has_courses_container, View.GONE)
                         views.setViewVisibility(R.id.widget_empty_container, View.VISIBLE)
 
-                        val tomorrowWeekday = if (todayWeekday == 6) 7 else if (todayWeekday == 7) 1 else todayWeekday + 1
-                        val tomorrowWeekNo = if (todayWeekday == 6) weekNo + 1 else weekNo
-                        val tomorrowCourses = ScheduleManager.getCoursesOn(tomorrowWeekday, tomorrowWeekNo)
+                        val tmrCal = Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, 1) }
+                        val tomorrowCourses = ScheduleManager.getCoursesForDay(tmrCal.time)
                         if (tomorrowCourses.isNotEmpty()) {
                             val firstTomorrow = tomorrowCourses.first()
                             val tmStartStr = ScheduleManager.sections[firstTomorrow.secStart.toString()] ?: "08:00"
@@ -122,7 +121,7 @@ class ScheduleWidgetProvider : AppWidgetProvider() {
                                 views.setTextViewText(R.id.widget_empty_desc, "《${nextExam.title}》$loc (座号: ${nextExam.seatNumber.ifEmpty { "待定" }})")
                             } else {
                                 views.setTextViewText(R.id.widget_empty_title, "📅 今日全天无排课")
-                                views.setTextViewText(R.id.widget_empty_desc, "今天没有课程，好好放松或自主复习吧，博士~")
+                                views.setTextViewText(R.id.widget_empty_desc, "整天自习与备考，适当放松哦")
                             }
                         }
                     } else {
@@ -153,9 +152,8 @@ class ScheduleWidgetProvider : AppWidgetProvider() {
                             views.setViewVisibility(R.id.widget_has_courses_container, View.GONE)
                             views.setViewVisibility(R.id.widget_empty_container, View.VISIBLE)
 
-                            val tomorrowWeekday = if (todayWeekday == 6) 7 else if (todayWeekday == 7) 1 else todayWeekday + 1
-                            val tomorrowWeekNo = if (todayWeekday == 6) weekNo + 1 else weekNo
-                            val tomorrowCourses = ScheduleManager.getCoursesOn(tomorrowWeekday, tomorrowWeekNo)
+                            val tmrCal = Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, 1) }
+                            val tomorrowCourses = ScheduleManager.getCoursesForDay(tmrCal.time)
                             if (tomorrowCourses.isNotEmpty()) {
                                 val firstTomorrow = tomorrowCourses.first()
                                 val tmStartStr = ScheduleManager.sections[firstTomorrow.secStart.toString()] ?: "08:00"

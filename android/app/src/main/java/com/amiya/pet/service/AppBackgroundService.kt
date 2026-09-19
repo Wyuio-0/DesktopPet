@@ -132,10 +132,7 @@ class AppBackgroundService : Service() {
                 try {
                     val now = Date()
                     val cal = Calendar.getInstance().apply { time = now }
-                    val weekNo = ScheduleManager.getWeekNo(now) ?: 1
-                    val dayOfWeek = cal.get(Calendar.DAY_OF_WEEK)
-                    val todayWeekday = if (dayOfWeek == Calendar.SUNDAY) 7 else dayOfWeek - 1
-                    val todayCourses = ScheduleManager.getCoursesOn(todayWeekday, weekNo)
+                    val todayCourses = ScheduleManager.getCoursesForDay(now)
 
                     if (todayCourses.isNotEmpty()) {
                         val curHour = cal.get(Calendar.HOUR_OF_DAY)

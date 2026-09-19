@@ -57,6 +57,7 @@ class TimetableView(QtWidgets.QWidget):
         self._notes = []
         self._color_of = {}
         self._dates = [""] * 7       # 7 列对应的 M.d 日期
+        self._date_objs = []         # 7 列对应的 date 对象
         self._today_col_idx = -1     # 今天的列索引 (0..6)
         self._current_sec = -1       # 当前时间落入的节次 (1..13)
 
@@ -109,6 +110,7 @@ class TimetableView(QtWidgets.QWidget):
         严格以今日真实星期与自然周为锚点对齐。
         """
         self._dates = [""] * 7
+        self._date_objs = []
         self._today_col_idx = -1
         today = date.today()
         today_iso = today.isoweekday()  # 1=Mon .. 7=Sun
@@ -127,6 +129,7 @@ class TimetableView(QtWidgets.QWidget):
         for i in range(7):
             cur_day = target_start + timedelta(days=i)
             self._dates[i] = f"{cur_day.month}.{cur_day.day}"
+            self._date_objs.append(cur_day)
             if cur_day == today:
                 self._today_col_idx = i
 
@@ -251,6 +254,22 @@ class TimetableView(QtWidgets.QWidget):
                 d_rect = QtCore.QRect(col_x, MARGIN + 22, round(col_w), 16)
                 p.drawText(d_rect, QtCore.Qt.AlignCenter, date_str)
 
+            # 调课/停课徽章 (感知教学安排调整)
+            if i < len(self._date_objs) and self._schedule:
+                col_d = self._date_objs[i]
+                d_str = col_d.isoformat()
+                adj = next((a for a in getattr(self._schedule, "adjustments", []) if a.get("date") == d_str), None)
+                if adj and adj.get("type") in ("suspend", "substitute"):
+                    badge_text = "停课" if adj.get("type") == "suspend" else "调"
+                    badge_bg = QtGui.QColor(251, 140, 0, 180) if adj.get("type") == "suspend" else QtGui.QColor(0, 229, 255, 180)
+                    b_rect = QtCore.QRect(col_x + round(col_w) - 24, MARGIN + 4, 20, 12)
+                    p.setBrush(QtGui.QBrush(badge_bg))
+                    p.setPen(QtCore.Qt.NoPen)
+                    p.drawRoundedRect(b_rect, 3, 3)
+                    p.setFont(QtGui.QFont(theme.FONT, 7, QtGui.QFont.Bold))
+                    p.setPen(QtGui.QColor("#000000" if adj.get("type") == "substitute" else "#FFFFFF"))
+                    p.drawText(b_rect, QtCore.Qt.AlignCenter, badge_text)
+
     def _paint_ruler(self, p):
         """左侧时间轴：节次编号与开始时刻，高亮当前节次。"""
         g = self._grid_rect()
@@ -300,7 +319,25 @@ class TimetableView(QtWidgets.QWidget):
         # 遍历每一列（周日 ~ 周六 或 周一 ~ 周日）
         for i, wd in enumerate(self.col_weekdays):
             col_x = round(g.left() + i * col_w)
-            active_courses = [c for c in self._courses[wd] if c.active_on(self._eff_week)]
+            col_date = self._date_objs[i] if i < len(self._date_objs) else None
+            adj = None
+            if col_date and hasattr(self._schedule, "courses_for_grid"):
+                active_courses, adj = self._schedule.courses_for_grid(col_date, wd, self._eff_week)
+            else:
+                active_courses = [c for c in self._courses[wd] if c.active_on(self._eff_week)]
+
+            is_substitute = bool(adj and adj.get("type") == "substitute")
+            if adj and adj.get("type") == "suspend":
+                # 绘制整列停课放假卡片
+                hol_rect = QtCore.QRect(col_x + 2, round(g.top() + 2), round(col_w) - 4, round(g.height() - 4))
+                p.setBrush(QtGui.QBrush(QtGui.QColor(251, 140, 0, 18)))
+                p.setPen(QtGui.QPen(QtGui.QColor(251, 140, 0, 90), 1, QtCore.Qt.DashLine))
+                p.drawRoundedRect(hol_rect, 6, 6)
+                p.setFont(QtGui.QFont(theme.FONT, 10, QtGui.QFont.Bold))
+                p.setPen(QtGui.QColor("#FFA726"))
+                reason = adj.get("reason") or "停课"
+                p.drawText(hol_rect, QtCore.Qt.AlignCenter, f"🏖️\n\n{reason}\n全天停课")
+                continue
 
             # 记录空白可点击格
             for sec in range(1, MAX_SECTIONS + 1):
@@ -369,15 +406,25 @@ class TimetableView(QtWidgets.QWidget):
                     p.drawRoundedRect(rect, 6, 6)
 
                     # 绘制卡片内排版文字（彻底修复文字截断与重叠）
-                    self._paint_course_card_content(p, rect, c)
+                    self._paint_course_card_content(p, rect, c, is_substitute)
 
-    def _paint_course_card_content(self, p, rect, c):
+    def _paint_course_card_content(self, p, rect, c, is_substitute=False):
         """精准排版课程名称与地点，自适应高度与宽度，绝不腰斩截断文字。"""
         inner = rect.adjusted(5, 5, -5, -4)
         if inner.height() < 16 or inner.width() < 14:
             return
 
         total_h = inner.height()
+
+        # 调课徽章
+        if is_substitute and total_h >= 24:
+            p.setBrush(QtGui.QBrush(QtGui.QColor(0, 229, 255, 230)))
+            p.setPen(QtCore.Qt.NoPen)
+            tag_rect = QtCore.QRect(inner.right() - 16, inner.top(), 16, 11)
+            p.drawRoundedRect(tag_rect, 2, 2)
+            p.setFont(QtGui.QFont(theme.FONT, 7, QtGui.QFont.Bold))
+            p.setPen(QtGui.QColor("#000000"))
+            p.drawText(tag_rect, QtCore.Qt.AlignCenter, "调")
 
         # 自定义时间标记 (如 📌15:00-17:00)
         custom_time = getattr(c, "custom_time", "")

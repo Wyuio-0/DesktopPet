@@ -41,6 +41,19 @@ data class ModifyCourseResult(
     val newCourse: Course
 )
 
+/**
+ * 教学安排调整（如中秋/国庆等假期的调课代课、停课放假）
+ * type: "substitute" (代课/调课) 或 "suspend" (停课)
+ */
+data class ScheduleAdjustment(
+    val id: String = UUID.randomUUID().toString(),
+    val date: String,              // "yyyy-MM-dd", 例如 "2026-09-20"
+    val type: String = "substitute", // "substitute" 或 "suspend"
+    val targetWeek: Int? = null,    // 若 substitute，按第几周课表执行，例如 5
+    val targetWeekday: Int? = null, // 若 substitute，按周几课表执行，例如 2 (周二)
+    val reason: String = ""        // 调整原因/展示标签，如 "按第5周周二"、"中秋节停课"、"国庆节停课"
+)
+
 object ScheduleManager {
 
     private val defaultSections = mapOf(
@@ -57,6 +70,7 @@ object ScheduleManager {
     var weekStartDay: String = "sunday"
     var courses: List<Course> = emptyList()
     var notes: List<String> = emptyList()
+    var adjustments: List<ScheduleAdjustment> = emptyList()
     var coursesVersion: Int by mutableIntStateOf(0)
 
     private fun getScheduleFile(context: Context): File {
@@ -171,6 +185,21 @@ object ScheduleManager {
                 notesList.add(notesArray.getString(i))
             }
             notes = notesList
+
+            val adjList = mutableListOf<ScheduleAdjustment>()
+            val adjArray = data.optJSONArray("adjustments") ?: JSONArray()
+            for (i in 0 until adjArray.length()) {
+                val a = adjArray.getJSONObject(i)
+                adjList.add(ScheduleAdjustment(
+                    id = a.optString("id", UUID.randomUUID().toString()),
+                    date = a.optString("date", ""),
+                    type = a.optString("type", "substitute"),
+                    targetWeek = if (a.has("target_week") && !a.isNull("target_week")) a.getInt("target_week") else null,
+                    targetWeekday = if (a.has("target_weekday") && !a.isNull("target_weekday")) a.getInt("target_weekday") else null,
+                    reason = a.optString("reason", "")
+                ))
+            }
+            adjustments = adjList.filter { it.date.isNotEmpty() }
         } catch (e: Exception) {
             e.printStackTrace()
         }
@@ -220,6 +249,19 @@ object ScheduleManager {
                 notesArray.put(n)
             }
             data.put("notes", notesArray)
+
+            val adjArray = JSONArray()
+            for (a in adjustments) {
+                val aObj = JSONObject()
+                aObj.put("id", a.id)
+                aObj.put("date", a.date)
+                aObj.put("type", a.type)
+                if (a.targetWeek != null) aObj.put("target_week", a.targetWeek)
+                if (a.targetWeekday != null) aObj.put("target_weekday", a.targetWeekday)
+                aObj.put("reason", a.reason)
+                adjArray.put(aObj)
+            }
+            data.put("adjustments", adjArray)
 
             getScheduleFile(context).writeText(data.toString(2))
             ScheduleWidgetProvider.sendUpdateBroadcast(context)
@@ -1212,6 +1254,184 @@ object ScheduleManager {
             .sortedBy { it.secStart }
     }
 
+    fun getIsoWeekday(date: Date = Date()): Int {
+        val cal = Calendar.getInstance().apply { time = date }
+        val dow = cal.get(Calendar.DAY_OF_WEEK) // SUNDAY=1, MONDAY=2, ... SATURDAY=7
+        return if (dow == Calendar.SUNDAY) 7 else dow - 1
+    }
+
+    /**
+     * 获取指定公历日期真实生效的课程列表（已深度融合假期调课/停课教学安排调整）。
+     */
+    fun getCoursesForDay(date: Date = Date()): List<Course> {
+        val dateStr = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(date)
+        val adj = adjustments.find { it.date == dateStr }
+        if (adj != null) {
+            if (adj.type == "suspend") {
+                return emptyList()
+            }
+            if (adj.type == "substitute") {
+                val targetWd = adj.targetWeekday ?: getIsoWeekday(date)
+                val targetWk = adj.targetWeek ?: (getWeekNo(date) ?: 1)
+                return getCoursesOn(targetWd, targetWk)
+            }
+        }
+        val weekNo = getWeekNo(date) ?: 1
+        val isoWd = getIsoWeekday(date)
+        return getCoursesOn(isoWd, weekNo)
+    }
+
+    /**
+     * 为课表周视图网格返回该格的课程与生效的调整规则（若有）。
+     */
+    fun getCoursesForGrid(date: Date, defaultWeekday: Int, defaultWeekNo: Int): Pair<List<Course>, ScheduleAdjustment?> {
+        val dateStr = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(date)
+        val adj = adjustments.find { it.date == dateStr }
+        if (adj != null) {
+            if (adj.type == "suspend") {
+                return Pair(emptyList(), adj)
+            }
+            if (adj.type == "substitute") {
+                val targetWd = adj.targetWeekday ?: defaultWeekday
+                val targetWk = adj.targetWeek ?: defaultWeekNo
+                return Pair(getCoursesOn(targetWd, targetWk), adj)
+            }
+        }
+        return Pair(getCoursesOn(defaultWeekday, defaultWeekNo), null)
+    }
+
+    /**
+     * 批量合并导入教学安排调整（覆盖同日期的旧调整）
+     */
+    fun addAdjustments(newAdjustments: List<ScheduleAdjustment>, context: Context) {
+        ensureLoaded(context)
+        val datesToAdd = newAdjustments.map { it.date }.toSet()
+        adjustments = adjustments.filterNot { it.date in datesToAdd } + newAdjustments
+        coursesVersion++
+        save(context)
+    }
+
+    /**
+     * 清空所有教学安排调整
+     */
+    fun clearAdjustments(context: Context) {
+        ensureLoaded(context)
+        adjustments = emptyList()
+        coursesVersion++
+        save(context)
+    }
+
+    /**
+     * 从教务处通知文本中高精度提取调课/停课教学安排调整。
+     */
+    fun parseAdjustmentsFromNotice(text: String, baseYear: Int? = null): List<ScheduleAdjustment> {
+        val yearPattern = Pattern.compile("(20\\d{2})年")
+        val ym = yearPattern.matcher(text)
+        val year = baseYear ?: if (ym.find()) ym.group(1)?.toIntOrNull() ?: Calendar.getInstance().get(Calendar.YEAR) else Calendar.getInstance().get(Calendar.YEAR)
+
+        val cnNumMap = mapOf(
+            "一" to 1, "二" to 2, "三" to 3, "四" to 4, "五" to 5, "六" to 6, "日" to 7, "天" to 7,
+            "1" to 1, "2" to 2, "3" to 3, "4" to 4, "5" to 5, "6" to 6, "7" to 7
+        )
+
+        val result = mutableListOf<ScheduleAdjustment>()
+
+        // 1. 调课换课: 9月20日（周日），教学安排按第5周周二课表执行
+        val p1 = Pattern.compile("(\\d{1,2})月(\\d{1,2})日(?:[（(][^）)]*[）)])?[，, ]*(?:教学安排)?(?:均|都|各单位)?按(?:第(\\d+)周)?(?:的)?周([一二三四五六日天1-7])(?:课表)?执行")
+        val m1 = p1.matcher(text)
+        while (m1.find()) {
+            val month = m1.group(1)?.toIntOrNull() ?: continue
+            val day = m1.group(2)?.toIntOrNull() ?: continue
+            val tw = m1.group(3)?.toIntOrNull()
+            val wdStr = m1.group(4) ?: "1"
+            val twd = cnNumMap[wdStr] ?: 1
+            val dateStr = String.format(Locale.getDefault(), "%04d-%02d-%02d", year, month, day)
+            val reason = if (tw != null) "按第${tw}周周$wdStr" else "按周$wdStr"
+            result.add(ScheduleAdjustment(
+                date = dateStr,
+                type = "substitute",
+                targetWeek = tw,
+                targetWeekday = twd,
+                reason = reason
+            ))
+        }
+
+        // 2. 连续多天停课: 国庆节：10月1日-7日，所有课程停上
+        val p2Range = Pattern.compile("(\\d{1,2})月(\\d{1,2})日\\s*[-~至到]\\s*(?:(\\d{1,2})月)?(\\d{1,2})日(?:[（(][^）)]*[）)])?[^。；;\\n]*?停[上课]")
+        val m2 = p2Range.matcher(text)
+        while (m2.find()) {
+            val mStart = m2.group(1)?.toIntOrNull() ?: continue
+            val dStart = m2.group(2)?.toIntOrNull() ?: continue
+            val mEnd = m2.group(3)?.toIntOrNull() ?: mStart
+            val dEnd = m2.group(4)?.toIntOrNull() ?: continue
+
+            val matchFull = m2.group(0) ?: ""
+            val holidayReason = when {
+                matchFull.contains("中秋") || text.substring(0, m2.start()).takeLast(30).contains("中秋") -> "中秋节停课"
+                matchFull.contains("国庆") || text.substring(0, m2.start()).takeLast(30).contains("国庆") -> "国庆节停课"
+                matchFull.contains("元旦") || text.substring(0, m2.start()).takeLast(30).contains("元旦") -> "元旦停课"
+                matchFull.contains("五一") || matchFull.contains("劳动") || text.substring(0, m2.start()).takeLast(30).contains("五一") -> "五一停课"
+                matchFull.contains("端午") || text.substring(0, m2.start()).takeLast(30).contains("端午") -> "端午节停课"
+                matchFull.contains("清明") || text.substring(0, m2.start()).takeLast(30).contains("清明") -> "清明节停课"
+                else -> "停课"
+            }
+
+            val startCal = Calendar.getInstance().apply {
+                set(year, mStart - 1, dStart, 0, 0, 0)
+                set(Calendar.MILLISECOND, 0)
+            }
+            val endCal = Calendar.getInstance().apply {
+                set(year, mEnd - 1, dEnd, 0, 0, 0)
+                set(Calendar.MILLISECOND, 0)
+            }
+            while (!startCal.after(endCal)) {
+                val dateStr = String.format(Locale.getDefault(), "%04d-%02d-%02d",
+                    startCal.get(Calendar.YEAR),
+                    startCal.get(Calendar.MONTH) + 1,
+                    startCal.get(Calendar.DAY_OF_MONTH)
+                )
+                if (result.none { it.date == dateStr }) {
+                    result.add(ScheduleAdjustment(
+                        date = dateStr,
+                        type = "suspend",
+                        reason = holidayReason
+                    ))
+                }
+                startCal.add(Calendar.DAY_OF_YEAR, 1)
+            }
+        }
+
+        // 3. 单日停课: 9月25日，所有课程停上
+        val p3Single = Pattern.compile("(\\d{1,2})月(\\d{1,2})日(?:[（(][^）)]*[）)])?(?!\\s*[-~至到])[^。；;\\n]*?停[上课]")
+        val m3 = p3Single.matcher(text)
+        while (m3.find()) {
+            val month = m3.group(1)?.toIntOrNull() ?: continue
+            val day = m3.group(2)?.toIntOrNull() ?: continue
+            val dateStr = String.format(Locale.getDefault(), "%04d-%02d-%02d", year, month, day)
+
+            val matchFull = m3.group(0) ?: ""
+            val holidayReason = when {
+                matchFull.contains("中秋") || text.substring(0, m3.start()).takeLast(30).contains("中秋") -> "中秋节停课"
+                matchFull.contains("国庆") || text.substring(0, m3.start()).takeLast(30).contains("国庆") -> "国庆节停课"
+                matchFull.contains("元旦") || text.substring(0, m3.start()).takeLast(30).contains("元旦") -> "元旦停课"
+                matchFull.contains("五一") || matchFull.contains("劳动") || text.substring(0, m3.start()).takeLast(30).contains("五一") -> "五一停课"
+                matchFull.contains("端午") || text.substring(0, m3.start()).takeLast(30).contains("端午") -> "端午节停课"
+                matchFull.contains("清明") || text.substring(0, m3.start()).takeLast(30).contains("清明") -> "清明节停课"
+                else -> "停课"
+            }
+
+            if (result.none { it.date == dateStr }) {
+                result.add(ScheduleAdjustment(
+                    date = dateStr,
+                    type = "suspend",
+                    reason = holidayReason
+                ))
+            }
+        }
+
+        return result.sortedBy { it.date }
+    }
+
     // 从强智教务 json 解析
     fun importStrongZhi(rawJsonStr: String, termStartDateStr: String): Pair<Boolean, String> {
         try {
@@ -1310,31 +1530,30 @@ object ScheduleManager {
     fun nextClass(now: Date = Date()): CourseInfo? {
         val weekNo = getWeekNo(now) ?: return null
         if (weekNo <= 0) return null
-        
-        val calendar = Calendar.getInstance()
-        calendar.time = now
-        val todayIdx = calendar.get(Calendar.DAY_OF_WEEK)
-        // Calendar.SUNDAY = 1, MONDAY = 2... We need MONDAY=1, SUNDAY=7
-        val isoweekday = if (todayIdx == Calendar.SUNDAY) 7 else todayIdx - 1
 
         for (offset in 0..7) {
-            val weekday = isoweekday + offset
-            if (weekday > 7) continue // Simplified: only checking current week
-            
             val targetCal = Calendar.getInstance()
             targetCal.time = now
             targetCal.add(Calendar.DAY_OF_YEAR, offset)
-            
-            for (c in getCoursesOn(weekday, weekNo)) {
-                val hm = c.startTime(weekNo, sections) ?: continue
-                
-                targetCal.set(Calendar.HOUR_OF_DAY, hm.first)
-                targetCal.set(Calendar.MINUTE, hm.second)
-                targetCal.set(Calendar.SECOND, 0)
-                targetCal.set(Calendar.MILLISECOND, 0)
-                
-                if (targetCal.time.time > now.time) {
-                    return CourseInfo(c, weekday, weekNo, targetCal.time)
+
+            val targetDate = targetCal.time
+            val dayCourses = getCoursesForDay(targetDate)
+            val dayIsoWd = getIsoWeekday(targetDate)
+            val dayWeekNo = getWeekNo(targetDate) ?: weekNo
+
+            for (c in dayCourses) {
+                val hm = c.startTime(dayWeekNo, sections) ?: continue
+
+                val classCal = Calendar.getInstance().apply {
+                    time = targetDate
+                    set(Calendar.HOUR_OF_DAY, hm.first)
+                    set(Calendar.MINUTE, hm.second)
+                    set(Calendar.SECOND, 0)
+                    set(Calendar.MILLISECOND, 0)
+                }
+
+                if (classCal.time.time > now.time) {
+                    return CourseInfo(c, dayIsoWd, dayWeekNo, classCal.time)
                 }
             }
         }
@@ -1406,8 +1625,8 @@ object ScheduleManager {
             sb.append("- 较空闲日：${freeDays.joinToString("、")}（拥有整块自主掌控时间，适合用于深入钻研核心科目或休整放松）\n")
         }
 
-        // 3. 今日课程与下一门课
-        val todayCourses = getCoursesOn(todayWeekday, weekNo)
+        // 3. 今日课程与下一门课（感知调课与停课）
+        val todayCourses = getCoursesForDay(now)
         if (todayCourses.isNotEmpty()) {
             val todayStr = todayCourses.joinToString("；") { c ->
                 val time = sections[c.secStart.toString()] ?: ""
@@ -1416,7 +1635,12 @@ object ScheduleManager {
             }
             sb.append("- 今日（${weekdayNames.getOrElse(todayWeekday) { "" }}）课程安排：$todayStr\n")
         } else {
-            sb.append("- 今日（${weekdayNames.getOrElse(todayWeekday) { "" }}）课程安排：今天没有排课，可自由安排学习或休息。\n")
+            val todayAdj = adjustments.find { it.date == SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(now) }
+            if (todayAdj?.type == "suspend") {
+                sb.append("- 今日（${weekdayNames.getOrElse(todayWeekday) { "" }}）课程安排：今日因【${todayAdj.reason.ifEmpty { "法定节假日" }}】停课放假，无排课。\n")
+            } else {
+                sb.append("- 今日（${weekdayNames.getOrElse(todayWeekday) { "" }}）课程安排：今天没有排课，可自由安排学习或休息。\n")
+            }
         }
 
         val next = nextClass(now)
@@ -1429,6 +1653,16 @@ object ScheduleManager {
         // 4. 实训与网课/实验备忘
         if (notes.isNotEmpty()) {
             sb.append("- 实践与实训环节：${notes.joinToString("；")}\n")
+        }
+
+        // 5. 教学安排与调课/停课备忘
+        if (adjustments.isNotEmpty()) {
+            sb.append("\n【教学安排与调课/停课备忘（已生效）】：\n")
+            for (a in adjustments.sortedBy { it.date }) {
+                val desc = if (a.type == "suspend") "停课放假" else "调课（按第${a.targetWeek ?: ""}周周${a.targetWeekday ?: ""}课表）"
+                val reasonStr = if (a.reason.isNotEmpty()) "【${a.reason}】" else ""
+                sb.append("- ${a.date}$reasonStr：$desc\n")
+            }
         }
 
         return sb.toString().trim()

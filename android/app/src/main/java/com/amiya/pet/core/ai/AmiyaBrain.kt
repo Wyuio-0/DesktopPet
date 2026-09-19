@@ -39,7 +39,8 @@ data class ChatMessage(
     val modifiedCourse: Course? = null,
     val oldCourse: Course? = null,
     val startedPomodoroMinutes: Int? = null,
-    val createdNote: Note? = null
+    val createdNote: Note? = null,
+    val adjustedScheduleList: List<com.amiya.pet.core.schedule.ScheduleAdjustment>? = null
 )
 
 class AmiyaBrain private constructor(private val context: Context) {
@@ -170,6 +171,27 @@ class AmiyaBrain private constructor(private val context: Context) {
             "  \"new_sec_end\": 7,\n" +
             "  \"new_custom_time\": \"14:00-15:30\"\n" +
             "}\n" +
+            "```\n\n" +
+            "【智能教学安排与假期调课/停课调整规范】：\n" +
+            "当博士在对话中发送学校/教务处的教学调整通知、假期调休放假安排，或要求调课/停课（例如：“9月20日按第5周周二课表执行”、“中秋节9月25日所有课程停上”、“国庆节10月1日-7日所有课程停上”、“10月10日按第5周周三课表执行”等）：\n" +
+            "你拥有罗德岛 PRTS 教学日程调整权限。\n" +
+            "请智能分析提取各项调整：\n" +
+            "- date: 具体公历日期（格式 YYYY-MM-DD，若年份未明确提及，请结合当前时间所在公历年计算，如 \"2026-09-20\"）\n" +
+            "- type: \"substitute\"（调课/按其他周某日上课）或 \"suspend\"（停课/放假）\n" +
+            "- target_week: 若为 substitute，按第几周课表执行（整数，如 5；若未指定周次则留空或传 null）\n" +
+            "- target_weekday: 若为 substitute，按周几课表执行（整数 1~7，如周二=2，周三=3）\n" +
+            "- reason: 简要调整原因（如“中秋调休-按第5周周二”、“中秋节停课”、“国庆节停课”、“国庆调休-按第5周周三”）\n" +
+            "重要：对于连续多天的停课（如 10月1日-7日），请将每一天展开为一条独立的 adjustment 记录（如 2026-10-01, 2026-10-02, ..., 2026-10-07）！\n" +
+            "并在回复中以阿米娅严谨专业的领袖口吻向博士逐条说明教学调整已录入，说明涉及的调休与停课安排，并在回复末尾务必生成如下精确指令块：\n" +
+            "```json:adjust_schedule\n" +
+            "{\n" +
+            "  \"adjustments\": [\n" +
+            "    { \"date\": \"2026-09-20\", \"type\": \"substitute\", \"target_week\": 5, \"target_weekday\": 2, \"reason\": \"按第5周周二\" },\n" +
+            "    { \"date\": \"2026-09-25\", \"type\": \"suspend\", \"reason\": \"中秋节停课\" },\n" +
+            "    { \"date\": \"2026-10-01\", \"type\": \"suspend\", \"reason\": \"国庆节停课\" },\n" +
+            "    { \"date\": \"2026-10-10\", \"type\": \"substitute\", \"target_week\": 5, \"target_weekday\": 3, \"reason\": \"按第5周周三\" }\n" +
+            "  ]\n" +
+            "}\n" +
             "```\n"
         )
 
@@ -185,7 +207,7 @@ class AmiyaBrain private constructor(private val context: Context) {
         val tmrDateStr = SimpleDateFormat("M月d日", Locale.CHINESE).format(tmrDate)
 
         append("\n\n【明日日程概况（$tmrDateStr $tmrName · 第 $tmrWeekNo 周）】：\n")
-        val tmrCourses = ScheduleManager.getCoursesOn(tmrWeekday, tmrWeekNo)
+        val tmrCourses = ScheduleManager.getCoursesForDay(tmrDate)
         if (tmrCourses.isEmpty()) {
             append("- 明日课程：全天无排课（整天空闲，建议博士自主安排复习、自习攻坚或整理作息）。\n")
         } else {
@@ -419,10 +441,11 @@ class AmiyaBrain private constructor(private val context: Context) {
                                                   currentStr.contains("```json:add_course") -> currentStr.substringBefore("```json:add_course").trimEnd()
                                                   currentStr.contains("```json:delete_course") -> currentStr.substringBefore("```json:delete_course").trimEnd()
                                                   currentStr.contains("```json:modify_course") -> currentStr.substringBefore("```json:modify_course").trimEnd()
+                                                  currentStr.contains("```json:adjust_schedule") -> currentStr.substringBefore("```json:adjust_schedule").trimEnd()
                                                   currentStr.contains("```json:start_pomodoro") -> currentStr.substringBefore("```json:start_pomodoro").trimEnd()
                                                   currentStr.contains("```json:create_note") -> currentStr.substringBefore("```json:create_note").trimEnd()
                                                   currentStr.contains("```json") -> currentStr.substringBefore("```json").trimEnd()
-                                                  currentStr.contains("```") && (currentStr.substringAfterLast("```").contains("\"name\"") || currentStr.substringAfterLast("```").contains("\"target_name\"") || currentStr.substringAfterLast("```").contains("\"minutes\"") || currentStr.substringAfterLast("```").contains("\"content\"")) -> currentStr.substringBeforeLast("```").trimEnd()
+                                                  currentStr.contains("```") && (currentStr.substringAfterLast("```").contains("\"name\"") || currentStr.substringAfterLast("```").contains("\"target_name\"") || currentStr.substringAfterLast("```").contains("\"minutes\"") || currentStr.substringAfterLast("```").contains("\"content\"") || currentStr.substringAfterLast("```").contains("\"adjustments\"")) -> currentStr.substringBeforeLast("```").trimEnd()
                                                   else -> currentStr
                                               }
                                               onUpdate(accumulatedReasoning.toString(), displayContent, isThinking)
@@ -604,7 +627,45 @@ class AmiyaBrain private constructor(private val context: Context) {
                       }
                   }
 
-                  // 6. 本地轻量 NLP 正则规则辅助兜底（若模型未输出代码块）
+                  // 6. 解析教学安排与调课/停课调整指令 ```json:adjust_schedule ... ```
+                  var parsedAdjustments: List<com.amiya.pet.core.schedule.ScheduleAdjustment>? = null
+                  val adjPattern = java.util.regex.Pattern.compile("```(?:json:adjust_schedule)?\\s*(\\{[\\s\\S]*?\"adjustments\"[\\s\\S]*?\\})\\s*```")
+                  if (finalContent.contains("```json:adjust_schedule") || finalContent.contains("\"adjustments\"")) {
+                      val adjMatcher = adjPattern.matcher(finalContent)
+                      if (adjMatcher.find()) {
+                          try {
+                              val rootObj = JSONObject(adjMatcher.group(1) ?: "")
+                              val arr = rootObj.optJSONArray("adjustments") ?: JSONArray()
+                              val list = mutableListOf<com.amiya.pet.core.schedule.ScheduleAdjustment>()
+                              for (i in 0 until arr.length()) {
+                                  val item = arr.getJSONObject(i)
+                                  val d = item.optString("date", "").trim()
+                                  val t = item.optString("type", "substitute").trim()
+                                  val tw = if (item.has("target_week") && !item.isNull("target_week")) item.getInt("target_week") else null
+                                  val twd = if (item.has("target_weekday") && !item.isNull("target_weekday")) item.getInt("target_weekday") else null
+                                  val r = item.optString("reason", "").trim()
+                                  if (d.isNotEmpty()) {
+                                      list.add(com.amiya.pet.core.schedule.ScheduleAdjustment(
+                                          date = d,
+                                          type = t,
+                                          targetWeek = tw,
+                                          targetWeekday = twd,
+                                          reason = r
+                                      ))
+                                  }
+                              }
+                              if (list.isNotEmpty()) {
+                                  ScheduleManager.addAdjustments(list, context)
+                                  parsedAdjustments = list
+                              }
+                              finalContent = finalContent.replace(adjMatcher.group(0) ?: "", "").trim()
+                          } catch (e: Exception) {
+                              e.printStackTrace()
+                          }
+                      }
+                  }
+
+                  // 7. 本地轻量 NLP 正则规则辅助兜底（若模型未输出代码块）
                   val delKeywords = listOf("删除", "删掉", "删了", "退课", "取消", "移除", "去掉", "不开", "不上了")
                   val modKeywords = listOf("改到", "改成", "改在", "改至", "推迟到", "推迟至", "提前到", "提前至", "调整到", "调整为", "换到", "换成")
 
@@ -619,6 +680,19 @@ class AmiyaBrain private constructor(private val context: Context) {
                           (trimmed.contains("课") && (trimmed.contains("周") || trimmed.contains("星期") || trimmed.contains("节"))) ||
                           (trimmed.contains("周") && (trimmed.contains("点") || trimmed.contains(":")))) {
                           parsedCourse = ScheduleManager.parseCourseFromNaturalLanguage(trimmed)
+                      }
+                  }
+
+                  if (parsedAdjustments == null) {
+                      val isNoticeInput = trimmed.contains("教学安排") || trimmed.contains("课表执行") ||
+                              ((trimmed.contains("停上") || trimmed.contains("停课")) && trimmed.contains("月")) ||
+                              (trimmed.contains("调课") && trimmed.contains("月"))
+                      if (isNoticeInput) {
+                          val noticeList = ScheduleManager.parseAdjustmentsFromNotice(trimmed)
+                          if (noticeList.isNotEmpty()) {
+                              ScheduleManager.addAdjustments(noticeList, context)
+                              parsedAdjustments = noticeList
+                          }
                       }
                   }
 
@@ -644,6 +718,7 @@ class AmiyaBrain private constructor(private val context: Context) {
                       .substringBefore("```json:add_course")
                       .substringBefore("```json:delete_course")
                       .substringBefore("```json:modify_course")
+                      .substringBefore("```json:adjust_schedule")
                       .substringBefore("```json:start_pomodoro")
                       .substringBefore("```json:create_note")
                       .substringBefore("```json")
@@ -664,7 +739,8 @@ class AmiyaBrain private constructor(private val context: Context) {
                       modifiedCourse = parsedModifyResult?.newCourse,
                       oldCourse = parsedModifyResult?.oldCourse,
                       startedPomodoroMinutes = parsedPomodoroMinutes,
-                      createdNote = parsedCreatedNote
+                      createdNote = parsedCreatedNote,
+                      adjustedScheduleList = parsedAdjustments
                   ))
                   onUpdate(finalReasoning, finalReply, false)
                   return@withContext finalReply
@@ -689,33 +765,28 @@ class AmiyaBrain private constructor(private val context: Context) {
         var parsedModifyResult: com.amiya.pet.core.schedule.ModifyCourseResult? = null
         var parsedPomodoroMinutes: Int? = null
         var parsedCreatedNote: Note? = null
+        var parsedAdjustments: List<com.amiya.pet.core.schedule.ScheduleAdjustment>? = null
 
         val delKeywords = listOf("删除", "删掉", "删了", "退课", "取消", "移除", "去掉", "不开", "不上了")
         val modKeywords = listOf("改到", "改成", "改在", "改至", "推迟到", "推迟至", "提前到", "提前至", "调整到", "调整为", "换到", "换成")
 
-        var reply = ""
+        val reply: String
         if (delKeywords.any { trimmed.contains(it) }) {
             parsedDeletedCourse = ScheduleManager.parseDeleteFromNaturalLanguage(trimmed, context)
             reply = if (parsedDeletedCourse != null) {
-                "好的博士！阿米娅已经在离线状态下为您将《${parsedDeletedCourse.name}》（周${parsedDeletedCourse.weekday}）从课表中取消了。"
+                "好的博士！阿米娅已经在离线模式下帮您把《${parsedDeletedCourse.name}》从课表中删除了。"
             } else {
-                val err = lastHttpCode?.let { diagnoseHttpError(it, lastEndpoint, isCustomKey) }
-                    ?: lastException?.let { diagnoseNetworkError(it, lastEndpoint, isCustomKey) }
-                    ?: "通信连接异常"
-                "（$err）"
+                "博士，阿米娅在课表中没有找到符合条件的待删除课程。"
             }
         } else if (modKeywords.any { trimmed.contains(it) }) {
             parsedModifyResult = ScheduleManager.parseModifyFromNaturalLanguage(trimmed, context)
             reply = if (parsedModifyResult != null) {
-                val oc = parsedModifyResult.oldCourse
-                val nc = parsedModifyResult.newCourse
-                val timeDesc = if (nc.customTime.isNotEmpty()) "📌 [${nc.customTime}]" else "第${nc.secStart}-${nc.secEnd}节"
-                "好的博士！阿米娅已经在离线状态下为您将《${oc.name}》调整至周${nc.weekday} $timeDesc。"
+                val old = parsedModifyResult.oldCourse
+                val now = parsedModifyResult.newCourse
+                val timeDesc = if (now.customTime.isNotEmpty()) "📌 [${now.customTime}]" else "周${now.weekday} 第${now.secStart}-${now.secEnd}节"
+                "好的博士！阿米娅已经在离线模式下将《${old.name}》调整为：$timeDesc @${now.room.ifEmpty { "待定" }}。"
             } else {
-                val err = lastHttpCode?.let { diagnoseHttpError(it, lastEndpoint, isCustomKey) }
-                    ?: lastException?.let { diagnoseNetworkError(it, lastEndpoint, isCustomKey) }
-                    ?: "通信连接异常"
-                "（$err）"
+                "博士，阿米娅没有在课表中定位到要调整的目标课程。"
             }
         } else if (trimmed.contains("加一门") || trimmed.contains("加一节") || trimmed.contains("添加") || trimmed.contains("录入") ||
             trimmed.contains("组会") || trimmed.contains("会议") || trimmed.contains("例会") || trimmed.contains("实验") ||
@@ -723,15 +794,28 @@ class AmiyaBrain private constructor(private val context: Context) {
             (trimmed.contains("课") && (trimmed.contains("周") || trimmed.contains("星期") || trimmed.contains("节"))) ||
             (trimmed.contains("周") && (trimmed.contains("点") || trimmed.contains(":")))) {
             parsedCourse = ScheduleManager.parseCourseFromNaturalLanguage(trimmed)
-            if (parsedCourse != null) {
+            reply = if (parsedCourse != null) {
                 ScheduleManager.addCourse(parsedCourse, context)
                 val timeDesc = if (parsedCourse.customTime.isNotEmpty()) "📌 [${parsedCourse.customTime}] (对应第${parsedCourse.secStart}-${parsedCourse.secEnd}节)" else "第${parsedCourse.secStart}-${parsedCourse.secEnd}节"
-                reply = "好的博士！阿米娅已经在离线状态下为您将《${parsedCourse.name}》（周${parsedCourse.weekday} $timeDesc @${parsedCourse.room.ifEmpty { "待定" }}）记录到课表了。"
+                "好的博士！阿米娅已经在离线状态下为您将《${parsedCourse.name}》（周${parsedCourse.weekday} $timeDesc @${parsedCourse.room.ifEmpty { "待定" }}）记录到课表了。"
             } else {
                 val err = lastHttpCode?.let { diagnoseHttpError(it, lastEndpoint, isCustomKey) }
                     ?: lastException?.let { diagnoseNetworkError(it, lastEndpoint, isCustomKey) }
                     ?: "通信连接异常"
                 "（$err）"
+            }
+        } else if (trimmed.contains("教学安排") || trimmed.contains("课表执行") ||
+            ((trimmed.contains("停上") || trimmed.contains("停课")) && trimmed.contains("月")) ||
+            (trimmed.contains("调课") && trimmed.contains("月"))) {
+            val noticeList = ScheduleManager.parseAdjustmentsFromNotice(trimmed)
+            if (noticeList.isNotEmpty()) {
+                ScheduleManager.addAdjustments(noticeList, context)
+                parsedAdjustments = noticeList
+                val summary = noticeList.take(4).joinToString("\n") { "• ${it.date} ➔ ${if (it.type == "suspend") "停课" else it.reason}" }
+                val more = if (noticeList.size > 4) "\n… 等共 ${noticeList.size} 天教学安排调整" else ""
+                reply = "好的博士！阿米娅已在离线状态下为您将教学安排调整同步至课表：\n$summary$more\n课表周视图与日程提醒已实时生效。"
+            } else {
+                reply = "博士，阿米娅收到了教学安排通知，但未识别出具体的调课或停课日期，您可以具体说明是哪一天的课程如何调整。"
             }
         } else if (trimmed.contains("专注") || trimmed.contains("番茄钟") || (trimmed.contains("自习") && (trimmed.contains("开启") || trimmed.contains("开始") || trimmed.contains("来个")))) {
             val minsMatch = Regex("(\\d+)\\s*(?:分钟|min|m)").find(trimmed)
@@ -773,7 +857,8 @@ class AmiyaBrain private constructor(private val context: Context) {
             modifiedCourse = parsedModifyResult?.newCourse,
             oldCourse = parsedModifyResult?.oldCourse,
             startedPomodoroMinutes = parsedPomodoroMinutes,
-            createdNote = parsedCreatedNote
+            createdNote = parsedCreatedNote,
+            adjustedScheduleList = parsedAdjustments
         ))
         onUpdate("", reply, false)
         reply

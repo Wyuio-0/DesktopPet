@@ -60,8 +60,34 @@ class MainActivity : ComponentActivity() {
         SyncManager.stop()
     }
 
+    private var externalChatPrompt by mutableStateOf<String?>(null)
+
+    private fun extractPrompt(intent: Intent?): String? {
+        if (intent == null) return null
+        val b64 = intent.getStringExtra("chat_prompt_b64")
+        if (!b64.isNullOrBlank()) {
+            return try {
+                String(android.util.Base64.decode(b64, android.util.Base64.DEFAULT), Charsets.UTF_8)
+            } catch (e: Exception) {
+                b64
+            }
+        }
+        return intent.getStringExtra("chat_prompt")
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        extractPrompt(intent)?.let {
+            externalChatPrompt = it
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        extractPrompt(intent)?.let {
+            externalChatPrompt = it
+        }
 
         // 启动跨端协同局域网互联服务
         SyncManager.start(this)
@@ -155,6 +181,15 @@ class MainActivity : ComponentActivity() {
             AmiyaPetTheme(forceDark = themeOverride.value) {
                 var selectedTab by remember { mutableStateOf(MainTab.SCHEDULE) }
                 var pendingChatPrompt by remember { mutableStateOf<String?>(null) }
+
+                LaunchedEffect(externalChatPrompt) {
+                    val prompt = externalChatPrompt
+                    if (!prompt.isNullOrBlank()) {
+                        pendingChatPrompt = prompt
+                        selectedTab = MainTab.CHAT
+                        externalChatPrompt = null
+                    }
+                }
 
                 // 课表状态 (由顶栏周次选择器驱动)
                 var scheduleWeek by remember { mutableIntStateOf(ScheduleManager.getWeekNo() ?: 1) }

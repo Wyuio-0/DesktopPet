@@ -425,7 +425,7 @@ fun TimetableGrid(
     val isCurrentWeek = (weekNo == realWeekNo)
     val currentMins = cal.get(Calendar.HOUR_OF_DAY) * 60 + cal.get(Calendar.MINUTE)
 
-    val dates = remember(weekNo, refreshTrigger, ScheduleManager.termStart, ScheduleManager.weekStartDay) {
+    val (dates, dateObjects) = remember(weekNo, refreshTrigger, ScheduleManager.termStart, ScheduleManager.weekStartDay) {
         val today = Calendar.getInstance().apply {
             set(Calendar.HOUR_OF_DAY, 0)
             set(Calendar.MINUTE, 0)
@@ -446,13 +446,15 @@ fun TimetableGrid(
         val targetStart = (curWeekStart.clone() as Calendar).apply {
             add(Calendar.DAY_OF_YEAR, weekDiff * 7)
         }
-        val result = mutableListOf<String>()
+        val strList = mutableListOf<String>()
+        val dList = mutableListOf<Date>()
         val sdf = java.text.SimpleDateFormat("M.d", java.util.Locale.getDefault())
         for (i in 0..6) {
-            result.add(sdf.format(targetStart.time))
+            strList.add(sdf.format(targetStart.time))
+            dList.add(targetStart.time)
             targetStart.add(Calendar.DAY_OF_YEAR, 1)
         }
-        result
+        Pair(strList, dList)
     }
 
     // Gesture state
@@ -462,6 +464,10 @@ fun TimetableGrid(
         Row(modifier = Modifier.fillMaxWidth().padding(start = 38.dp, end = 8.dp)) {
             weekDays.forEachIndexed { idx, it ->
                 val isToday = isCurrentWeek && currentIsoWeekday == dayOrder[idx]
+                val colDate = dateObjects.getOrNull(idx) ?: Date()
+                val dateFmtStr = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(colDate)
+                val adj = ScheduleManager.adjustments.find { a -> a.date == dateFmtStr }
+
                 Column(
                     modifier = Modifier.weight(1f)
                         .clip(RoundedCornerShape(6.dp))
@@ -476,13 +482,30 @@ fun TimetableGrid(
                         fontSize = 12.sp,
                         fontWeight = if (isToday) FontWeight.Bold else FontWeight.Normal
                     )
-                    if (dates[idx].isNotEmpty()) {
+                    if (dates.getOrNull(idx)?.isNotEmpty() == true) {
                         Text(
                             text = dates[idx],
                             color = if (isToday) MaterialTheme.colorScheme.primary else Color.Gray,
                             fontSize = 9.sp,
                             fontWeight = if (isToday) FontWeight.Bold else FontWeight.Normal
                         )
+                    }
+                    if (adj != null && (adj.type == "suspend" || adj.type == "substitute")) {
+                        val badgeText = if (adj.type == "suspend") "停课" else "调"
+                        val badgeColor = if (adj.type == "suspend") Color(0xFFFB8C00) else Color(0xFF00E5FF)
+                        Surface(
+                            shape = RoundedCornerShape(3.dp),
+                            color = badgeColor.copy(alpha = 0.2f),
+                            modifier = Modifier.padding(top = 1.dp)
+                        ) {
+                            Text(
+                                text = badgeText,
+                                fontSize = 8.sp,
+                                color = badgeColor,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 2.dp)
+                            )
+                        }
                     }
                 }
             }
@@ -592,35 +615,75 @@ fun TimetableGrid(
                 }
                 // Courses overlay & Empty clickable slots
                 Row(modifier = Modifier.matchParentSize().padding(start = 38.dp)) {
-                    for (wd in dayOrder) {
-                        Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
-                            val dayCourses = ScheduleManager.getCoursesOn(wd, weekNo)
-                            val layoutCourses = remember(dayCourses) { layoutDayCourses(dayCourses) }
+                    for ((colIdx, wd) in dayOrder.withIndex()) {
+                        val colDate = dateObjects.getOrNull(colIdx) ?: Date()
+                        val (dayCourses, adj) = ScheduleManager.getCoursesForGrid(colDate, wd, weekNo)
+                        val isSuspended = adj?.type == "suspend"
+                        val isSubstitute = adj?.type == "substitute"
+                        val layoutCourses = remember(dayCourses) { layoutDayCourses(dayCourses) }
 
-                            // 1. Clickable empty slots to quickly add a course
-                            for (sec in 1..13) {
-                                val isOccupied = dayCourses.any { sec in it.secStart..it.secEnd }
-                                if (!isOccupied) {
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .offset(y = rowH * (sec - 1))
-                                            .height(rowH)
-                                            .clickable { onAddCourseAt(wd, sec) }
+                        Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
+                            if (isSuspended) {
+                                // Render holiday / suspension placeholder in grid column
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .padding(2.dp)
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .background(Color(0xFFFB8C00).copy(alpha = 0.08f))
+                                        .border(1.dp, Color(0xFFFB8C00).copy(alpha = 0.25f), RoundedCornerShape(6.dp)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Column(
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        modifier = Modifier.padding(horizontal = 2.dp)
+                                    ) {
+                                        Text("🏖️", fontSize = 16.sp)
+                                        Spacer(Modifier.height(4.dp))
+                                        Text(
+                                            text = adj?.reason?.ifBlank { "停课" } ?: "停课",
+                                            color = Color(0xFFFFA726),
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            textAlign = TextAlign.Center,
+                                            lineHeight = 12.sp
+                                        )
+                                        Spacer(Modifier.height(2.dp))
+                                        Text(
+                                            text = "全天停课",
+                                            color = Color(0xFFFFA726).copy(alpha = 0.7f),
+                                            fontSize = 8.sp,
+                                            textAlign = TextAlign.Center
+                                        )
+                                    }
+                                }
+                            } else {
+                                // 1. Clickable empty slots to quickly add a course
+                                for (sec in 1..13) {
+                                    val isOccupied = dayCourses.any { sec in it.secStart..it.secEnd }
+                                    if (!isOccupied) {
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .offset(y = rowH * (sec - 1))
+                                                .height(rowH)
+                                                .clickable { onAddCourseAt(wd, sec) }
+                                        )
+                                    }
+                                }
+
+                                // 2. Render active courses with collision sub-columns
+                                for (lc in layoutCourses) {
+                                    CourseBlock(
+                                        course = lc.course,
+                                        color = colorMap[lc.course.name] ?: Color.Gray,
+                                        rowH = rowH,
+                                        slotIdx = lc.slotIdx,
+                                        totalSlots = lc.totalSlots,
+                                        isSubstitute = isSubstitute,
+                                        onClick = { onSelectCourse(lc.course) }
                                     )
                                 }
-                            }
-
-                            // 2. Render active courses with collision sub-columns
-                            for (lc in layoutCourses) {
-                                CourseBlock(
-                                    course = lc.course,
-                                    color = colorMap[lc.course.name] ?: Color.Gray,
-                                    rowH = rowH,
-                                    slotIdx = lc.slotIdx,
-                                    totalSlots = lc.totalSlots,
-                                    onClick = { onSelectCourse(lc.course) }
-                                )
                             }
                         }
                     }
@@ -637,6 +700,7 @@ fun CourseBlock(
     rowH: androidx.compose.ui.unit.Dp,
     slotIdx: Int = 0,
     totalSlots: Int = 1,
+    isSubstitute: Boolean = false,
     onClick: () -> Unit
 ) {
     val topOff = rowH * (course.secStart - 1)
@@ -659,6 +723,21 @@ fun CourseBlock(
                 .padding(2.dp)
         ) {
             Column(modifier = Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
+                if (isSubstitute) {
+                    Surface(
+                        shape = RoundedCornerShape(2.dp),
+                        color = Color(0xFF00E5FF).copy(alpha = 0.95f),
+                        modifier = Modifier.padding(bottom = 1.dp)
+                    ) {
+                        Text(
+                            text = "调课",
+                            color = Color.Black,
+                            fontSize = if (totalSlots > 1) 6.5.sp else 7.5.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            modifier = Modifier.padding(horizontal = 2.dp)
+                        )
+                    }
+                }
                 if (course.customTime.isNotBlank()) {
                     val timeDisplay = if (height > rowH * 1.5f && course.customTime.contains("-")) {
                         val parts = course.customTime.split("-")

@@ -221,6 +221,7 @@ class Schedule:
         self.week_start_day = "sunday"    # 周课表起始日: "sunday" / "monday"
         self.courses = []
         self.notes = []                   # 无时间课说明文本
+        self.adjustments = []             # 教学安排调整（调课/停课）
         self.load()
 
     # ── 持久化 ─────────────────────────────────────────────────────
@@ -232,6 +233,7 @@ class Schedule:
         except Exception:
             return
         self.term = str(data.get("term", ""))
+        self.adjustments = list(data.get("adjustments", []))
         try:
             self.term_start = date.fromisoformat(str(data["term_start"]))
         except Exception:
@@ -294,6 +296,7 @@ class Schedule:
             "week_start_day": self.week_start_day,
             "courses": [self._course_dict(c) for c in self.courses],
             "notes": self.notes,
+            "adjustments": self.adjustments,
         }
         try:
             d = os.path.dirname(self.path)
@@ -344,7 +347,48 @@ class Schedule:
             out = [c for c in out if c.active_on(week_no)]
         return sorted(out, key=lambda c: c.sec_start)
 
+    def courses_for_day(self, day=None):
+        """获取指定公历日期的课程（感知教学安排调课与放假停课）。"""
+        day = day or date.today()
+        day_str = day.isoformat()
+        adj = next((a for a in self.adjustments if a.get("date") == day_str), None)
+        if adj:
+            if adj.get("type") == "suspend":
+                return []
+            if adj.get("type") == "substitute":
+                target_wd = adj.get("target_weekday") or day.isoweekday()
+                target_wk = adj.get("target_week") or self.week_no(day) or 1
+                return self.courses_on(target_wd, target_wk)
+        week_no = self.week_no(day) or 1
+        return self.courses_on(day.isoweekday(), week_no)
+
+    def courses_for_grid(self, cur_date, default_weekday, default_week_no):
+        """为周视图网格某一列返回课程列表与生效的调整规则 (courses, adj)。"""
+        day_str = cur_date.isoformat()
+        adj = next((a for a in self.adjustments if a.get("date") == day_str), None)
+        if adj:
+            if adj.get("type") == "suspend":
+                return [], adj
+            if adj.get("type") == "substitute":
+                target_wd = adj.get("target_weekday") or default_weekday
+                target_wk = adj.get("target_week") or default_week_no
+                return self.courses_on(target_wd, target_wk), adj
+        return self.courses_on(default_weekday, default_week_no), None
+
+    def add_adjustments(self, new_adjustments):
+        """添加或更新教学安排调整。"""
+        dates_to_add = {a.get("date") for a in new_adjustments if a.get("date")}
+        self.adjustments = [a for a in self.adjustments if a.get("date") not in dates_to_add] + new_adjustments
+        return self.save()
+
+    def clear_adjustments(self):
+        """清空所有教学安排调整。"""
+        self.adjustments = []
+        return self.save()
+
     def today(self, week_no=None):
+        if week_no is None:
+            return self.courses_for_day(date.today())
         return self.courses_on(date.today().isoweekday(), week_no)
 
     def next_class(self, now=None, week_no=None):
