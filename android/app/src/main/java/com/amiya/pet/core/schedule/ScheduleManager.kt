@@ -263,6 +263,25 @@ object ScheduleManager {
     }
 
     /**
+     * 批量导入课程数据（支持全量覆盖或增量去重合并）
+     */
+    fun importCourses(newCourses: List<Course>, overwrite: Boolean, context: Context) {
+        ensureLoaded(context)
+        if (termStart == null) {
+            termStart = normalizeToSunday(Date())
+        }
+        if (overwrite) {
+            courses = newCourses
+        } else {
+            val existingKeys = courses.map { "${it.name.trim()}_${it.weekday}_${it.secStart}" }.toSet()
+            val filteredNew = newCourses.filterNot { "${it.name.trim()}_${it.weekday}_${it.secStart}" in existingKeys }
+            courses = courses + filteredNew
+        }
+        coursesVersion++
+        save(context)
+    }
+
+    /**
      * 智能定位与打分匹配课表已有日程/课程
      */
     fun findTargetCourse(

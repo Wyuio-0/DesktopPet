@@ -158,6 +158,7 @@ class MainActivity : ComponentActivity() {
 
                 // 课表状态 (由顶栏周次选择器驱动)
                 var scheduleWeek by remember { mutableIntStateOf(ScheduleManager.getWeekNo() ?: 1) }
+                var showImageImportDialog by remember { mutableStateOf(false) }
                 var showImportDialog by remember { mutableStateOf(false) }
                 var showReminderDialog by remember { mutableStateOf(false) }
                 var showAddCourseDialog by remember { mutableStateOf(false) }
@@ -301,7 +302,15 @@ class MainActivity : ComponentActivity() {
                                                     }
                                                 )
                                                 DropdownMenuItem(
-                                                    text = { Text("导入课表数据") },
+                                                    text = { Text("拍照/截图 AI 导入课表") },
+                                                    leadingIcon = { Icon(Icons.Default.DocumentScanner, null) },
+                                                    onClick = {
+                                                        showScheduleMenu = false
+                                                        showImageImportDialog = true
+                                                    }
+                                                )
+                                                DropdownMenuItem(
+                                                    text = { Text("强智教务 JSON 导入") },
                                                     leadingIcon = { Icon(Icons.Default.Download, null) },
                                                     onClick = {
                                                         showScheduleMenu = false
@@ -475,6 +484,9 @@ class MainActivity : ComponentActivity() {
                                         showImportDialog = showImportDialog,
                                         onDismissImportDialog = { showImportDialog = false },
                                         onOpenImportDialog = { showImportDialog = true },
+                                        showImageImportDialog = showImageImportDialog,
+                                        onDismissImageImportDialog = { showImageImportDialog = false },
+                                        onOpenImageImportDialog = { showImageImportDialog = true },
                                         showReminderDialog = showReminderDialog,
                                         onDismissReminderDialog = { showReminderDialog = false },
                                         showAddCourseDialog = showAddCourseDialog,

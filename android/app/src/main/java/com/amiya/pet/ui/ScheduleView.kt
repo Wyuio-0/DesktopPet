@@ -43,6 +43,9 @@ fun ScheduleScreen(
     showImportDialog: Boolean = false,
     onDismissImportDialog: () -> Unit = {},
     onOpenImportDialog: () -> Unit = {},
+    showImageImportDialog: Boolean = false,
+    onDismissImageImportDialog: () -> Unit = {},
+    onOpenImageImportDialog: () -> Unit = {},
     showReminderDialog: Boolean = false,
     onDismissReminderDialog: () -> Unit = {},
     showAddCourseDialog: Boolean = false,
@@ -52,6 +55,7 @@ fun ScheduleScreen(
 ) {
     val context = LocalContext.current
     var refreshTrigger by remember { mutableIntStateOf(0) }
+    var showInternalImageImportDialog by remember { mutableStateOf(false) }
     
     // 首次进入立即同步加载，确保无论冷启动还是热切页，内存数据绝对最新
     var isDataLoaded by remember {
@@ -132,28 +136,35 @@ fun ScheduleScreen(
                     )
                     Spacer(Modifier.height(20.dp))
                     Row(
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Button(
+                            onClick = { showInternalImageImportDialog = true },
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                        ) {
+                            Icon(Icons.Default.DocumentScanner, contentDescription = null, tint = Color.Black, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("📸 AI 截图导入", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        }
+                        OutlinedButton(
                             onClick = {
                                 editingCourse = null
                                 newCourseWeekday = currentIsoWeekday
                                 newCourseSection = 1
                                 showCourseEditDialog = true
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                            }
                         ) {
-                            Icon(Icons.Default.Add, contentDescription = null, tint = Color.Black, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(6.dp))
-                            Text("手动添加课程", color = Color.Black, fontWeight = FontWeight.Bold)
+                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("手动录入", fontSize = 13.sp)
                         }
                         OutlinedButton(
                             onClick = onOpenImportDialog
                         ) {
-                            Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(6.dp))
-                            Text("导入教务课表", fontWeight = FontWeight.Medium)
+                            Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("JSON", fontSize = 13.sp)
                         }
                     }
                 }
@@ -244,6 +255,22 @@ fun ScheduleScreen(
             dismissButton = {
                 TextButton(onClick = onDismissImportDialog) { Text("关闭") }
             }
+        )
+    }
+
+    if (showImageImportDialog || showInternalImageImportDialog) {
+        ImageScheduleImportDialog(
+            onDismiss = {
+                onDismissImageImportDialog()
+                showInternalImageImportDialog = false
+            },
+            onImportSuccess = { count ->
+                refreshTrigger++
+                onDismissImageImportDialog()
+                showInternalImageImportDialog = false
+                onConsultAi("阿米娅，我已经通过课表截图成功导入了 $count 门课程，请结合我的最新课表数据为我做一次全面的学情分析：包括课程负荷评估、每周节奏分析与自习备考作息建议！")
+            },
+            onConsultAi = onConsultAi
         )
     }
 

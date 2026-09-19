@@ -1,6 +1,12 @@
 package com.amiya.pet.core.ai
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Matrix
+import android.media.ExifInterface
+import android.net.Uri
+import android.util.Base64
 import com.amiya.pet.core.focus.PomodoroTimer
 import com.amiya.pet.core.notes.Note
 import com.amiya.pet.core.notes.NotesManager
@@ -11,6 +17,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.ByteArrayInputStream
+import java.io.ByteArrayOutputStream
 import java.io.OutputStreamWriter
 import java.net.HttpURLConnection
 import java.net.URL
@@ -902,6 +910,328 @@ class AmiyaBrain private constructor(private val context: Context) {
             val diag = diagnoseNetworkError(e, urlStr, hasCustom)
             Pair(false, "$diag (耗时: ${elapsed}ms)")
         }
+    }
+
+    /**
+     * 多模态视觉解析课表图片（支持直接传入图片字节数据）
+     * 自动下采样压缩并转换为 Base64，调用 OpenAI/GLM-4V 兼容的多模态接口解析课程表
+     */
+    suspend fun parseScheduleFromImage(
+        context: Context,
+        imageBytes: ByteArray,
+        customVisionModel: String? = null
+    ): Result<List<Course>> = withContext(Dispatchers.IO) {
+        try {
+            // 1. 优化图像（处理 EXIF 旋转、长边最大 1600px 限制，转为 Base64）
+            val base64DataUrl = decodeAndCompressImage(imageBytes)
+                ?: return@withContext Result.failure(Exception("无法读取或解码所选图片，请重新选择"))
+
+            // 2. 路由 Vision 模型与端点
+            val customKey = apiKey.trim()
+            val isCustomKey = customKey.isNotEmpty()
+
+            val endpoints: List<String> = if (isCustomKey) {
+                listOf(resolveChatEndpoint(baseUrl))
+            } else {
+                getCandidateRelays(publicRelayUrl)
+            }
+
+            // 确定 Vision 模型：若指定了 customVisionModel 则优先使用；
+            // 否则若当前 baseUrl 是 BigModel 则使用 glm-4v-flash；
+            // 若当前 model 本身就是 vision 模型（包含 4v、vision、vl、4o 等）则使用当前 model；
+            // 默认推荐智谱视觉模型 glm-4v-flash
+            val targetModel: String = when {
+                !customVisionModel.isNullOrBlank() -> customVisionModel.trim()
+                model.contains("4v", ignoreCase = true) || model.contains("vision", ignoreCase = true) ||
+                    model.contains("-vl", ignoreCase = true) || model.contains("4o", ignoreCase = true) -> model
+                baseUrl.contains("bigmodel.cn") -> "glm-4v-flash"
+                baseUrl.contains("openai.com") -> "gpt-4o-mini"
+                baseUrl.contains("dashscope.aliyuncs.com") -> "qwen-vl-plus"
+                else -> "glm-4v-flash"
+            }
+
+            val authHeader: String? = if (isCustomKey) "Bearer $customKey" else null
+
+            val prompt = """
+            你是一个专业的教务课表识别与排课分析专家。请仔细分析这张课表图片（包含课程表网格、周次、时间、星期几、课程名称、教室/地点、任课教师等信息）。
+            
+            请尽可能完整、准确地提取出图中的所有课程，输出纯 JSON 数组，必须包裹在 ```json:import_courses 和 ``` 代码块中。
+            输出格式规范如下：
+            [
+              {
+                "name": "课程名称（如：高等数学。去掉无用的前缀后缀，只保留规范课程名）",
+                "weekday": 1, // 星期几，整数 1 到 7。1=周一，2=周二，3=周三，4=周四，5=周五，6=周六，7=周日。必须严格根据课表顶部的星期列对齐！
+                "sec_start": 1, // 起始节次，整数 1 到 13。例如第1-2节填 1，第3-4节填 3，第6-7节填 6，等等
+                "sec_end": 2, // 结束节次，整数 1 到 13。例如第1-2节填 2，第3-4节填 4
+                "week_start": 1, // 起始周，整数。例如“1-16周”填 1；未注明默认 1
+                "week_end": 16, // 结束周，整数。例如“1-16周”填 16；未注明默认 16
+                "parity": "all", // 单双周："all"=每周/全周, "odd"=单周, "even"=双周
+                "room": "教学楼/教室（如：教四101、综B203，若未标明可填空字符串）",
+                "teacher": "授课教师姓名（若未标明可填空字符串）",
+                "note": "备注说明（选填）"
+              }
+            ]
+            
+            【特别注意事项】：
+            1. 星期数字请严格遵循：1=周一, 2=周二, 3=周三, 4=周四, 5=周五, 6=周六, 7=周日。
+            2. 同一门课程在不同星期或不同节次上课，请拆分为多个独立的课程时段对象。
+            3. 请仔细核对每门课所处的横行（节次）与纵列（星期），确保不遗漏、不错位。
+            4. 必须且仅在 ```json:import_courses ... ``` 标记的代码块内输出合法的 JSON 数组。
+            """.trimIndent()
+
+            val reqBody = JSONObject().apply {
+                put("model", targetModel)
+                put("temperature", 0.1)
+                val messages = JSONArray()
+                val userMsg = JSONObject().apply {
+                    put("role", "user")
+                    val contents = JSONArray()
+                    contents.put(JSONObject().apply {
+                        put("type", "text")
+                        put("text", prompt)
+                    })
+                    contents.put(JSONObject().apply {
+                        put("type", "image_url")
+                        put("image_url", JSONObject().apply {
+                            put("url", base64DataUrl)
+                        })
+                    })
+                    put("content", contents)
+                }
+                messages.put(userMsg)
+                put("messages", messages)
+            }
+
+            var lastException: Exception? = null
+            var lastCode: Int? = null
+            var lastErrDetail = ""
+
+            for (ep in endpoints) {
+                try {
+                    val url = URL(ep)
+                    val conn = (url.openConnection() as HttpURLConnection).apply {
+                        requestMethod = "POST"
+                        connectTimeout = 20000
+                        readTimeout = 60000
+                        doOutput = true
+                        setRequestProperty("Content-Type", "application/json; charset=utf-8")
+                        if (authHeader != null) {
+                            setRequestProperty("Authorization", authHeader)
+                        }
+                        setRequestProperty("User-Agent", "AmiyaPet-Android")
+                    }
+
+                    OutputStreamWriter(conn.outputStream, Charsets.UTF_8).use {
+                        it.write(reqBody.toString())
+                        it.flush()
+                    }
+
+                    val code = conn.responseCode
+                    lastCode = code
+                    if (code in 200..299) {
+                        val respText = conn.inputStream.bufferedReader(Charsets.UTF_8).readText()
+                        val jsonResp = JSONObject(respText)
+                        val choices = jsonResp.optJSONArray("choices")
+                        val content = choices?.optJSONObject(0)?.optJSONObject("message")?.optString("content", "") ?: ""
+                        val courses = parseCoursesFromAiResponse(content)
+                        if (courses.isNotEmpty()) {
+                            return@withContext Result.success(courses)
+                        } else {
+                            return@withContext Result.failure(Exception("AI 未能从课表图片中识别出有效课程，请确保图片清晰且包含课表表格与文字。"))
+                        }
+                    } else {
+                        val errStream = conn.errorStream ?: conn.inputStream
+                        lastErrDetail = errStream?.bufferedReader(Charsets.UTF_8)?.readText() ?: ""
+                    }
+                } catch (e: Exception) {
+                    lastException = e
+                }
+            }
+
+            val errDesc = lastCode?.let { diagnoseHttpError(it, endpoints.firstOrNull() ?: "", isCustomKey) }
+                ?: lastException?.let { diagnoseNetworkError(it, endpoints.firstOrNull() ?: "", isCustomKey) }
+                ?: "请求失败"
+            Result.failure(Exception(if (lastErrDetail.isNotEmpty()) "$errDesc ($lastErrDetail)" else errDesc))
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * 多模态视觉解析课表图片（Uri 重载方法）
+     */
+    suspend fun parseScheduleFromImage(
+        context: Context,
+        imageUri: Uri,
+        customVisionModel: String? = null
+    ): Result<List<Course>> {
+        val bytes = try {
+            context.contentResolver.openInputStream(imageUri)?.use { it.readBytes() }
+        } catch (e: Exception) {
+            null
+        } ?: return Result.failure(Exception("无法读取所选图片数据，请重新选择"))
+        return parseScheduleFromImage(context, bytes, customVisionModel)
+    }
+
+    private fun decodeAndCompressImage(bytes: ByteArray): String? {
+        try {
+            // 1. 读取 EXIF 旋转角度
+            val orientation = try {
+                val exif = ExifInterface(ByteArrayInputStream(bytes))
+                exif.getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
+            } catch (ignored: Exception) {
+                ExifInterface.ORIENTATION_NORMAL
+            }
+
+            // 2. 获取原始宽高
+            val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
+
+            val reqMaxDim = 1600
+            var inSampleSize = 1
+            val maxOriginal = Math.max(options.outWidth, options.outHeight)
+            if (maxOriginal > reqMaxDim) {
+                while (maxOriginal / inSampleSize > reqMaxDim * 1.5) {
+                    inSampleSize *= 2
+                }
+            }
+
+            // 3. 采样解码
+            options.inJustDecodeBounds = false
+            options.inSampleSize = inSampleSize
+            val rawBmp = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
+                ?: return null
+
+            // 4. 处理 EXIF 旋转
+            val matrix = Matrix()
+            when (orientation) {
+                ExifInterface.ORIENTATION_ROTATE_90 -> matrix.postRotate(90f)
+                ExifInterface.ORIENTATION_ROTATE_180 -> matrix.postRotate(180f)
+                ExifInterface.ORIENTATION_ROTATE_270 -> matrix.postRotate(270f)
+                ExifInterface.ORIENTATION_FLIP_HORIZONTAL -> matrix.postScale(-1f, 1f)
+                ExifInterface.ORIENTATION_FLIP_VERTICAL -> matrix.postScale(1f, -1f)
+            }
+
+            // 5. 比例缩放至最大边 <= 1600px
+            val currentMax = Math.max(rawBmp.width, rawBmp.height)
+            if (currentMax > reqMaxDim) {
+                val scale = reqMaxDim.toFloat() / currentMax.toFloat()
+                matrix.postScale(scale, scale)
+            }
+
+            val finalBmp = if (!matrix.isIdentity) {
+                val transformed = Bitmap.createBitmap(rawBmp, 0, 0, rawBmp.width, rawBmp.height, matrix, true)
+                if (transformed != rawBmp) {
+                    rawBmp.recycle()
+                }
+                transformed
+            } else {
+                rawBmp
+            }
+
+            // 6. 压缩为 JPEG 85% 并转换为 Base64 Data URL
+            val baos = ByteArrayOutputStream()
+            finalBmp.compress(Bitmap.CompressFormat.JPEG, 85, baos)
+            finalBmp.recycle()
+            val outBytes = baos.toByteArray()
+            val b64 = Base64.encodeToString(outBytes, Base64.NO_WRAP)
+            return "data:image/jpeg;base64,$b64"
+        } catch (e: Exception) {
+            android.util.Log.e("AmiyaBrain", "decodeAndCompressImage failed", e)
+            return null
+        }
+    }
+
+    fun parseCoursesFromAiResponse(rawResponse: String): List<Course> {
+        val list = mutableListOf<Course>()
+        val jsonContent = when {
+            rawResponse.contains("```json:import_courses") -> {
+                rawResponse.substringAfter("```json:import_courses").substringBefore("```").trim()
+            }
+            rawResponse.contains("```json") -> {
+                rawResponse.substringAfter("```json").substringBefore("```").trim()
+            }
+            rawResponse.contains("```") -> {
+                rawResponse.substringAfter("```").substringBefore("```").trim()
+            }
+            rawResponse.contains("[") && rawResponse.contains("]") -> {
+                val start = rawResponse.indexOf('[')
+                val end = rawResponse.lastIndexOf(']')
+                if (end > start) rawResponse.substring(start, end + 1).trim() else ""
+            }
+            else -> ""
+        }
+        if (jsonContent.isEmpty()) return emptyList()
+
+        try {
+            val array = JSONArray(jsonContent)
+            for (i in 0 until array.length()) {
+                val obj = array.optJSONObject(i) ?: continue
+                val name = obj.optString("name", "").trim()
+                if (name.isEmpty()) continue
+
+                val weekday = when {
+                    obj.has("weekday") -> obj.optInt("weekday", 1)
+                    obj.has("day") -> obj.optInt("day", 1)
+                    else -> 1
+                }.coerceIn(1, 7)
+
+                val secStart = when {
+                    obj.has("sec_start") -> obj.optInt("sec_start", 1)
+                    obj.has("secStart") -> obj.optInt("secStart", 1)
+                    obj.has("start_section") -> obj.optInt("start_section", 1)
+                    else -> 1
+                }.coerceIn(1, 13)
+
+                val secEnd = when {
+                    obj.has("sec_end") -> obj.optInt("sec_end", secStart)
+                    obj.has("secEnd") -> obj.optInt("secEnd", secStart)
+                    obj.has("end_section") -> obj.optInt("end_section", secStart)
+                    else -> secStart
+                }.coerceIn(secStart, 13)
+
+                val weekStart = when {
+                    obj.has("week_start") -> obj.optInt("week_start", 1)
+                    obj.has("weekStart") -> obj.optInt("weekStart", 1)
+                    else -> 1
+                }.coerceAtLeast(1)
+
+                val weekEnd = when {
+                    obj.has("week_end") -> obj.optInt("week_end", 16)
+                    obj.has("weekEnd") -> obj.optInt("weekEnd", 16)
+                    else -> 16
+                }.coerceAtLeast(weekStart)
+
+                val rawParity = obj.optString("parity", "all").lowercase(Locale.getDefault())
+                val parity = when {
+                    rawParity.contains("odd") || rawParity.contains("单") -> "odd"
+                    rawParity.contains("even") || rawParity.contains("双") -> "even"
+                    else -> "all"
+                }
+
+                val room = obj.optString("room", obj.optString("classroom", obj.optString("location", ""))).trim()
+                val teacher = obj.optString("teacher", obj.optString("instructor", "")).trim()
+                val note = obj.optString("note", "").trim()
+
+                list.add(
+                    Course(
+                        name = name,
+                        weekday = weekday,
+                        secStart = secStart,
+                        secEnd = secEnd,
+                        weekStart = weekStart,
+                        weekEnd = weekEnd,
+                        parity = parity,
+                        room = room,
+                        teacher = teacher,
+                        note = note
+                    )
+                )
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        return list
     }
 
     companion object {
