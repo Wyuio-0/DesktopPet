@@ -89,28 +89,6 @@ class TimetableView(QtWidgets.QWidget):
         self._notes = list(sched.notes)
         self._courses = {wd: sched.courses_on(wd, None) for wd in range(1, 8)}
 
-        # 动态自适应本周课表最大节数 (8..13)
-        max_sec = 0
-        for wd in range(1, 8):
-            for c in sched.courses_on(wd, self._eff_week):
-                if c.sec_end > max_sec:
-                    max_sec = c.sec_end
-        for adj in getattr(sched, "adjustments", []):
-            if adj.get("type") == "substitute" and adj.get("target_week") == self._eff_week:
-                t_wd = adj.get("target_weekday")
-                if t_wd:
-                    for c in sched.courses_on(t_wd, self._eff_week):
-                        if c.sec_end > max_sec:
-                            max_sec = c.sec_end
-        if max_sec <= 8:
-            self._max_sections = 8
-        elif max_sec <= 10:
-            self._max_sections = 10
-        elif max_sec <= 12:
-            self._max_sections = 12
-        else:
-            self._max_sections = 13
-
         # 配色映射
         self._color_of = {}
         idx = 0

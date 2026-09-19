@@ -68,17 +68,10 @@ object ScheduleManager {
     var dismissRemindEnabled: Boolean = true
     var remindMinutes: Int = 20
     var weekStartDay: String = "sunday"
-    var maxSectionsConfig: Int = 0 // 0: 智能自适应(默认), 8: 固定8节, 10: 固定10节, 12: 固定12节, 13: 固定13节
     var courses: List<Course> = emptyList()
     var notes: List<String> = emptyList()
     var adjustments: List<ScheduleAdjustment> = emptyList()
     var coursesVersion: Int by mutableIntStateOf(0)
-
-    fun setMaxSectionsConfig(cfg: Int, context: Context) {
-        maxSectionsConfig = cfg
-        save(context)
-        coursesVersion++
-    }
 
     private fun getScheduleFile(context: Context): File {
         return File(context.filesDir, "schedule.json")
@@ -163,7 +156,6 @@ object ScheduleManager {
             remindMinutes = data.optInt("remind_minutes", 20)
             val wsd = data.optString("week_start_day", "sunday").lowercase(Locale.getDefault())
             weekStartDay = if (wsd in listOf("monday", "sunday")) wsd else "sunday"
-            maxSectionsConfig = data.optInt("max_sections_config", 0)
 
             val courseList = mutableListOf<Course>()
             val coursesArray = data.optJSONArray("courses") ?: JSONArray()
@@ -229,7 +221,6 @@ object ScheduleManager {
             data.put("dismiss_remind_enabled", dismissRemindEnabled)
             data.put("remind_minutes", remindMinutes)
             data.put("week_start_day", weekStartDay)
-            data.put("max_sections_config", maxSectionsConfig)
 
             val coursesArray = JSONArray()
             for (c in courses) {

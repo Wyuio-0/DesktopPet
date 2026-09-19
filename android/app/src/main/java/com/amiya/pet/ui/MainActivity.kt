@@ -201,7 +201,6 @@ class MainActivity : ComponentActivity() {
                 var showExamScheduleView by remember { mutableStateOf(false) }
                 var showSyncDialog by remember { mutableStateOf(false) }
                 var showTermStartDialog by remember { mutableStateOf(false) }
-                var showSectionConfigDialog by remember { mutableStateOf(false) }
 
                 // 对话界面顶栏状态
                 var showChatGuideDialog by remember { mutableStateOf(false) }
@@ -377,23 +376,6 @@ class MainActivity : ComponentActivity() {
                                                         val nextDay = if (ScheduleManager.weekStartDay == "monday") "sunday" else "monday"
                                                         ScheduleManager.setWeekStartDay(nextDay, context)
                                                         Toast.makeText(context, if (nextDay == "monday") "课表已切换为周一开始" else "课表已切换为周日开始", Toast.LENGTH_SHORT).show()
-                                                    }
-                                                )
-                                                DropdownMenuItem(
-                                                    text = {
-                                                        val cfgText = when (ScheduleManager.maxSectionsConfig) {
-                                                            8 -> "固定 8 节 (白天)"
-                                                            10 -> "固定 10 节 (含晚自习)"
-                                                            12 -> "固定 12 节"
-                                                            13 -> "固定 13 节 (全天)"
-                                                            else -> "智能自适应 (免滑动)"
-                                                        }
-                                                        Text("日显示节数：$cfgText")
-                                                    },
-                                                    leadingIcon = { Icon(Icons.Default.FormatLineSpacing, null) },
-                                                    onClick = {
-                                                        showScheduleMenu = false
-                                                        showSectionConfigDialog = true
                                                     }
                                                 )
                                                 DropdownMenuItem(
@@ -593,19 +575,6 @@ class MainActivity : ComponentActivity() {
                 if (showSyncDialog) {
                     SyncDialog(
                         onDismiss = { showSyncDialog = false }
-                    )
-                }
-
-                if (showSectionConfigDialog) {
-                    SectionConfigDialog(
-                        currentConfig = ScheduleManager.maxSectionsConfig,
-                        onDismiss = { showSectionConfigDialog = false },
-                        onSelect = { cfg ->
-                            ScheduleManager.setMaxSectionsConfig(cfg, context)
-                            showSectionConfigDialog = false
-                            val msg = if (cfg == 0) "已切换为智能自适应节数（一屏看全免滑动）" else "已固定每日显示 $cfg 节"
-                            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
-                        }
                     )
                 }
 
