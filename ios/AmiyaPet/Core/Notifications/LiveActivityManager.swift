@@ -63,6 +63,7 @@ public struct AmiyaPomodoroAttributes: ActivityAttributes {
     }
 }
 
+@available(iOS 16.2, *)
 public class LiveActivityManager {
     public static let shared = LiveActivityManager()
 

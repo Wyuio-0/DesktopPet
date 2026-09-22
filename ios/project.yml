@@ -2,13 +2,13 @@ name: AmiyaPet
 options:
   bundleIdPrefix: com.amiya
   deploymentTarget:
-    iOS: "16.1"
+    iOS: "16.2"
   createIntermediateGroups: true
 targets:
   AmiyaPet:
     type: application
     platform: iOS
-    deploymentTarget: "16.1"
+    deploymentTarget: "16.2"
     sources:
       - path: AmiyaPet/App
       - path: AmiyaPet/Core
@@ -35,7 +35,7 @@ targets:
   AmiyaWidgets:
     type: app-extension
     platform: iOS
-    deploymentTarget: "16.1"
+    deploymentTarget: "16.2"
     sources:
       - path: AmiyaPet/Widgets
       - path: AmiyaPet/Core/Schedule/Course.swift

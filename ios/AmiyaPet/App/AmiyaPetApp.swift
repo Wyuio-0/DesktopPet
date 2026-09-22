@@ -19,16 +19,18 @@ struct AmiyaPetApp: App {
 
     private func checkAndRefreshLiveActivity() {
         guard ScheduleManager.shared.liveClassEnabled else { return }
-        if let active = ScheduleManager.shared.getActiveCourseNow() {
-            let nextInfo = ScheduleManager.shared.getNextUpcomingCourse()
-            let nextStr = nextInfo != nil ? "▷ 下一节课：\(nextInfo!.course.formattedSectionDisplay()) 《\(nextInfo!.course.name)》（📍\(nextInfo!.course.room)）" : "今日课程已全部结束，注意休息哦~"
-            LiveActivityManager.shared.startCourseActivity(
-                course: active.course,
-                elapsedMinutes: active.elapsedMinutes,
-                remainingMinutes: active.remainingMinutes,
-                progress: active.progress,
-                nextCoursePreview: nextStr
-            )
+        if #available(iOS 16.2, *) {
+            if let active = ScheduleManager.shared.getActiveCourseNow() {
+                let nextInfo = ScheduleManager.shared.getNextUpcomingCourse()
+                let nextStr = nextInfo != nil ? "▷ 下一节课：\(nextInfo!.course.formattedSectionDisplay()) 《\(nextInfo!.course.name)》（📍\(nextInfo!.course.room)）" : "今日课程已全部结束，注意休息哦~"
+                LiveActivityManager.shared.startCourseActivity(
+                    course: active.course,
+                    elapsedMinutes: active.elapsedMinutes,
+                    remainingMinutes: active.remainingMinutes,
+                    progress: active.progress,
+                    nextCoursePreview: nextStr
+                )
+            }
         }
     }
 }

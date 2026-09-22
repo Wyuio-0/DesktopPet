@@ -3,6 +3,8 @@ import WidgetKit
 import SwiftUI
 
 public struct AmiyaCourseLiveActivity: Widget {
+    public init() {}
+
     public var body: some WidgetConfiguration {
         ActivityConfiguration(for: AmiyaCourseAttributes.self) { context in
             // 锁屏与通知中心卡片视图
@@ -111,6 +113,8 @@ public struct AmiyaCourseLiveActivity: Widget {
 }
 
 public struct AmiyaPomodoroLiveActivity: Widget {
+    public init() {}
+
     public var body: some WidgetConfiguration {
         ActivityConfiguration(for: AmiyaPomodoroAttributes.self) { context in
             // 锁屏卡片

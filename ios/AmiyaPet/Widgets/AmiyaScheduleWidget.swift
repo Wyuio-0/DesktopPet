@@ -138,6 +138,8 @@ public struct AmiyaScheduleWidgetEntryView: View {
 public struct AmiyaScheduleWidget: Widget {
     let kind: String = "AmiyaScheduleWidget"
 
+    public init() {}
+
     public var body: some WidgetConfiguration {
         StaticConfiguration(kind: kind, provider: ScheduleTimelineProvider()) { entry in
             AmiyaScheduleWidgetEntryView(entry: entry)

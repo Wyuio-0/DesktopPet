@@ -74,7 +74,9 @@ public class PomodoroTimer: ObservableObject {
             self?.tick()
         }
         RunLoop.main.add(timer!, forMode: .common)
-        LiveActivityManager.shared.startPomodoroActivity(mode: mode, totalSeconds: totalSeconds, remainingSeconds: remainingSeconds)
+        if #available(iOS 16.2, *) {
+            LiveActivityManager.shared.startPomodoroActivity(mode: mode, totalSeconds: totalSeconds, remainingSeconds: remainingSeconds)
+        }
     }
 
     public func pause() {
@@ -82,7 +84,9 @@ public class PomodoroTimer: ObservableObject {
         state = .paused
         timer?.invalidate()
         timer = nil
-        LiveActivityManager.shared.updatePomodoroActivity(remainingSeconds: remainingSeconds, isPaused: true)
+        if #available(iOS 16.2, *) {
+            LiveActivityManager.shared.updatePomodoroActivity(remainingSeconds: remainingSeconds, isPaused: true)
+        }
     }
 
     public func resume() {
@@ -96,7 +100,9 @@ public class PomodoroTimer: ObservableObject {
         targetEndTime = nil
         state = .idle
         remainingSeconds = totalSeconds
-        LiveActivityManager.shared.endPomodoroActivity()
+        if #available(iOS 16.2, *) {
+            LiveActivityManager.shared.endPomodoroActivity()
+        }
     }
 
     private func tick() {
@@ -104,7 +110,9 @@ public class PomodoroTimer: ObservableObject {
         let diff = Int(ceil(target.timeIntervalSinceNow))
         if diff > 0 {
             remainingSeconds = diff
-            LiveActivityManager.shared.updatePomodoroActivity(remainingSeconds: remainingSeconds, isPaused: false)
+            if #available(iOS 16.2, *) {
+                LiveActivityManager.shared.updatePomodoroActivity(remainingSeconds: remainingSeconds, isPaused: false)
+            }
         } else {
             complete()
         }
@@ -116,7 +124,9 @@ public class PomodoroTimer: ObservableObject {
         state = .completed
         remainingSeconds = 0
         AudioServicesPlaySystemSound(1005) // 系统提示音
-        LiveActivityManager.shared.endPomodoroActivity()
+        if #available(iOS 16.2, *) {
+            LiveActivityManager.shared.endPomodoroActivity()
+        }
         onTimerFinished?(mode)
         NotificationCenter.default.post(name: NSNotification.Name("AmiyaPomodoroCompleted"), object: mode)
     }

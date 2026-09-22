@@ -101,12 +101,14 @@ public struct ScheduleSettingsModal: View {
             room: "主教楼 302",
             teacher: "王教授"
         )
-        LiveActivityManager.shared.startCourseActivity(
-            course: testCourse,
-            elapsedMinutes: 77,
-            remainingMinutes: 18,
-            progress: 0.81,
-            nextCoursePreview: "▷ 下一节课：14:05 第 6-7 节《大学物理》（📍实验楼 201）"
-        )
+        if #available(iOS 16.2, *) {
+            LiveActivityManager.shared.startCourseActivity(
+                course: testCourse,
+                elapsedMinutes: 77,
+                remainingMinutes: 18,
+                progress: 0.81,
+                nextCoursePreview: "▷ 下一节课：14:05 第 6-7 节《大学物理》（📍实验楼 201）"
+            )
+        }
     }
 }
