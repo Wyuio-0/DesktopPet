@@ -22,8 +22,8 @@ targets:
       base:
         PRODUCT_NAME: AmiyaPet
         PRODUCT_BUNDLE_IDENTIFIER: com.amiya.pet
-        MARKETING_VERSION: "1.9.3"
-        CURRENT_PROJECT_VERSION: "213"
+        MARKETING_VERSION: "1.9.4"
+        CURRENT_PROJECT_VERSION: "214"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         SWIFT_VERSION: "5.0"
         TARGETED_DEVICE_FAMILY: "1,2"
@@ -51,8 +51,8 @@ targets:
       base:
         PRODUCT_NAME: AmiyaWidgets
         PRODUCT_BUNDLE_IDENTIFIER: com.amiya.pet.widgets
-        MARKETING_VERSION: "1.9.3"
-        CURRENT_PROJECT_VERSION: "213"
+        MARKETING_VERSION: "1.9.4"
+        CURRENT_PROJECT_VERSION: "214"
         SWIFT_VERSION: "5.0"
         TARGETED_DEVICE_FAMILY: "1,2"
         CODE_SIGN_IDENTITY: ""

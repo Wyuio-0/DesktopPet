@@ -126,7 +126,7 @@ public class SyncManager: ObservableObject {
             "device_name": deviceName,
             "device_type": "ios",
             "http_port": syncPort,
-            "version": "1.9.3"
+            "version": "1.9.4"
         ]
         guard let data = try? JSONSerialization.data(withJSONObject: payload) else { return }
 
