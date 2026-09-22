@@ -342,7 +342,7 @@
 				zh_CN,
 			);
 			mainGroup = 450B220DE8EEB27904FC3DC4;
-			productRefGroup = {main_group_id};
+			productRefGroup = 450B220DE8EEB27904FC3DC4;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (

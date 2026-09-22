@@ -204,7 +204,7 @@ def main():
     out.append("\t\t\t\tzh_CN,")
     out.append("\t\t\t);")
     out.append(f"\t\t\tmainGroup = {main_group_id};")
-    out.append("\t\t\tproductRefGroup = {main_group_id};")
+    out.append(f"\t\t\tproductRefGroup = {main_group_id};")
     out.append("\t\t\tprojectDirPath = \"\";")
     out.append("\t\t\tprojectRoot = \"\";")
     out.append("\t\t\ttargets = (")
