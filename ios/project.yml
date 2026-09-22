@@ -3,7 +3,6 @@ options:
   bundleIdPrefix: com.amiya
   deploymentTarget:
     iOS: "16.1"
-  xcodeVersion: "15.0"
   createIntermediateGroups: true
 targets:
   AmiyaPet:
@@ -11,9 +10,14 @@ targets:
     platform: iOS
     deploymentTarget: "16.1"
     sources:
-      - path: AmiyaPet
+      - path: AmiyaPet/App
+      - path: AmiyaPet/Core
+      - path: AmiyaPet/UI
+      - path: AmiyaPet/Resources
     info:
       path: AmiyaPet/Resources/Info.plist
+    dependencies:
+      - target: AmiyaWidgets
     settings:
       base:
         PRODUCT_NAME: AmiyaPet
@@ -26,3 +30,32 @@ targets:
         CODE_SIGN_IDENTITY: ""
         CODE_SIGNING_REQUIRED: "NO"
         CODE_SIGNING_ALLOWED: "NO"
+        CODE_SIGN_STYLE: Manual
+
+  AmiyaWidgets:
+    type: app-extension
+    platform: iOS
+    deploymentTarget: "16.1"
+    sources:
+      - path: AmiyaPet/Widgets
+      - path: AmiyaPet/Core/Schedule/Course.swift
+      - path: AmiyaPet/Core/Schedule/ScheduleAdjustment.swift
+      - path: AmiyaPet/Core/Schedule/ScheduleManager.swift
+      - path: AmiyaPet/Core/Focus/PomodoroTimer.swift
+      - path: AmiyaPet/Core/Notifications/LiveActivityManager.swift
+      - path: AmiyaPet/UI/Main/AmiyaTheme.swift
+      - path: AmiyaPet/Resources/Assets.xcassets
+    info:
+      path: AmiyaPet/Widgets/Info.plist
+    settings:
+      base:
+        PRODUCT_NAME: AmiyaWidgets
+        PRODUCT_BUNDLE_IDENTIFIER: com.amiya.pet.widgets
+        MARKETING_VERSION: "1.9.3"
+        CURRENT_PROJECT_VERSION: "213"
+        SWIFT_VERSION: "5.0"
+        TARGETED_DEVICE_FAMILY: "1,2"
+        CODE_SIGN_IDENTITY: ""
+        CODE_SIGNING_REQUIRED: "NO"
+        CODE_SIGNING_ALLOWED: "NO"
+        CODE_SIGN_STYLE: Manual
