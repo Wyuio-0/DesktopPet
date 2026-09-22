@@ -1,0 +1,553 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		9DB98AA342642313E30455B5 /* AmiyaPetApp.swift in Sources/Resources */ = {isa = PBXBuildFile; fileRef = 95E7D9FA000E361296AE3C05 /* AmiyaPetApp.swift */; };
+		A5295B5B980969911C4C733E /* AppDelegate.swift in Sources/Resources */ = {isa = PBXBuildFile; fileRef = 422C64FFDEDB6BCA676B550E /* AppDelegate.swift */; };
+		5137C764803960BD0B4A173A /* AmiyaBrain.swift in Sources/Resources */ = {isa = PBXBuildFile; fileRef = A3B930C6AD82B73F29861F66 /* AmiyaBrain.swift */; };
+		ECF1CADCE1E8C8CC1BCB5D53 /* ChatMessage.swift in Sources/Resources */ = {isa = PBXBuildFile; fileRef = 4F4349813F6F1B1E1A7079EB /* ChatMessage.swift */; };
+		264FBD0A7FD2A696064F4648 /* PetSkinModel.swift in Sources/Resources */ = {isa = PBXBuildFile; fileRef = 3CB2667EAC0CD587DAD2A9E7 /* PetSkinModel.swift */; };
+		6C77329FFAA767667B5EC15C /* VoicePlayer.swift in Sources/Resources */ = {isa = PBXBuildFile; fileRef = 136D1BB1CB25A53571051983 /* VoicePlayer.swift */; };
+		8D9A18AF353CE71B5D47FC9B /* PomodoroTimer.swift in Sources/Resources */ = {isa = PBXBuildFile; fileRef = A59E9A11C888159CC3AFA49C /* PomodoroTimer.swift */; };
+		588D0458827CF321BFF448C2 /* Note.swift in Sources/Resources */ = {isa = PBXBuildFile; fileRef = 37963EF29D339F29E1E62533 /* Note.swift */; };
+		BA8C9665794FFA556597808F /* NotesManager.swift in Sources/Resources */ = {isa = PBXBuildFile; fileRef = FF253B92AB30A40DB15F44AA /* NotesManager.swift */; };
+		CE718159EC1F6B077B511A8C /* LiveActivityManager.swift in Sources/Resources */ = {isa = PBXBuildFile; fileRef = 8B67E9A856FDC678A9ED7173 /* LiveActivityManager.swift */; };
+		BF90B93F6BCEC7B187567D86 /* NotificationManager.swift in Sources/Resources */ = {isa = PBXBuildFile; fileRef = 4F6D5D32DCDA6002B8C2353B /* NotificationManager.swift */; };
+		C32A5343F47623BEAB8C66C8 /* CalendarManager.swift in Sources/Resources */ = {isa = PBXBuildFile; fileRef = 26F8C172D2D53A9B64DBB5ED /* CalendarManager.swift */; };
+		03E45A5EAC56E4104EA57768 /* Course.swift in Sources/Resources */ = {isa = PBXBuildFile; fileRef = 25068711594E3AAF871CB626 /* Course.swift */; };
+		C5CEC92410A9D857E0EDB5DA /* ExamManager.swift in Sources/Resources */ = {isa = PBXBuildFile; fileRef = B61615A19342637128C211EF /* ExamManager.swift */; };
+		0F6A12333DD8B41E2F0FFD69 /* IcsExporter.swift in Sources/Resources */ = {isa = PBXBuildFile; fileRef = 24C574A71D40263F27DF008F /* IcsExporter.swift */; };
+		41B492FE6973A5CFF73EE424 /* ScheduleAdjustment.swift in Sources/Resources */ = {isa = PBXBuildFile; fileRef = 04C4647466061369BF26759A /* ScheduleAdjustment.swift */; };
+		1F3729D2A5F81CA49E5564D8 /* ScheduleManager.swift in Sources/Resources */ = {isa = PBXBuildFile; fileRef = 1F94623C552EA06D3235B2B2 /* ScheduleManager.swift */; };
+		BF1A151EC60B65F9AEB8E833 /* SyncManager.swift in Sources/Resources */ = {isa = PBXBuildFile; fileRef = 3C32D2CBA8A6C9BE1CA74042 /* SyncManager.swift */; };
+		50A35CC4E7AD9163194A1F94 /* SyncModels.swift in Sources/Resources */ = {isa = PBXBuildFile; fileRef = 4428D6517FBBBF43A4303888 /* SyncModels.swift */; };
+		776A24801ECC7CF87FC7F50A /* UpdateManager.swift in Sources/Resources */ = {isa = PBXBuildFile; fileRef = 4ED88B82196F2C960764DC98 /* UpdateManager.swift */; };
+		5DC4B154F753433FDD6A2C22 /* AmiyaPetDockView.swift in Sources/Resources */ = {isa = PBXBuildFile; fileRef = 19B171C537DDC527F355867F /* AmiyaPetDockView.swift */; };
+		EC800A42A32957AB43542665 /* ChatView.swift in Sources/Resources */ = {isa = PBXBuildFile; fileRef = ED988465E5676731C6E0C9B1 /* ChatView.swift */; };
+		16653CAD6ADF5B5FE68B662A /* PRTSTacticalCards.swift in Sources/Resources */ = {isa = PBXBuildFile; fileRef = 5DB0979C45964B2176F14E9F /* PRTSTacticalCards.swift */; };
+		72FE2BA0F2303530D9D458F9 /* ExamEditModal.swift in Sources/Resources */ = {isa = PBXBuildFile; fileRef = F7FD55377E43DDF27E3EA419 /* ExamEditModal.swift */; };
+		488435409B774D62F46AFCB3 /* ExamScheduleView.swift in Sources/Resources */ = {isa = PBXBuildFile; fileRef = F7B737CDDDFC308AB01A828D /* ExamScheduleView.swift */; };
+		46666B00D5D48C24647CB070 /* AmiyaTheme.swift in Sources/Resources */ = {isa = PBXBuildFile; fileRef = C87127EC64752FB58E66CC80 /* AmiyaTheme.swift */; };
+		C3F9249DCCFDE70685D5F6D8 /* MainTabView.swift in Sources/Resources */ = {isa = PBXBuildFile; fileRef = 00A08FA8FBEA1BBB4CF9B931 /* MainTabView.swift */; };
+		1734A46CB68A41A2A19144AE /* NoteEditModal.swift in Sources/Resources */ = {isa = PBXBuildFile; fileRef = 0F7CC99B7076CB8F0640F0DA /* NoteEditModal.swift */; };
+		15180E5F99F41A66D5F3C766 /* NotesView.swift in Sources/Resources */ = {isa = PBXBuildFile; fileRef = 893ACADA207D116147E43470 /* NotesView.swift */; };
+		83C7A2FD4C2402AD64AA0778 /* PomodoroView.swift in Sources/Resources */ = {isa = PBXBuildFile; fileRef = 001766E5EEA369F532EB5629 /* PomodoroView.swift */; };
+		8D68F1B0C21EEF5CC937B333 /* CourseDetailModal.swift in Sources/Resources */ = {isa = PBXBuildFile; fileRef = 5223AFB88F10A2D1347E0F23 /* CourseDetailModal.swift */; };
+		A92A5C02670D79A349EE674E /* CourseEditModal.swift in Sources/Resources */ = {isa = PBXBuildFile; fileRef = BC5D9A2392D9002EFEFEC331 /* CourseEditModal.swift */; };
+		FAE39F5AF97A6FE09EA667F0 /* IcsExportModal.swift in Sources/Resources */ = {isa = PBXBuildFile; fileRef = 9381FD4CF024FFBAD713EC2B /* IcsExportModal.swift */; };
+		02A729F853539DDA4BD263E1 /* ScheduleImportModal.swift in Sources/Resources */ = {isa = PBXBuildFile; fileRef = A1AAFD724C12D9EEE515469A /* ScheduleImportModal.swift */; };
+		EEE9C39D9B44EA5635B14BA8 /* ScheduleSettingsModal.swift in Sources/Resources */ = {isa = PBXBuildFile; fileRef = C08FD72DEC0436F942A5771C /* ScheduleSettingsModal.swift */; };
+		442DA56EC0DA8E974B27D82D /* ScheduleView.swift in Sources/Resources */ = {isa = PBXBuildFile; fileRef = 917384A7B9257CE0C31754EB /* ScheduleView.swift */; };
+		0FFF703C0099912A2C0D12BD /* AIConfigModal.swift in Sources/Resources */ = {isa = PBXBuildFile; fileRef = A802B288F32B676EE7E02C50 /* AIConfigModal.swift */; };
+		793D6CD166D51782B20E3C8A /* SettingsView.swift in Sources/Resources */ = {isa = PBXBuildFile; fileRef = 339EEFC909FFF9BEA24C8678 /* SettingsView.swift */; };
+		5D5A13973A1C554F837ABB3E /* SyncModal.swift in Sources/Resources */ = {isa = PBXBuildFile; fileRef = C766F9720C3F204E9F9541F8 /* SyncModal.swift */; };
+		B7088918F0B0448EE45BCF8D /* WardrobeModal.swift in Sources/Resources */ = {isa = PBXBuildFile; fileRef = 34ED73074942055236EA119B /* WardrobeModal.swift */; };
+		86CEF7C90E57774000AD6874 /* AmiyaLiveActivity.swift in Sources/Resources */ = {isa = PBXBuildFile; fileRef = D45DB3B940E1499E801E56FB /* AmiyaLiveActivity.swift */; };
+		321E542688D6E3742570C65C /* AmiyaScheduleWidget.swift in Sources/Resources */ = {isa = PBXBuildFile; fileRef = 006E4C0775420D4C4FC5C6DC /* AmiyaScheduleWidget.swift */; };
+		BA93EF33FD58FFDE099EA012 /* AmiyaWidgetBundle.swift in Sources/Resources */ = {isa = PBXBuildFile; fileRef = 8606C2DA461CC4670E25D6F1 /* AmiyaWidgetBundle.swift */; };
+		D0687455C07D878E9DB04308 /* Assets.xcassets in Sources/Resources */ = {isa = PBXBuildFile; fileRef = 671E5B54412D9F8033A8454C /* Assets.xcassets */; };
+		CFD362CBF10AE9AC890A5901 /* 交谈1.wav in Sources/Resources */ = {isa = PBXBuildFile; fileRef = 283702C7F6D7B6F23805EE47 /* 交谈1.wav */; };
+		E2FC8497C7533EA427039668 /* 交谈2.wav in Sources/Resources */ = {isa = PBXBuildFile; fileRef = B7DBE33C1FF8AD60E7DE30F7 /* 交谈2.wav */; };
+		90617B93A346FF98245F5669 /* 交谈3.wav in Sources/Resources */ = {isa = PBXBuildFile; fileRef = 9AD5542482B9D342DAAB4F25 /* 交谈3.wav */; };
+		2B8AB4929DA97B3A387E9F8A /* 任命助理.wav in Sources/Resources */ = {isa = PBXBuildFile; fileRef = EB451DB612E0FC607A8BF428 /* 任命助理.wav */; };
+		FF37029B79B3E9F736D884DC /* 任命队长.wav in Sources/Resources */ = {isa = PBXBuildFile; fileRef = 4502D976B4D08614261114BD /* 任命队长.wav */; };
+		B335305ED46F7AB210C8A7F2 /* 作战中1.wav in Sources/Resources */ = {isa = PBXBuildFile; fileRef = DD5F1827D72B52F642DCA6D5 /* 作战中1.wav */; };
+		DE7C592D3E33C1D76001A47B /* 作战中2.wav in Sources/Resources */ = {isa = PBXBuildFile; fileRef = 62D53AB2A3E23587559E9077 /* 作战中2.wav */; };
+		5C97054B379AF90CC7AE4DC1 /* 作战中3.wav in Sources/Resources */ = {isa = PBXBuildFile; fileRef = BD3581975874D00CCDFA034A /* 作战中3.wav */; };
+		FD545B294873E3AEA83DF0D9 /* 作战中4.wav in Sources/Resources */ = {isa = PBXBuildFile; fileRef = 23E775419C3DBFBA7CE78ACA /* 作战中4.wav */; };
+		77EEEE22C3AF30A75FAA8189 /* 信赖提升后交谈1.wav in Sources/Resources */ = {isa = PBXBuildFile; fileRef = 0BBE7D0FC4D028304173AB27 /* 信赖提升后交谈1.wav */; };
+		1025C5CD2B258A82ACFE809E /* 信赖提升后交谈2.wav in Sources/Resources */ = {isa = PBXBuildFile; fileRef = E580FA9017FE1909EA9E6907 /* 信赖提升后交谈2.wav */; };
+		1937ED6FE087E61B7D2D5950 /* 信赖提升后交谈3.wav in Sources/Resources */ = {isa = PBXBuildFile; fileRef = B902828893BA9A5C52CC0B1D /* 信赖提升后交谈3.wav */; };
+		4F66A83C105F9BD1CB43AEF4 /* 信赖触摸.wav in Sources/Resources */ = {isa = PBXBuildFile; fileRef = A51140974F156E8C4F3C3ADA /* 信赖触摸.wav */; };
+		7A534CAD6BD2FE477C74B305 /* 周年庆典.wav in Sources/Resources */ = {isa = PBXBuildFile; fileRef = 7D428A2B05E872CB919FCC6F /* 周年庆典.wav */; };
+		F2C90DEDDA927E8473A9D225 /* 完成高难行动.wav in Sources/Resources */ = {isa = PBXBuildFile; fileRef = 810C5EFA827C99267D396744 /* 完成高难行动.wav */; };
+		D1C79C9ECE0F9D8951CE52E7 /* 干员报到.wav in Sources/Resources */ = {isa = PBXBuildFile; fileRef = 123830DB56684D2A1928F8D7 /* 干员报到.wav */; };
+		3E9CEFDCE39AF9F6558AF4B0 /* 戳一下.wav in Sources/Resources */ = {isa = PBXBuildFile; fileRef = 64CDEF2FC9FBFDB5440F758B /* 戳一下.wav */; };
+		783D1DEA29807343D889DD7A /* 新年祝福.wav in Sources/Resources */ = {isa = PBXBuildFile; fileRef = 0C7B0007FD945C00D455EE04 /* 新年祝福.wav */; };
+		91978BCF563CEEBA998A0093 /* 晋升后交谈1.wav in Sources/Resources */ = {isa = PBXBuildFile; fileRef = A82B385DCD646702F204E704 /* 晋升后交谈1.wav */; };
+		A7080DDC991C78237B25DEA7 /* 晋升后交谈2.wav in Sources/Resources */ = {isa = PBXBuildFile; fileRef = 3FEF7F27B98EC3A25E2F6EA5 /* 晋升后交谈2.wav */; };
+		5482D9ED21229BDA550217F4 /* 标题.wav in Sources/Resources */ = {isa = PBXBuildFile; fileRef = 5BA40FB1C4588B0CE1F0D0BB /* 标题.wav */; };
+		5BE89C5C2DD2244E51751AFF /* 生日.wav in Sources/Resources */ = {isa = PBXBuildFile; fileRef = 1F7B887313E92DCF3DC20E63 /* 生日.wav */; };
+		4ADF7515A7007F0670F61AE0 /* 编入队伍.wav in Sources/Resources */ = {isa = PBXBuildFile; fileRef = 358E78D6A9AD3A1919568179 /* 编入队伍.wav */; };
+		9123221A96537AE49149B804 /* 行动出发.wav in Sources/Resources */ = {isa = PBXBuildFile; fileRef = 7C80FB0E958C7DD65FC2EC48 /* 行动出发.wav */; };
+		95EECB9F053310D60D3D77A2 /* 行动失败.wav in Sources/Resources */ = {isa = PBXBuildFile; fileRef = 1ADDB313F7F2F85EE1FA170A /* 行动失败.wav */; };
+		9FED30EF4017C2DF8B469A50 /* 行动开始.wav in Sources/Resources */ = {isa = PBXBuildFile; fileRef = 6860107D60A5A33CC37A0C8C /* 行动开始.wav */; };
+		713299DD88F673BD210567EF /* 观看作战记录.wav in Sources/Resources */ = {isa = PBXBuildFile; fileRef = 2BF371DFE554A0DDD211FFB2 /* 观看作战记录.wav */; };
+		D6F29686E630BC9E2C8970AB /* 进驻设施.wav in Sources/Resources */ = {isa = PBXBuildFile; fileRef = 2C40500AA7814F4B9A57C0A9 /* 进驻设施.wav */; };
+		142DE6795DBA7024269663A8 /* 选中干员1.wav in Sources/Resources */ = {isa = PBXBuildFile; fileRef = D69982607CDB108FF054C035 /* 选中干员1.wav */; };
+		F7106A3AF9FE1C6903BCB2AF /* 选中干员2.wav in Sources/Resources */ = {isa = PBXBuildFile; fileRef = 3B072AA7EA57B2FB26D9C1EC /* 选中干员2.wav */; };
+		56B1760A7C45FD2B8A27512B /* 部署1.wav in Sources/Resources */ = {isa = PBXBuildFile; fileRef = 26189C9B7BC97E47AE5F21FF /* 部署1.wav */; };
+		B1C8BF8B63C3C118EC0E17D8 /* 部署2.wav in Sources/Resources */ = {isa = PBXBuildFile; fileRef = 19F43FC528639C34C3A0F076 /* 部署2.wav */; };
+		F324C43A49D105D1EBE21C64 /* 问候.wav in Sources/Resources */ = {isa = PBXBuildFile; fileRef = 30A0A919554C4FD2E5297828 /* 问候.wav */; };
+		28B60CA7C26AB2640E2663CE /* 闲置.wav in Sources/Resources */ = {isa = PBXBuildFile; fileRef = 412B8988C128708F088505A4 /* 闲置.wav */; };
+		7A488CB33860975320DAAEA7 /* 非3星结束行动.wav in Sources/Resources */ = {isa = PBXBuildFile; fileRef = 93EA20ADD96E45201B8D71BA /* 非3星结束行动.wav */; };
+		8E87FB5459A719E4D63AF4F7 /* ActivityKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E84C3C2DD9CB293C73A83D89 /* ActivityKit.framework */; };
+		BBD89180AFD3404ACCBC34DF /* WidgetKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 6FED6A8AC6108B9A2E4C4D60 /* WidgetKit.framework */; };
+		4722B15D52B4F777BFF4DBAF /* EventKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = E1EDFC0D9571B597A9C6A54D /* EventKit.framework */; };
+		211AFB54F3A25C24570BBC93 /* AVFoundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 9A45BCB41ECD5F9E55BAD985 /* AVFoundation.framework */; };
+		4D14AC601153E1A1D87E0B40 /* UserNotifications.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 602629BA42C04261D49BDC7C /* UserNotifications.framework */; };
+		5A57E478C68F204C12351916 /* Network.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = BE345E80BFF91D1D756B6C85 /* Network.framework */; };
+		BBB45A4F69BFE0A73F85F8B4 /* SwiftUI.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 6537CC992D0A5A47CD12256B /* SwiftUI.framework */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		B7E9B066F2AF6E667C808D6C /* AmiyaPet.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AmiyaPet.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		95E7D9FA000E361296AE3C05 /* AmiyaPetApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AmiyaPet/App/AmiyaPetApp.swift"; sourceTree = "<group>"; };
+		422C64FFDEDB6BCA676B550E /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AmiyaPet/App/AppDelegate.swift"; sourceTree = "<group>"; };
+		A3B930C6AD82B73F29861F66 /* AmiyaBrain.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AmiyaPet/Core/AI/AmiyaBrain.swift"; sourceTree = "<group>"; };
+		4F4349813F6F1B1E1A7079EB /* ChatMessage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AmiyaPet/Core/AI/ChatMessage.swift"; sourceTree = "<group>"; };
+		3CB2667EAC0CD587DAD2A9E7 /* PetSkinModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AmiyaPet/Core/Character/PetSkinModel.swift"; sourceTree = "<group>"; };
+		136D1BB1CB25A53571051983 /* VoicePlayer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AmiyaPet/Core/Character/VoicePlayer.swift"; sourceTree = "<group>"; };
+		A59E9A11C888159CC3AFA49C /* PomodoroTimer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AmiyaPet/Core/Focus/PomodoroTimer.swift"; sourceTree = "<group>"; };
+		37963EF29D339F29E1E62533 /* Note.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AmiyaPet/Core/Notes/Note.swift"; sourceTree = "<group>"; };
+		FF253B92AB30A40DB15F44AA /* NotesManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AmiyaPet/Core/Notes/NotesManager.swift"; sourceTree = "<group>"; };
+		8B67E9A856FDC678A9ED7173 /* LiveActivityManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AmiyaPet/Core/Notifications/LiveActivityManager.swift"; sourceTree = "<group>"; };
+		4F6D5D32DCDA6002B8C2353B /* NotificationManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AmiyaPet/Core/Notifications/NotificationManager.swift"; sourceTree = "<group>"; };
+		26F8C172D2D53A9B64DBB5ED /* CalendarManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AmiyaPet/Core/Schedule/CalendarManager.swift"; sourceTree = "<group>"; };
+		25068711594E3AAF871CB626 /* Course.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AmiyaPet/Core/Schedule/Course.swift"; sourceTree = "<group>"; };
+		B61615A19342637128C211EF /* ExamManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AmiyaPet/Core/Schedule/ExamManager.swift"; sourceTree = "<group>"; };
+		24C574A71D40263F27DF008F /* IcsExporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AmiyaPet/Core/Schedule/IcsExporter.swift"; sourceTree = "<group>"; };
+		04C4647466061369BF26759A /* ScheduleAdjustment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AmiyaPet/Core/Schedule/ScheduleAdjustment.swift"; sourceTree = "<group>"; };
+		1F94623C552EA06D3235B2B2 /* ScheduleManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AmiyaPet/Core/Schedule/ScheduleManager.swift"; sourceTree = "<group>"; };
+		3C32D2CBA8A6C9BE1CA74042 /* SyncManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AmiyaPet/Core/Sync/SyncManager.swift"; sourceTree = "<group>"; };
+		4428D6517FBBBF43A4303888 /* SyncModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AmiyaPet/Core/Sync/SyncModels.swift"; sourceTree = "<group>"; };
+		4ED88B82196F2C960764DC98 /* UpdateManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AmiyaPet/Core/System/UpdateManager.swift"; sourceTree = "<group>"; };
+		19B171C537DDC527F355867F /* AmiyaPetDockView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AmiyaPet/UI/Chat/AmiyaPetDockView.swift"; sourceTree = "<group>"; };
+		ED988465E5676731C6E0C9B1 /* ChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AmiyaPet/UI/Chat/ChatView.swift"; sourceTree = "<group>"; };
+		5DB0979C45964B2176F14E9F /* PRTSTacticalCards.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AmiyaPet/UI/Chat/PRTSTacticalCards.swift"; sourceTree = "<group>"; };
+		F7FD55377E43DDF27E3EA419 /* ExamEditModal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AmiyaPet/UI/Exam/ExamEditModal.swift"; sourceTree = "<group>"; };
+		F7B737CDDDFC308AB01A828D /* ExamScheduleView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AmiyaPet/UI/Exam/ExamScheduleView.swift"; sourceTree = "<group>"; };
+		C87127EC64752FB58E66CC80 /* AmiyaTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AmiyaPet/UI/Main/AmiyaTheme.swift"; sourceTree = "<group>"; };
+		00A08FA8FBEA1BBB4CF9B931 /* MainTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AmiyaPet/UI/Main/MainTabView.swift"; sourceTree = "<group>"; };
+		0F7CC99B7076CB8F0640F0DA /* NoteEditModal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AmiyaPet/UI/Notes/NoteEditModal.swift"; sourceTree = "<group>"; };
+		893ACADA207D116147E43470 /* NotesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AmiyaPet/UI/Notes/NotesView.swift"; sourceTree = "<group>"; };
+		001766E5EEA369F532EB5629 /* PomodoroView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AmiyaPet/UI/Pomodoro/PomodoroView.swift"; sourceTree = "<group>"; };
+		5223AFB88F10A2D1347E0F23 /* CourseDetailModal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AmiyaPet/UI/Schedule/CourseDetailModal.swift"; sourceTree = "<group>"; };
+		BC5D9A2392D9002EFEFEC331 /* CourseEditModal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AmiyaPet/UI/Schedule/CourseEditModal.swift"; sourceTree = "<group>"; };
+		9381FD4CF024FFBAD713EC2B /* IcsExportModal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AmiyaPet/UI/Schedule/IcsExportModal.swift"; sourceTree = "<group>"; };
+		A1AAFD724C12D9EEE515469A /* ScheduleImportModal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AmiyaPet/UI/Schedule/ScheduleImportModal.swift"; sourceTree = "<group>"; };
+		C08FD72DEC0436F942A5771C /* ScheduleSettingsModal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AmiyaPet/UI/Schedule/ScheduleSettingsModal.swift"; sourceTree = "<group>"; };
+		917384A7B9257CE0C31754EB /* ScheduleView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AmiyaPet/UI/Schedule/ScheduleView.swift"; sourceTree = "<group>"; };
+		A802B288F32B676EE7E02C50 /* AIConfigModal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AmiyaPet/UI/Settings/AIConfigModal.swift"; sourceTree = "<group>"; };
+		339EEFC909FFF9BEA24C8678 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AmiyaPet/UI/Settings/SettingsView.swift"; sourceTree = "<group>"; };
+		C766F9720C3F204E9F9541F8 /* SyncModal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AmiyaPet/UI/Settings/SyncModal.swift"; sourceTree = "<group>"; };
+		34ED73074942055236EA119B /* WardrobeModal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AmiyaPet/UI/Settings/WardrobeModal.swift"; sourceTree = "<group>"; };
+		D45DB3B940E1499E801E56FB /* AmiyaLiveActivity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AmiyaPet/Widgets/AmiyaLiveActivity.swift"; sourceTree = "<group>"; };
+		006E4C0775420D4C4FC5C6DC /* AmiyaScheduleWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AmiyaPet/Widgets/AmiyaScheduleWidget.swift"; sourceTree = "<group>"; };
+		8606C2DA461CC4670E25D6F1 /* AmiyaWidgetBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "AmiyaPet/Widgets/AmiyaWidgetBundle.swift"; sourceTree = "<group>"; };
+		671E5B54412D9F8033A8454C /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = "AmiyaPet/Resources/Assets.xcassets"; sourceTree = "<group>"; };
+		ABE8C93BAA96BF51AA985FFE /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "AmiyaPet/Resources/Info.plist"; sourceTree = "<group>"; };
+		283702C7F6D7B6F23805EE47 /* 交谈1.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = "AmiyaPet/Resources/Voices/交谈1.wav"; sourceTree = "<group>"; };
+		B7DBE33C1FF8AD60E7DE30F7 /* 交谈2.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = "AmiyaPet/Resources/Voices/交谈2.wav"; sourceTree = "<group>"; };
+		9AD5542482B9D342DAAB4F25 /* 交谈3.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = "AmiyaPet/Resources/Voices/交谈3.wav"; sourceTree = "<group>"; };
+		EB451DB612E0FC607A8BF428 /* 任命助理.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = "AmiyaPet/Resources/Voices/任命助理.wav"; sourceTree = "<group>"; };
+		4502D976B4D08614261114BD /* 任命队长.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = "AmiyaPet/Resources/Voices/任命队长.wav"; sourceTree = "<group>"; };
+		DD5F1827D72B52F642DCA6D5 /* 作战中1.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = "AmiyaPet/Resources/Voices/作战中1.wav"; sourceTree = "<group>"; };
+		62D53AB2A3E23587559E9077 /* 作战中2.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = "AmiyaPet/Resources/Voices/作战中2.wav"; sourceTree = "<group>"; };
+		BD3581975874D00CCDFA034A /* 作战中3.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = "AmiyaPet/Resources/Voices/作战中3.wav"; sourceTree = "<group>"; };
+		23E775419C3DBFBA7CE78ACA /* 作战中4.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = "AmiyaPet/Resources/Voices/作战中4.wav"; sourceTree = "<group>"; };
+		0BBE7D0FC4D028304173AB27 /* 信赖提升后交谈1.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = "AmiyaPet/Resources/Voices/信赖提升后交谈1.wav"; sourceTree = "<group>"; };
+		E580FA9017FE1909EA9E6907 /* 信赖提升后交谈2.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = "AmiyaPet/Resources/Voices/信赖提升后交谈2.wav"; sourceTree = "<group>"; };
+		B902828893BA9A5C52CC0B1D /* 信赖提升后交谈3.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = "AmiyaPet/Resources/Voices/信赖提升后交谈3.wav"; sourceTree = "<group>"; };
+		A51140974F156E8C4F3C3ADA /* 信赖触摸.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = "AmiyaPet/Resources/Voices/信赖触摸.wav"; sourceTree = "<group>"; };
+		7D428A2B05E872CB919FCC6F /* 周年庆典.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = "AmiyaPet/Resources/Voices/周年庆典.wav"; sourceTree = "<group>"; };
+		810C5EFA827C99267D396744 /* 完成高难行动.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = "AmiyaPet/Resources/Voices/完成高难行动.wav"; sourceTree = "<group>"; };
+		123830DB56684D2A1928F8D7 /* 干员报到.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = "AmiyaPet/Resources/Voices/干员报到.wav"; sourceTree = "<group>"; };
+		64CDEF2FC9FBFDB5440F758B /* 戳一下.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = "AmiyaPet/Resources/Voices/戳一下.wav"; sourceTree = "<group>"; };
+		0C7B0007FD945C00D455EE04 /* 新年祝福.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = "AmiyaPet/Resources/Voices/新年祝福.wav"; sourceTree = "<group>"; };
+		A82B385DCD646702F204E704 /* 晋升后交谈1.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = "AmiyaPet/Resources/Voices/晋升后交谈1.wav"; sourceTree = "<group>"; };
+		3FEF7F27B98EC3A25E2F6EA5 /* 晋升后交谈2.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = "AmiyaPet/Resources/Voices/晋升后交谈2.wav"; sourceTree = "<group>"; };
+		5BA40FB1C4588B0CE1F0D0BB /* 标题.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = "AmiyaPet/Resources/Voices/标题.wav"; sourceTree = "<group>"; };
+		1F7B887313E92DCF3DC20E63 /* 生日.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = "AmiyaPet/Resources/Voices/生日.wav"; sourceTree = "<group>"; };
+		358E78D6A9AD3A1919568179 /* 编入队伍.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = "AmiyaPet/Resources/Voices/编入队伍.wav"; sourceTree = "<group>"; };
+		7C80FB0E958C7DD65FC2EC48 /* 行动出发.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = "AmiyaPet/Resources/Voices/行动出发.wav"; sourceTree = "<group>"; };
+		1ADDB313F7F2F85EE1FA170A /* 行动失败.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = "AmiyaPet/Resources/Voices/行动失败.wav"; sourceTree = "<group>"; };
+		6860107D60A5A33CC37A0C8C /* 行动开始.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = "AmiyaPet/Resources/Voices/行动开始.wav"; sourceTree = "<group>"; };
+		2BF371DFE554A0DDD211FFB2 /* 观看作战记录.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = "AmiyaPet/Resources/Voices/观看作战记录.wav"; sourceTree = "<group>"; };
+		2C40500AA7814F4B9A57C0A9 /* 进驻设施.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = "AmiyaPet/Resources/Voices/进驻设施.wav"; sourceTree = "<group>"; };
+		D69982607CDB108FF054C035 /* 选中干员1.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = "AmiyaPet/Resources/Voices/选中干员1.wav"; sourceTree = "<group>"; };
+		3B072AA7EA57B2FB26D9C1EC /* 选中干员2.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = "AmiyaPet/Resources/Voices/选中干员2.wav"; sourceTree = "<group>"; };
+		26189C9B7BC97E47AE5F21FF /* 部署1.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = "AmiyaPet/Resources/Voices/部署1.wav"; sourceTree = "<group>"; };
+		19F43FC528639C34C3A0F076 /* 部署2.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = "AmiyaPet/Resources/Voices/部署2.wav"; sourceTree = "<group>"; };
+		30A0A919554C4FD2E5297828 /* 问候.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = "AmiyaPet/Resources/Voices/问候.wav"; sourceTree = "<group>"; };
+		412B8988C128708F088505A4 /* 闲置.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = "AmiyaPet/Resources/Voices/闲置.wav"; sourceTree = "<group>"; };
+		93EA20ADD96E45201B8D71BA /* 非3星结束行动.wav */ = {isa = PBXFileReference; lastKnownFileType = audio.wav; path = "AmiyaPet/Resources/Voices/非3星结束行动.wav"; sourceTree = "<group>"; };
+		E84C3C2DD9CB293C73A83D89 /* ActivityKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = ActivityKit.framework; path = System/Library/Frameworks/ActivityKit.framework; sourceTree = SDKROOT; };
+		6FED6A8AC6108B9A2E4C4D60 /* WidgetKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WidgetKit.framework; path = System/Library/Frameworks/WidgetKit.framework; sourceTree = SDKROOT; };
+		E1EDFC0D9571B597A9C6A54D /* EventKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = EventKit.framework; path = System/Library/Frameworks/EventKit.framework; sourceTree = SDKROOT; };
+		9A45BCB41ECD5F9E55BAD985 /* AVFoundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = AVFoundation.framework; path = System/Library/Frameworks/AVFoundation.framework; sourceTree = SDKROOT; };
+		602629BA42C04261D49BDC7C /* UserNotifications.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = UserNotifications.framework; path = System/Library/Frameworks/UserNotifications.framework; sourceTree = SDKROOT; };
+		BE345E80BFF91D1D756B6C85 /* Network.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Network.framework; path = System/Library/Frameworks/Network.framework; sourceTree = SDKROOT; };
+		6537CC992D0A5A47CD12256B /* SwiftUI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = SwiftUI.framework; path = System/Library/Frameworks/SwiftUI.framework; sourceTree = SDKROOT; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		A6E8E7DF88D31078DBF4E18B /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				8E87FB5459A719E4D63AF4F7 /* ActivityKit.framework in Frameworks */,
+				BBD89180AFD3404ACCBC34DF /* WidgetKit.framework in Frameworks */,
+				4722B15D52B4F777BFF4DBAF /* EventKit.framework in Frameworks */,
+				211AFB54F3A25C24570BBC93 /* AVFoundation.framework in Frameworks */,
+				4D14AC601153E1A1D87E0B40 /* UserNotifications.framework in Frameworks */,
+				5A57E478C68F204C12351916 /* Network.framework in Frameworks */,
+				BBB45A4F69BFE0A73F85F8B4 /* SwiftUI.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		450B220DE8EEB27904FC3DC4 = {
+			isa = PBXGroup;
+			children = (
+				95E7D9FA000E361296AE3C05 /* AmiyaPetApp.swift */,
+				422C64FFDEDB6BCA676B550E /* AppDelegate.swift */,
+				A3B930C6AD82B73F29861F66 /* AmiyaBrain.swift */,
+				4F4349813F6F1B1E1A7079EB /* ChatMessage.swift */,
+				3CB2667EAC0CD587DAD2A9E7 /* PetSkinModel.swift */,
+				136D1BB1CB25A53571051983 /* VoicePlayer.swift */,
+				A59E9A11C888159CC3AFA49C /* PomodoroTimer.swift */,
+				37963EF29D339F29E1E62533 /* Note.swift */,
+				FF253B92AB30A40DB15F44AA /* NotesManager.swift */,
+				8B67E9A856FDC678A9ED7173 /* LiveActivityManager.swift */,
+				4F6D5D32DCDA6002B8C2353B /* NotificationManager.swift */,
+				26F8C172D2D53A9B64DBB5ED /* CalendarManager.swift */,
+				25068711594E3AAF871CB626 /* Course.swift */,
+				B61615A19342637128C211EF /* ExamManager.swift */,
+				24C574A71D40263F27DF008F /* IcsExporter.swift */,
+				04C4647466061369BF26759A /* ScheduleAdjustment.swift */,
+				1F94623C552EA06D3235B2B2 /* ScheduleManager.swift */,
+				3C32D2CBA8A6C9BE1CA74042 /* SyncManager.swift */,
+				4428D6517FBBBF43A4303888 /* SyncModels.swift */,
+				4ED88B82196F2C960764DC98 /* UpdateManager.swift */,
+				19B171C537DDC527F355867F /* AmiyaPetDockView.swift */,
+				ED988465E5676731C6E0C9B1 /* ChatView.swift */,
+				5DB0979C45964B2176F14E9F /* PRTSTacticalCards.swift */,
+				F7FD55377E43DDF27E3EA419 /* ExamEditModal.swift */,
+				F7B737CDDDFC308AB01A828D /* ExamScheduleView.swift */,
+				C87127EC64752FB58E66CC80 /* AmiyaTheme.swift */,
+				00A08FA8FBEA1BBB4CF9B931 /* MainTabView.swift */,
+				0F7CC99B7076CB8F0640F0DA /* NoteEditModal.swift */,
+				893ACADA207D116147E43470 /* NotesView.swift */,
+				001766E5EEA369F532EB5629 /* PomodoroView.swift */,
+				5223AFB88F10A2D1347E0F23 /* CourseDetailModal.swift */,
+				BC5D9A2392D9002EFEFEC331 /* CourseEditModal.swift */,
+				9381FD4CF024FFBAD713EC2B /* IcsExportModal.swift */,
+				A1AAFD724C12D9EEE515469A /* ScheduleImportModal.swift */,
+				C08FD72DEC0436F942A5771C /* ScheduleSettingsModal.swift */,
+				917384A7B9257CE0C31754EB /* ScheduleView.swift */,
+				A802B288F32B676EE7E02C50 /* AIConfigModal.swift */,
+				339EEFC909FFF9BEA24C8678 /* SettingsView.swift */,
+				C766F9720C3F204E9F9541F8 /* SyncModal.swift */,
+				34ED73074942055236EA119B /* WardrobeModal.swift */,
+				D45DB3B940E1499E801E56FB /* AmiyaLiveActivity.swift */,
+				006E4C0775420D4C4FC5C6DC /* AmiyaScheduleWidget.swift */,
+				8606C2DA461CC4670E25D6F1 /* AmiyaWidgetBundle.swift */,
+				671E5B54412D9F8033A8454C /* Assets.xcassets */,
+				ABE8C93BAA96BF51AA985FFE /* Info.plist */,
+				283702C7F6D7B6F23805EE47 /* 交谈1.wav */,
+				B7DBE33C1FF8AD60E7DE30F7 /* 交谈2.wav */,
+				9AD5542482B9D342DAAB4F25 /* 交谈3.wav */,
+				EB451DB612E0FC607A8BF428 /* 任命助理.wav */,
+				4502D976B4D08614261114BD /* 任命队长.wav */,
+				DD5F1827D72B52F642DCA6D5 /* 作战中1.wav */,
+				62D53AB2A3E23587559E9077 /* 作战中2.wav */,
+				BD3581975874D00CCDFA034A /* 作战中3.wav */,
+				23E775419C3DBFBA7CE78ACA /* 作战中4.wav */,
+				0BBE7D0FC4D028304173AB27 /* 信赖提升后交谈1.wav */,
+				E580FA9017FE1909EA9E6907 /* 信赖提升后交谈2.wav */,
+				B902828893BA9A5C52CC0B1D /* 信赖提升后交谈3.wav */,
+				A51140974F156E8C4F3C3ADA /* 信赖触摸.wav */,
+				7D428A2B05E872CB919FCC6F /* 周年庆典.wav */,
+				810C5EFA827C99267D396744 /* 完成高难行动.wav */,
+				123830DB56684D2A1928F8D7 /* 干员报到.wav */,
+				64CDEF2FC9FBFDB5440F758B /* 戳一下.wav */,
+				0C7B0007FD945C00D455EE04 /* 新年祝福.wav */,
+				A82B385DCD646702F204E704 /* 晋升后交谈1.wav */,
+				3FEF7F27B98EC3A25E2F6EA5 /* 晋升后交谈2.wav */,
+				5BA40FB1C4588B0CE1F0D0BB /* 标题.wav */,
+				1F7B887313E92DCF3DC20E63 /* 生日.wav */,
+				358E78D6A9AD3A1919568179 /* 编入队伍.wav */,
+				7C80FB0E958C7DD65FC2EC48 /* 行动出发.wav */,
+				1ADDB313F7F2F85EE1FA170A /* 行动失败.wav */,
+				6860107D60A5A33CC37A0C8C /* 行动开始.wav */,
+				2BF371DFE554A0DDD211FFB2 /* 观看作战记录.wav */,
+				2C40500AA7814F4B9A57C0A9 /* 进驻设施.wav */,
+				D69982607CDB108FF054C035 /* 选中干员1.wav */,
+				3B072AA7EA57B2FB26D9C1EC /* 选中干员2.wav */,
+				26189C9B7BC97E47AE5F21FF /* 部署1.wav */,
+				19F43FC528639C34C3A0F076 /* 部署2.wav */,
+				30A0A919554C4FD2E5297828 /* 问候.wav */,
+				412B8988C128708F088505A4 /* 闲置.wav */,
+				93EA20ADD96E45201B8D71BA /* 非3星结束行动.wav */,
+				E84C3C2DD9CB293C73A83D89 /* ActivityKit.framework */,
+				6FED6A8AC6108B9A2E4C4D60 /* WidgetKit.framework */,
+				E1EDFC0D9571B597A9C6A54D /* EventKit.framework */,
+				9A45BCB41ECD5F9E55BAD985 /* AVFoundation.framework */,
+				602629BA42C04261D49BDC7C /* UserNotifications.framework */,
+				BE345E80BFF91D1D756B6C85 /* Network.framework */,
+				6537CC992D0A5A47CD12256B /* SwiftUI.framework */,
+				B7E9B066F2AF6E667C808D6C /* AmiyaPet.app */,
+			);
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		A4D28E5534C31F64490D47B1 /* AmiyaPet */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 16B36AFD00302EC1CB39BFDE /* Build configuration list for PBXNativeTarget "AmiyaPet" */;
+			buildPhases = (
+				65FA6119905E087A5E53253D /* Sources */,
+				A6E8E7DF88D31078DBF4E18B /* Frameworks */,
+				7997A58CB6F97DD5FFDE7900 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = AmiyaPet;
+			productName = AmiyaPet;
+			productReference = B7E9B066F2AF6E667C808D6C /* AmiyaPet.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		3BAEDC2D1AC902FCEC374883 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastUpgradeCheck = 1500;
+				TargetAttributes = {
+					A4D28E5534C31F64490D47B1 = {
+						CreatedOnToolsVersion = 15.0;
+					};
+				};
+			};
+			buildConfigurationList = E9898A0EB58D6691901DFE9F /* Build configuration list for PBXProject "AmiyaPet" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = zh_CN;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+				zh_CN,
+			);
+			mainGroup = 450B220DE8EEB27904FC3DC4;
+			productRefGroup = {main_group_id};
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				A4D28E5534C31F64490D47B1 /* AmiyaPet */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		7997A58CB6F97DD5FFDE7900 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				D0687455C07D878E9DB04308 /* Assets.xcassets in Resources */,
+				CFD362CBF10AE9AC890A5901 /* 交谈1.wav in Resources */,
+				E2FC8497C7533EA427039668 /* 交谈2.wav in Resources */,
+				90617B93A346FF98245F5669 /* 交谈3.wav in Resources */,
+				2B8AB4929DA97B3A387E9F8A /* 任命助理.wav in Resources */,
+				FF37029B79B3E9F736D884DC /* 任命队长.wav in Resources */,
+				B335305ED46F7AB210C8A7F2 /* 作战中1.wav in Resources */,
+				DE7C592D3E33C1D76001A47B /* 作战中2.wav in Resources */,
+				5C97054B379AF90CC7AE4DC1 /* 作战中3.wav in Resources */,
+				FD545B294873E3AEA83DF0D9 /* 作战中4.wav in Resources */,
+				77EEEE22C3AF30A75FAA8189 /* 信赖提升后交谈1.wav in Resources */,
+				1025C5CD2B258A82ACFE809E /* 信赖提升后交谈2.wav in Resources */,
+				1937ED6FE087E61B7D2D5950 /* 信赖提升后交谈3.wav in Resources */,
+				4F66A83C105F9BD1CB43AEF4 /* 信赖触摸.wav in Resources */,
+				7A534CAD6BD2FE477C74B305 /* 周年庆典.wav in Resources */,
+				F2C90DEDDA927E8473A9D225 /* 完成高难行动.wav in Resources */,
+				D1C79C9ECE0F9D8951CE52E7 /* 干员报到.wav in Resources */,
+				3E9CEFDCE39AF9F6558AF4B0 /* 戳一下.wav in Resources */,
+				783D1DEA29807343D889DD7A /* 新年祝福.wav in Resources */,
+				91978BCF563CEEBA998A0093 /* 晋升后交谈1.wav in Resources */,
+				A7080DDC991C78237B25DEA7 /* 晋升后交谈2.wav in Resources */,
+				5482D9ED21229BDA550217F4 /* 标题.wav in Resources */,
+				5BE89C5C2DD2244E51751AFF /* 生日.wav in Resources */,
+				4ADF7515A7007F0670F61AE0 /* 编入队伍.wav in Resources */,
+				9123221A96537AE49149B804 /* 行动出发.wav in Resources */,
+				95EECB9F053310D60D3D77A2 /* 行动失败.wav in Resources */,
+				9FED30EF4017C2DF8B469A50 /* 行动开始.wav in Resources */,
+				713299DD88F673BD210567EF /* 观看作战记录.wav in Resources */,
+				D6F29686E630BC9E2C8970AB /* 进驻设施.wav in Resources */,
+				142DE6795DBA7024269663A8 /* 选中干员1.wav in Resources */,
+				F7106A3AF9FE1C6903BCB2AF /* 选中干员2.wav in Resources */,
+				56B1760A7C45FD2B8A27512B /* 部署1.wav in Resources */,
+				B1C8BF8B63C3C118EC0E17D8 /* 部署2.wav in Resources */,
+				F324C43A49D105D1EBE21C64 /* 问候.wav in Resources */,
+				28B60CA7C26AB2640E2663CE /* 闲置.wav in Resources */,
+				7A488CB33860975320DAAEA7 /* 非3星结束行动.wav in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		65FA6119905E087A5E53253D /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				9DB98AA342642313E30455B5 /* AmiyaPetApp.swift in Sources */,
+				A5295B5B980969911C4C733E /* AppDelegate.swift in Sources */,
+				5137C764803960BD0B4A173A /* AmiyaBrain.swift in Sources */,
+				ECF1CADCE1E8C8CC1BCB5D53 /* ChatMessage.swift in Sources */,
+				264FBD0A7FD2A696064F4648 /* PetSkinModel.swift in Sources */,
+				6C77329FFAA767667B5EC15C /* VoicePlayer.swift in Sources */,
+				8D9A18AF353CE71B5D47FC9B /* PomodoroTimer.swift in Sources */,
+				588D0458827CF321BFF448C2 /* Note.swift in Sources */,
+				BA8C9665794FFA556597808F /* NotesManager.swift in Sources */,
+				CE718159EC1F6B077B511A8C /* LiveActivityManager.swift in Sources */,
+				BF90B93F6BCEC7B187567D86 /* NotificationManager.swift in Sources */,
+				C32A5343F47623BEAB8C66C8 /* CalendarManager.swift in Sources */,
+				03E45A5EAC56E4104EA57768 /* Course.swift in Sources */,
+				C5CEC92410A9D857E0EDB5DA /* ExamManager.swift in Sources */,
+				0F6A12333DD8B41E2F0FFD69 /* IcsExporter.swift in Sources */,
+				41B492FE6973A5CFF73EE424 /* ScheduleAdjustment.swift in Sources */,
+				1F3729D2A5F81CA49E5564D8 /* ScheduleManager.swift in Sources */,
+				BF1A151EC60B65F9AEB8E833 /* SyncManager.swift in Sources */,
+				50A35CC4E7AD9163194A1F94 /* SyncModels.swift in Sources */,
+				776A24801ECC7CF87FC7F50A /* UpdateManager.swift in Sources */,
+				5DC4B154F753433FDD6A2C22 /* AmiyaPetDockView.swift in Sources */,
+				EC800A42A32957AB43542665 /* ChatView.swift in Sources */,
+				16653CAD6ADF5B5FE68B662A /* PRTSTacticalCards.swift in Sources */,
+				72FE2BA0F2303530D9D458F9 /* ExamEditModal.swift in Sources */,
+				488435409B774D62F46AFCB3 /* ExamScheduleView.swift in Sources */,
+				46666B00D5D48C24647CB070 /* AmiyaTheme.swift in Sources */,
+				C3F9249DCCFDE70685D5F6D8 /* MainTabView.swift in Sources */,
+				1734A46CB68A41A2A19144AE /* NoteEditModal.swift in Sources */,
+				15180E5F99F41A66D5F3C766 /* NotesView.swift in Sources */,
+				83C7A2FD4C2402AD64AA0778 /* PomodoroView.swift in Sources */,
+				8D68F1B0C21EEF5CC937B333 /* CourseDetailModal.swift in Sources */,
+				A92A5C02670D79A349EE674E /* CourseEditModal.swift in Sources */,
+				FAE39F5AF97A6FE09EA667F0 /* IcsExportModal.swift in Sources */,
+				02A729F853539DDA4BD263E1 /* ScheduleImportModal.swift in Sources */,
+				EEE9C39D9B44EA5635B14BA8 /* ScheduleSettingsModal.swift in Sources */,
+				442DA56EC0DA8E974B27D82D /* ScheduleView.swift in Sources */,
+				0FFF703C0099912A2C0D12BD /* AIConfigModal.swift in Sources */,
+				793D6CD166D51782B20E3C8A /* SettingsView.swift in Sources */,
+				5D5A13973A1C554F837ABB3E /* SyncModal.swift in Sources */,
+				B7088918F0B0448EE45BCF8D /* WardrobeModal.swift in Sources */,
+				86CEF7C90E57774000AD6874 /* AmiyaLiveActivity.swift in Sources */,
+				321E542688D6E3742570C65C /* AmiyaScheduleWidget.swift in Sources */,
+				BA93EF33FD58FFDE099EA012 /* AmiyaWidgetBundle.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		EDF2539783D433988A316B18 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_TESTABILITY = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.1;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		20E4CE03CB913D0E9181E6D4 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				GCC_OPTIMIZATION_LEVEL = s;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.1;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		C8093434D62269C2FCE75750 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 213;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = AmiyaPet/Resources/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/Frameworks");
+				MARKETING_VERSION = 1.9.3;
+				PRODUCT_BUNDLE_IDENTIFIER = com.amiya.pet;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		AD81E02C6A5EE024F9BF2249 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 213;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = AmiyaPet/Resources/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = ("$(inherited)", "@executable_path/Frameworks");
+				MARKETING_VERSION = 1.9.3;
+				PRODUCT_BUNDLE_IDENTIFIER = com.amiya.pet;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		E9898A0EB58D6691901DFE9F /* Build configuration list for PBXProject "AmiyaPet" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				EDF2539783D433988A316B18 /* Debug */,
+				20E4CE03CB913D0E9181E6D4 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		16B36AFD00302EC1CB39BFDE /* Build configuration list for PBXNativeTarget "AmiyaPet" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				C8093434D62269C2FCE75750 /* Debug */,
+				AD81E02C6A5EE024F9BF2249 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+	};
+	rootObject = 3BAEDC2D1AC902FCEC374883 /* Project object */;
+}
