@@ -10,7 +10,7 @@ public struct ReleaseInfo {
 
 public class UpdateManager {
     public static let shared = UpdateManager()
-    public static let currentVersion = "1.9.4"
+    public static let currentVersion = "1.9.5"
     private static let repo = "Wyuio-0/DesktopPet"
 
     public func checkUpdate(completion: @escaping (Result<ReleaseInfo?, Error>) -> Void) {

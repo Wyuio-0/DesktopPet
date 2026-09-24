@@ -53,4 +53,4 @@ AmiyaPet-iOS 是专为 iPhone / iPad 设计的罗德岛阿米娅公开领袖桌�
 3. 点击 **Run (Cmd + R)** 即可一键编译并在设备上运行！
 
 ### 自动化构建 (CI/CD)
-本项目已在 `.github/workflows/ci.yml` 中集成基于 GitHub Actions `macos-14` 虚拟机的全自动化构建流水线。每次推送提交或发布版本标签（如 `v1.9.4`）时，GitHub 将自动编译生成未签名的测试包 `AmiyaPet-iOS-*.ipa` 与 `.zip` 并自动发布至 GitHub Releases 附件。
+本项目已在 `.github/workflows/ci.yml` 中集成基于 GitHub Actions `macos-14` 虚拟机的全自动化构建流水线。每次推送提交或发布版本标签（如 `v1.9.5`）时，GitHub 将自动编译生成未签名的测试包 `AmiyaPet-iOS-*.ipa` 与 `.zip` 并自动发布至 GitHub Releases 附件。
