@@ -473,6 +473,12 @@ class PetWindow(QtWidgets.QWidget):
         actions.set_confirm_provider(self._confirm_action)
         self.brain.knowledge = knowledge.KnowledgeBase(
             use_embed=self.prefs.get("knowledge_embed", True))
+        self.schedule.register_listener(self._on_schedule_changed)
+
+    def _on_schedule_changed(self):
+        """课表发生变更时在 UI 线程刷新信息面板。"""
+        if self._info_panel_widget is not None and self._info_panel_widget.isVisible():
+            QtCore.QTimer.singleShot(0, self._info_panel_widget._render_week)
 
     def _apply_knowledge_prefs(self):
         """设置里改讲义检索后端后重建知识库（重新加载 + 编码）。"""

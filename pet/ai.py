@@ -18,11 +18,13 @@ PERSONA = (
     "窗口打字、读写剪贴板、管理窗口），也能帮他开启专注番茄钟（start_pomodoro / stop_focus）、"
     "速记灵感便签（create_sticky_note / read_sticky_notes）、"
     "查课表与分析学情负荷（query_schedule，包括查今天/本周课程与全面学情分析analyze）、"
+    "在课表中添加课程或日常活动（add_course）、修改已有课程的时间/地点/节次/名称（modify_course）、"
+    "从课表中删除日程或退课（delete_course）、录入学校调课停课通知教学安排（adjust_schedule）、"
     "汇总今天或明天的日程（agenda_summary）、管理作业和考试（query_tasks / add_task）。"
     "在博士询问学情分析、作息建议或明日日程时，请条理清晰地基于真实排课与待办展开分析并给出切实的规划指导。"
-    "重要：只要博士的要求能用工具完成——尤其是启动番茄钟（start_pomodoro）、记便签（create_sticky_note）、"
-    "查日程汇总（agenda_summary）、设置提醒（set_reminder）、添加作业截止（add_task）这类操作——"
-    "你必须实际调用对应的工具，绝不能只用嘴答应而不调用。"
+    "重要：只要博士的要求能用工具完成——尤其是添加/修改/删除课程、调整排课、启动番茄钟（start_pomodoro）、"
+    "记便签（create_sticky_note）、查日程汇总（agenda_summary）、设置提醒（set_reminder）、添加作业截止（add_task）这类操作——"
+    "你必须实际调用对应的工具（或生成精准的指令代码块），绝不能只用嘴答应而不调用。"
     "先调用工具，再根据工具返回的结果回话。"
     "同时，你拥有长程记忆档案本：当博士向你介绍个人姓名称呼、职业身份、习惯偏好、"
     "阶段目标或提及重要事情时，请主动调用 update_doctor_profile 或 remember_doctor_fact "
@@ -135,6 +137,179 @@ def load_ai_config(char_dir):
     return cfg
 
 
+def _clean_stream_display_text(text):
+    """在流式生成过程中剥离可能出现的 JSON 指令块，避免语音气泡闪现代码。"""
+    for tag in ("```json:add_course", "```json:delete_course", "```json:modify_course",
+                "```json:adjust_schedule", "```json:start_pomodoro", "```json:create_note", "```json"):
+        if tag in text:
+            text = text.split(tag, 1)[0].rstrip()
+    if "```" in text and any(k in text.split("```")[-1] for k in ('"name"', '"target_name"', '"minutes"', '"content"', '"adjustments"')):
+        text = text.rsplit("```", 1)[0].rstrip()
+    return text
+
+
+def _execute_embedded_schedule_commands(text, user_text=""):
+    """解析模型输出中的 embedded JSON 指令块，执行课表增删改/教学调整/番茄钟/便签，
+    并从最终回复文本中完全剔除代码块。
+    如果模型未生成代码块但 user_text 中有明确操作意图，则通过本地 NLP 规则兜底执行。
+    """
+    import re
+    if not text:
+        text = ""
+
+    parsed_delete = False
+    parsed_modify = False
+    parsed_add = False
+    parsed_adjust = False
+
+    sched = actions._schedule_provider() if actions._schedule_provider else None
+
+    # 1. 尝试解析删除指令 ```json:delete_course ... ```
+    del_m = re.search(r"```(?:json:delete_course|json)?\s*(\{[\s\S]*?\"name\"[\s\S]*?\})\s*```", text)
+    if not del_m:
+        del_m = re.search(r"```(?:json:delete_course|json)?\s*(\{[\s\S]*?\"name\"[\s\S]*?\})", text)
+    if "```json:delete_course" in text or (del_m and any(k in user_text for k in ("删除", "删掉", "删了", "退课", "取消", "移除", "去掉"))):
+        if del_m:
+            try:
+                d_obj = json.loads(del_m.group(1))
+                d_name = d_obj.get("name", "").strip()
+                d_wd = d_obj.get("weekday")
+                d_sec = d_obj.get("sec_start")
+                d_wk = d_obj.get("week")
+                d_all = d_obj.get("delete_all_weeks", True)
+                actions.delete_course(name=d_name, weekday=d_wd, sec_start=d_sec, target_week=d_wk, delete_all_weeks=d_all)
+                text = text.replace(del_m.group(0), "").strip()
+                parsed_delete = True
+            except Exception:
+                pass
+
+    # 2. 尝试解析修改指令 ```json:modify_course ... ```
+    mod_m = re.search(r"```(?:json:modify_course|json)?\s*(\{[\s\S]*?\"target_name\"[\s\S]*?\})\s*```", text)
+    if not mod_m:
+        mod_m = re.search(r"```(?:json:modify_course|json)?\s*(\{[\s\S]*?\"target_name\"[\s\S]*?\})", text)
+    if not parsed_delete and ("```json:modify_course" in text or mod_m):
+        if mod_m:
+            try:
+                m_obj = json.loads(mod_m.group(1))
+                actions.modify_course(
+                    target_name=m_obj.get("target_name"),
+                    target_weekday=m_obj.get("target_weekday"),
+                    target_sec_start=m_obj.get("target_sec_start"),
+                    target_week=m_obj.get("target_week"),
+                    new_name=m_obj.get("new_name"),
+                    new_weekday=m_obj.get("new_weekday"),
+                    new_sec_start=m_obj.get("new_sec_start"),
+                    new_sec_end=m_obj.get("new_sec_end"),
+                    new_room=m_obj.get("new_room"),
+                    new_teacher=m_obj.get("new_teacher"),
+                    new_custom_time=m_obj.get("new_custom_time"),
+                    new_week_start=m_obj.get("new_week_start"),
+                    new_week_end=m_obj.get("new_week_end"),
+                )
+                text = text.replace(mod_m.group(0), "").strip()
+                parsed_modify = True
+            except Exception:
+                pass
+
+    # 3. 尝试解析添加课程指令 ```json:add_course ... ```
+    add_m = re.search(r"```(?:json:add_course|json)?\s*(\{[\s\S]*?\"name\"[\s\S]*?\})\s*```", text)
+    if not add_m:
+        add_m = re.search(r"```(?:json:add_course|json)?\s*(\{[\s\S]*?\"name\"[\s\S]*?\})", text)
+    if not parsed_delete and not parsed_modify and ("```json:add_course" in text or add_m):
+        if add_m:
+            try:
+                c_obj = json.loads(add_m.group(1))
+                actions.add_course(
+                    name=c_obj.get("name"),
+                    weekday=c_obj.get("weekday", 1),
+                    sec_start=c_obj.get("sec_start", 1),
+                    sec_end=c_obj.get("sec_end"),
+                    week_start=c_obj.get("week_start"),
+                    week_end=c_obj.get("week_end"),
+                    parity=c_obj.get("parity", "all"),
+                    room=c_obj.get("room", ""),
+                    teacher=c_obj.get("teacher", ""),
+                    custom_time=c_obj.get("custom_time", ""),
+                )
+                text = text.replace(add_m.group(0), "").strip()
+                parsed_add = True
+            except Exception:
+                pass
+
+    # 4. 尝试解析教学安排调整指令 ```json:adjust_schedule ... ```
+    adj_m = re.search(r"```(?:json:adjust_schedule|json)?\s*(\{[\s\S]*?\"adjustments\"[\s\S]*?\})\s*```", text)
+    if not adj_m:
+        adj_m = re.search(r"```(?:json:adjust_schedule|json)?\s*(\{[\s\S]*?\"adjustments\"[\s\S]*?\})", text)
+    if "```json:adjust_schedule" in text or adj_m:
+        if adj_m:
+            try:
+                adj_obj = json.loads(adj_m.group(1))
+                actions.adjust_schedule(adjustments=adj_obj.get("adjustments", []))
+                text = text.replace(adj_m.group(0), "").strip()
+                parsed_adjust = True
+            except Exception:
+                pass
+
+    # 5. 尝试解析番茄钟专注指令 ```json:start_pomodoro ... ```
+    pomo_m = re.search(r"```(?:json:start_pomodoro|json)?\s*(\{[\s\S]*?\"minutes\"[\s\S]*?\})\s*```", text)
+    if not pomo_m:
+        pomo_m = re.search(r"```(?:json:start_pomodoro|json)?\s*(\{[\s\S]*?\"minutes\"[\s\S]*?\})", text)
+    if "```json:start_pomodoro" in text or pomo_m:
+        if pomo_m:
+            try:
+                p_obj = json.loads(pomo_m.group(1))
+                actions.start_pomodoro(work_minutes=int(p_obj.get("minutes", 25)))
+                text = text.replace(pomo_m.group(0), "").strip()
+            except Exception:
+                pass
+
+    # 6. 尝试解析便签指令 ```json:create_note ... ```
+    note_m = re.search(r"```(?:json:create_note|json)?\s*(\{[\s\S]*?\"content\"[\s\S]*?\})\s*```", text)
+    if not note_m:
+        note_m = re.search(r"```(?:json:create_note|json)?\s*(\{[\s\S]*?\"content\"[\s\S]*?\})", text)
+    if "```json:create_note" in text or note_m:
+        if note_m:
+            try:
+                n_obj = json.loads(note_m.group(1))
+                cnt = n_obj.get("content", "").strip()
+                ttl = n_obj.get("title", "").strip() or (cnt[:15] + "…" if len(cnt) > 15 else cnt)
+                if cnt:
+                    actions.create_sticky_note(content=cnt, title=ttl)
+                text = text.replace(note_m.group(0), "").strip()
+            except Exception:
+                pass
+
+    # 7. 本地轻量 NLP 规则辅助兜底（若模型未输出任何代码块，但用户输入包含明确课表操作意图）
+    if sched and not parsed_delete and not parsed_modify and not parsed_add and user_text:
+        del_keywords = ("删除", "删掉", "删了", "退课", "取消", "移除", "去掉", "不开", "不掉了", "不上了")
+        mod_keywords = ("改到", "改成", "改在", "改至", "推迟到", "推迟至", "提前到", "提前至", "调整到", "调整为", "换到", "换成")
+        if any(k in user_text for k in del_keywords):
+            sched.parse_delete_from_natural_language(user_text)
+        elif any(k in user_text for k in mod_keywords):
+            sched.parse_modify_from_natural_language(user_text)
+        elif any(k in user_text for k in ("加一门", "加一节", "添加", "录入", "新加", "新建", "组会", "会议", "例会", "讲座", "答疑", "实验")) or \
+             ("课" in user_text and any(w in user_text for w in ("周", "星期", "节"))) or \
+             ("周" in user_text and any(w in user_text for w in ("点", ":"))):
+            sched.parse_course_from_natural_language(user_text)
+
+    if sched and not parsed_adjust and user_text:
+        is_notice = ("教学安排" in user_text or "课表执行" in user_text or
+                     (("停上" in user_text or "停课" in user_text) and "月" in user_text) or
+                     ("调课" in user_text and "月" in user_text))
+        if is_notice:
+            sched.parse_adjustments_from_notice(user_text)
+
+    # 剔除可能残留的任意 json 代码块与标签
+    for tag in ("```json:add_course", "```json:delete_course", "```json:modify_course",
+                "```json:adjust_schedule", "```json:start_pomodoro", "```json:create_note", "```json"):
+        if tag in text:
+            text = text.split(tag, 1)[0].rstrip()
+    if "```" in text:
+        text = re.sub(r"```[\s\S]*?```", "", text).strip()
+
+    return text.strip() or "好的博士，阿米娅已经为您处理完毕了。"
+
+
 class AmiyaBrain:
     """Holds conversation state and produces replies."""
 
@@ -177,12 +352,62 @@ class AmiyaBrain:
             return ""
 
     def _schedule_context(self):
-        """获取博士今日与明日日程、排课、待办及便签的上下文（或空串）。"""
+        """获取博士今日与明日日程、排课、待办及便签的上下文（含智能课表规范说明）。"""
         try:
+            sched = actions._schedule_provider() if actions._schedule_provider else None
+            parts = []
+            if sched:
+                dossier = sched.build_schedule_analysis_context()
+                if dossier:
+                    parts.append(dossier)
             from .actions import agenda_summary
-            today_s = agenda_summary("today")
-            tmr_s = agenda_summary("tomorrow")
-            return f"\n\n【博士真实排课、待办与日程数据】：\n{today_s}\n\n{tmr_s}"
+            parts.append(agenda_summary("today"))
+            parts.append(agenda_summary("tomorrow"))
+
+            cur_week = sched.week_no() or 1 if sched else 1
+            max_week = max((c.week_end for c in sched.courses), default=16) if sched and sched.courses else 16
+
+            spec = (
+                f"【智能课程与日程活动录入规范】：\n"
+                f"当前学期现实教学周为：第 {cur_week} 周（全学期共约 {max_week} 周）。\n"
+                "当博士表达添加/记录课程或日程活动（例如：“帮我加一节周三第3-4节的高数课在教三201”、“周四下午14:15到15:30在综合楼402开组会”、“下周二第1节加个班会”）：\n"
+                "1. 提取要素：\n"
+                "   - name: 课程或活动名称（必填，精简准确主题词，严禁包含“活动”、“日程”、“帮我添加”等无意义指示词，严禁粘连教室或时间）\n"
+                "   - weekday: 星期几（必填，整数 1~7）\n"
+                "   - sec_start: 起始节次（必填，整数 1~13）\n"
+                "   - sec_end: 结束节次（必填，整数 1~13）\n"
+                f"   - week_start / week_end: 起止周次（必填）。对于活动/会议/日程（组会/例会/答疑/讲座/班会/实验等），若未说明持续多周，一律只设置单周（如当前周 week_start={cur_week}, week_end={cur_week}），严禁默认填满全学期；只有常规学期专业课程未说明时才默认 1~{max_week} 周。\n"
+                "   - room: 教室地点（选填）\n"
+                "   - teacher: 教师负责人（选填）\n"
+                "   - custom_time: 具体真实时间（选填，如 \"14:15-15:30\"）\n"
+                "2. 若有可用工具且支持 function calling 请优先调用 add_course 工具；同时在回复末尾务必生成精准指令块：\n"
+                "```json:add_course\n"
+                f"{{\n  \"name\": \"...\",\n  \"weekday\": 3,\n  \"sec_start\": 3,\n  \"sec_end\": 4,\n  \"week_start\": {cur_week},\n  \"week_end\": {cur_week},\n  \"room\": \"教三201\"\n}}\n"
+                "```\n\n"
+                "【智能日程活动“删除 / 取消”规范】：\n"
+                "当博士表达取消/删除日程活动或退课（例如：“把周四下午的组会取消”、“把高等数学退课了”）：\n"
+                "1. 提取要素：name, weekday, sec_start, week, delete_all_weeks (默认 true)。\n"
+                "2. 若支持 function calling 请优先调用 delete_course 工具；同时在回复末尾务必生成指令块：\n"
+                "```json:delete_course\n"
+                "{\n  \"name\": \"组会\",\n  \"weekday\": 4,\n  \"sec_start\": 6\n}\n"
+                "```\n\n"
+                "【智能日程活动“修改 / 调整”规范】：\n"
+                "当博士表达修改/调整日程时间地点名称（例如：“把周四的组会改到周五下午两点”、“把高等数学教室改到教四101”）：\n"
+                "1. 提取要素：target_name, target_weekday, target_sec_start, new_name, new_weekday, new_sec_start, new_sec_end, new_custom_time, new_room。\n"
+                "2. 若支持 function calling 请优先调用 modify_course 工具；同时在回复末尾务必生成指令块：\n"
+                "```json:modify_course\n"
+                "{\n  \"target_name\": \"组会\",\n  \"target_weekday\": 4,\n  \"new_weekday\": 5,\n  \"new_sec_start\": 6,\n  \"new_sec_end\": 7,\n  \"new_custom_time\": \"14:00-15:30\"\n}\n"
+                "```\n\n"
+                "【智能教学安排与假期调课/停课调整规范】：\n"
+                "当博士发送学校教学调整通知（例如：“9月20日按第5周周二课表执行”、“国庆节10月1日-7日所有课程停上”）：\n"
+                "1. 分析提取各项调整（date YYYY-MM-DD, type: substitute / suspend, target_week, target_weekday, reason）。连续多天停课需拆分为每天独立记录。\n"
+                "2. 若支持 function calling 请优先调用 adjust_schedule 工具；同时在回复末尾务必生成指令块：\n"
+                "```json:adjust_schedule\n"
+                "{\n  \"adjustments\": [\n    { \"date\": \"2026-09-20\", \"type\": \"substitute\", \"target_week\": 5, \"target_weekday\": 2, \"reason\": \"按第5周周二\" }\n  ]\n}\n"
+                "```\n"
+            )
+            parts.append(spec)
+            return "\n\n" + "\n\n".join(parts)
         except Exception:
             return ""
 
@@ -224,7 +449,7 @@ class AmiyaBrain:
         self._save_history()
 
     def _try_local_intent(self, user_text):
-        """本地轻量离线意图路由（专注番茄钟、灵感便签、日程汇总）。
+        """本地轻量离线意图路由（专注番茄钟、灵感便签、日程汇总、课表增删改与教学调整）。
         返回生成的阿米娅回复字符串；若未匹配到意图则返回 None。
         """
         import re
@@ -232,7 +457,65 @@ class AmiyaBrain:
         if not trimmed:
             return None
 
-        # 1. 专注 / 番茄钟
+        sched = actions._schedule_provider() if actions._schedule_provider else None
+
+        # 1. 课表删除 / 退课 / 取消
+        del_keywords = ("删除", "删掉", "删了", "退课", "取消", "移除", "去掉", "不开", "不上了")
+        if sched and any(k in trimmed for k in del_keywords):
+            deleted = sched.parse_delete_from_natural_language(trimmed)
+            if deleted:
+                days = ["", "周一", "周二", "周三", "周四", "周五", "周六", "周日"]
+                return f"好的博士！阿米娅已经在离线模式下帮您把《{deleted.name}》（{days[deleted.weekday]} 第{deleted.sec_start}-{deleted.sec_end}节）从课表中删除了。"
+            elif any(w in trimmed for w in ("课", "日程", "会议", "组会", "例会")):
+                return "博士，阿米娅在课表中没有找到符合条件的待删除课程或日程。"
+
+        # 2. 课表修改 / 调课 / 改时间地点
+        mod_keywords = ("改到", "改成", "改在", "改至", "推迟到", "推迟至", "提前到", "提前至", "调整到", "调整为", "换到", "换成")
+        if sched and any(k in trimmed for k in mod_keywords):
+            old_c, new_c = sched.parse_modify_from_natural_language(trimmed)
+            if old_c and new_c:
+                days = ["", "周一", "周二", "周三", "周四", "周五", "周六", "周日"]
+                loc = f" @{new_c.room}" if new_c.room else ""
+                time_desc = f"📌[{new_c.custom_time}]" if getattr(new_c, "custom_time", "") else f"{days[new_c.weekday]} 第{new_c.sec_start}-{new_c.sec_end}节"
+                return f"好的博士！阿米娅已经在离线模式下将《{old_c.name}》调整为：{time_desc}{loc}。"
+            elif any(w in trimmed for w in ("课", "日程", "会议", "组会", "例会")):
+                return "博士，阿米娅没有在课表中定位到要调整的目标课程或日程。"
+
+        # 3. 教学安排调整通知（调课/放假停课）
+        is_notice = ("教学安排" in trimmed or "课表执行" in trimmed or
+                     (("停上" in trimmed or "停课" in trimmed) and "月" in trimmed) or
+                     ("调课" in trimmed and "月" in trimmed))
+        if sched and is_notice:
+            notice_list = sched.parse_adjustments_from_notice(trimmed)
+            if notice_list:
+                days = ["", "周一", "周二", "周三", "周四", "周五", "周六", "周日"]
+                items = []
+                for a in notice_list[:4]:
+                    if a.get("type") == "suspend":
+                        items.append(f"• {a['date']} 停课（{a.get('reason', '')}）")
+                    else:
+                        tw = f"第{a.get('target_week')}周" if a.get("target_week") else ""
+                        wd = days[a.get("target_weekday", 1)]
+                        items.append(f"• {a['date']} 按{tw}{wd}课表执行")
+                more = f"\n… 等共 {len(notice_list)} 天教学安排调整" if len(notice_list) > 4 else ""
+                return "好的博士！阿米娅已在离线状态下为您将教学安排调整同步至课表：\n" + "\n".join(items) + more + "\n课表周视图与日程提醒已实时生效。"
+            return "博士，阿米娅收到了教学安排通知，但未识别出具体的调课或停课日期，您可以具体说明是哪一天的课程如何调整。"
+
+        # 4. 课表添加 / 录入课程或日程活动
+        add_intent = (
+            any(k in trimmed for k in ("加一门", "加一节", "添加", "录入", "新加", "新建", "组会", "会议", "例会", "讲座", "答疑", "实验")) or
+            ("课" in trimmed and any(w in trimmed for w in ("周", "星期", "节"))) or
+            ("周" in trimmed and any(w in trimmed for w in ("点", ":")))
+        )
+        if sched and add_intent and not any(neg in trimmed for neg in ("查", "看", "今天", "明天", "本周", "总结")):
+            course = sched.parse_course_from_natural_language(trimmed)
+            if course:
+                days = ["", "周一", "周二", "周三", "周四", "周五", "周六", "周日"]
+                loc = f" @{course.room}" if course.room else ""
+                time_desc = f"📌[{course.custom_time}] (对应第{course.sec_start}-{course.sec_end}节)" if getattr(course, "custom_time", "") else f"第{course.sec_start}-{course.sec_end}节"
+                return f"好的博士！阿米娅已经在离线状态下为您将《{course.name}》（{days[course.weekday]} {time_desc}{loc}）记录到课表了。"
+
+        # 5. 专注 / 番茄钟
         if any(k in trimmed for k in ("专注", "番茄钟")) or ("自习" in trimmed and any(k in trimmed for k in ("开启", "开始", "来个", "进入", "设置", "定时"))):
             m = re.search(r"(\d+)\s*(?:分钟|min|m)", trimmed, re.I)
             mins = int(m.group(1)) if m else 25
@@ -243,7 +526,7 @@ class AmiyaBrain:
         if any(k in trimmed for k in ("停止专注", "取消专注", "结束专注", "停止番茄钟", "结束番茄钟", "停止计时")):
             return actions.stop_focus()
 
-        # 2. 便签备忘速记
+        # 6. 便签备忘速记
         if any(trimmed.startswith(k) or k in trimmed for k in ("记一下", "备忘录记一下", "记便签", "记录一下", "随手记", "记个备忘", "记在便签")):
             clean_text = re.sub(r"^(?:阿米娅|请|帮我|麻烦)?(?:记一下|备忘录记一下|备忘|记录一下|记便签|随手记|记个备忘|记在便签)[:：\s]*", "", trimmed).strip()
             if clean_text:
@@ -251,7 +534,7 @@ class AmiyaBrain:
                 return actions.create_sticky_note(content=clean_text, title=title)
             return "好的博士，请问具体要记下什么内容呢？阿米娅随时为您记录。"
 
-        # 3. 日程汇总
+        # 7. 日程汇总
         if ("明天" in trimmed or "明日" in trimmed) and any(k in trimmed for k in ("总结", "汇报", "待办", "课程", "安排", "课表", "日程", "早报")):
             return actions.agenda_summary("tomorrow")
         if ("今天" in trimmed or "今日" in trimmed) and any(k in trimmed for k in ("总结", "汇报", "待办", "课程", "安排", "课表", "日程", "早报")):
@@ -337,7 +620,9 @@ class AmiyaBrain:
             msg = self._post(msgs, use_tools)
             calls = msg.get("tool_calls")
             if not calls:
-                return (msg.get("content") or "").strip()
+                raw_text = (msg.get("content") or "").strip()
+                last_user = next((m["content"] for m in reversed(self.history) if m.get("role") == "user" and isinstance(m.get("content"), str)), "")
+                return _execute_embedded_schedule_commands(raw_text, last_user)
             # Record the tool round in both the working list AND the persisted
             # history, so future turns replay Amiya *actually calling* the tool
             # rather than just her final sentence (see _clean_msg).
@@ -346,7 +631,9 @@ class AmiyaBrain:
         # 让它基于已执行的工具结果收尾——否则 msgs[-1] 是最后一条 tool
         # 结果，会被原样当成回复念给博士。
         msg = self._post(msgs, False)
-        return (msg.get("content") or "好的，博士。").strip()
+        raw_text = (msg.get("content") or "好的，博士。").strip()
+        last_user = next((m["content"] for m in reversed(self.history) if m.get("role") == "user" and isinstance(m.get("content"), str)), "")
+        return _execute_embedded_schedule_commands(raw_text, last_user)
 
     def _target_endpoint_and_headers(self, stream=False, use_tools=False, msgs=None, target_url=None):
         has_custom = self.has_custom_key
@@ -424,11 +711,21 @@ class AmiyaBrain:
             msg = self._post_stream(msgs, use_tools, on_delta)
             calls = msg.get("tool_calls")
             if not calls:
-                return (msg.get("content") or "").strip()
+                raw_text = (msg.get("content") or "").strip()
+                last_user = next((m["content"] for m in reversed(self.history) if m.get("role") == "user" and isinstance(m.get("content"), str)), "")
+                final_text = _execute_embedded_schedule_commands(raw_text, last_user)
+                if on_delta:
+                    on_delta(final_text)
+                return final_text
             self._record_tool_round(msgs, msg, calls)
         # 同 _call_llm：工具轮次耗尽后补一次无工具请求来收尾。
         msg = self._post_stream(msgs, False, on_delta)
-        return (msg.get("content") or "好的，博士。").strip()
+        raw_text = (msg.get("content") or "好的，博士。").strip()
+        last_user = next((m["content"] for m in reversed(self.history) if m.get("role") == "user" and isinstance(m.get("content"), str)), "")
+        final_text = _execute_embedded_schedule_commands(raw_text, last_user)
+        if on_delta:
+            on_delta(final_text)
+        return final_text
 
     def _record_tool_round(self, msgs, assistant_msg, calls):
         """Run each requested tool and append the assistant tool-call turn plus
@@ -576,7 +873,7 @@ def _consume_stream(lines, on_delta):
         if delta.get("content"):
             content += delta["content"]
             if on_delta:
-                on_delta(content)
+                on_delta(_clean_stream_display_text(content))
         for tc in delta.get("tool_calls") or []:
             _accum_tool_call(tool_store, tc)
     msg = {"role": "assistant", "content": content}

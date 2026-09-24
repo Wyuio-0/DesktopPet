@@ -793,6 +793,141 @@ def query_schedule(scope="today"):
     return _fmt_courses("今天", sched.today(week_no), sched, week_no)
 
 
+def add_course(name, weekday, sec_start=1, sec_end=None, week_start=None, week_end=None,
+               parity="all", room="", teacher="", custom_time=""):
+    """添加一门课程或日程活动到课表。"""
+    sched = _schedule_provider() if _schedule_provider else None
+    if sched is None:
+        return "课表组件未就绪，无法添加课程。"
+    from .schedule import Course, resolve_week_range
+    name = (name or "").strip()
+    if not name:
+        return "课程名称不能为空。"
+    try:
+        wd = int(weekday)
+        if not 1 <= wd <= 7:
+            return "星期参数无效（需为1-7）。"
+    except (TypeError, ValueError):
+        return "星期参数无效。"
+
+    custom_time = (custom_time or "").strip()
+    try:
+        s_start = int(sec_start) if sec_start is not None else 1
+    except (TypeError, ValueError):
+        s_start = 1
+    try:
+        s_end = int(sec_end) if sec_end is not None else max(s_start, min(s_start + 1, 13))
+    except (TypeError, ValueError):
+        s_end = max(s_start, min(s_start + 1, 13))
+
+    if custom_time and "-" in custom_time:
+        parts = custom_time.split("-", 1)
+        s_start, s_end = sched.snap_time_to_sections(parts[0].strip(), parts[1].strip())
+
+    cur_week = sched.week_no() or 1
+    max_w = max((c.week_end for c in sched.courses), default=16)
+    if week_start is None or week_end is None:
+        w_start, w_end = resolve_week_range(name, name, custom_time, 1, max_w, cur_week, max_w)
+        if week_start is not None:
+            w_start = int(week_start)
+        if week_end is not None:
+            w_end = int(week_end)
+    else:
+        w_start = int(week_start)
+        w_end = int(week_end)
+
+    course = Course(
+        name=name, weekday=wd, sec_start=s_start, sec_end=s_end,
+        week_start=w_start, week_end=w_end, parity=parity or "all",
+        room=(room or "").strip(), teacher=(teacher or "").strip(),
+        custom_time=custom_time, note="AI添加"
+    )
+    sched.add_course(course)
+    days = ["", "周一", "周二", "周三", "周四", "周五", "周六", "周日"]
+    loc = f" @{course.room}" if course.room else ""
+    time_info = f"📌[{course.custom_time}] " if course.custom_time else ""
+    return f"已成功为博士将《{course.name}》添加到课表：{days[course.weekday]} {time_info}第{course.sec_start}-{course.sec_end}节（第{course.week_start}-{course.week_end}周）{loc}。"
+
+
+def modify_course(target_name, target_weekday=None, target_sec_start=None, target_week=None,
+                  new_name=None, new_weekday=None, new_sec_start=None, new_sec_end=None,
+                  new_room=None, new_teacher=None, new_custom_time=None,
+                  new_week_start=None, new_week_end=None):
+    """修改课表中指定课程/日程的信息（时间、地点、节次、名称等）。"""
+    sched = _schedule_provider() if _schedule_provider else None
+    if sched is None:
+        return "课表组件未就绪，无法修改课程。"
+    old_c, new_c = sched.modify_course_matching(
+        target_name=target_name,
+        target_weekday=int(target_weekday) if target_weekday is not None else None,
+        target_sec_start=int(target_sec_start) if target_sec_start is not None else None,
+        target_week=int(target_week) if target_week is not None else None,
+        new_name=new_name,
+        new_weekday=int(new_weekday) if new_weekday is not None else None,
+        new_sec_start=int(new_sec_start) if new_sec_start is not None else None,
+        new_sec_end=int(new_sec_end) if new_sec_end is not None else None,
+        new_room=new_room,
+        new_teacher=new_teacher,
+        new_custom_time=new_custom_time,
+        new_week_start=int(new_week_start) if new_week_start is not None else None,
+        new_week_end=int(new_week_end) if new_week_end is not None else None
+    )
+    if not old_c or not new_c:
+        return f"未能在课表中找到匹配的课程「{target_name}」，请确认课程名称或时间。"
+    days = ["", "周一", "周二", "周三", "周四", "周五", "周六", "周日"]
+    loc = f" @{new_c.room}" if new_c.room else ""
+    time_info = f"📌[{new_c.custom_time}] " if getattr(new_c, "custom_time", "") else ""
+    return f"已成功为博士调整课程安排：将《{old_c.name}》修改为《{new_c.name}》，{days[new_c.weekday]} {time_info}第{new_c.sec_start}-{new_c.sec_end}节（第{new_c.week_start}-{new_c.week_end}周）{loc}。"
+
+
+def delete_course(name, weekday=None, sec_start=None, target_week=None, room=None, delete_all_weeks=True):
+    """从课表中删除指定的课程/日程（支持整门删除或指定单周豁免）。"""
+    sched = _schedule_provider() if _schedule_provider else None
+    if sched is None:
+        return "课表组件未就绪，无法删除课程。"
+    deleted = sched.delete_course_matching(
+        name=name,
+        weekday=int(weekday) if weekday is not None else None,
+        sec_start=int(sec_start) if sec_start is not None else None,
+        target_week=int(target_week) if target_week is not None else None,
+        room=room,
+        delete_all_weeks=bool(delete_all_weeks)
+    )
+    if not deleted:
+        return f"未能在课表中找到匹配的课程「{name}」，未能删除。"
+    days = ["", "周一", "周二", "周三", "周四", "周五", "周六", "周日"]
+    scope_str = "整门课程" if delete_all_weeks or target_week is None else f"第 {target_week} 周"
+    return f"已成功为博士从课表中移除《{deleted.name}》（{days[deleted.weekday]} 第{deleted.sec_start}-{deleted.sec_end}节，{scope_str}）。"
+
+
+def adjust_schedule(notice_text=None, clear_all=False, adjustments=None):
+    """调整教学安排（从教务处放假/补课通知文本解析，或直接应用调整规则，或清空调整）。"""
+    sched = _schedule_provider() if _schedule_provider else None
+    if sched is None:
+        return "课表组件未就绪，无法调整教学安排。"
+    if clear_all:
+        sched.clear_adjustments()
+        return "已为博士清空所有教学安排调课与停课规则。"
+    if adjustments and isinstance(adjustments, list):
+        sched.add_adjustments(adjustments)
+        return f"已成功为博士添加 {len(adjustments)} 条教学调整记录。"
+    if notice_text:
+        adjs = sched.parse_adjustments_from_notice(notice_text)
+        if not adjs:
+            return "未能从提供的通知文本中解析出调课或停课安排，请检查文本格式。"
+        desc = []
+        days = ["", "周一", "周二", "周三", "周四", "周五", "周六", "周日"]
+        for a in adjs:
+            if a.get("type") == "suspend":
+                desc.append(f"{a['date']} 停课（{a.get('reason', '')}）")
+            elif a.get("type") == "substitute":
+                tw = f"第{a.get('target_week')}周" if a.get("target_week") else ""
+                wd = days[a.get("target_weekday", 1)]
+                desc.append(f"{a['date']} 按{tw}{wd}课表执行")
+        return f"已成功解析并执行教学调整（共 {len(adjs)} 条）：\n" + "\n".join(desc)
+    return "请提供教务处通知文本或设置 clear_all=True。"
+
+
 def query_tasks():
     """列出未完成的作业/考试及剩余时间。"""
     tasks = _tasks_provider() if _tasks_provider else None
@@ -1057,6 +1192,8 @@ _HANDLERS = {
     "lock_screen": lock_screen, "screenshot": screenshot,
     "get_datetime": get_datetime, "set_reminder": set_reminder,
     "query_schedule": query_schedule, "query_tasks": query_tasks,
+    "add_course": add_course, "modify_course": modify_course,
+    "delete_course": delete_course, "adjust_schedule": adjust_schedule,
     "add_task": add_task, "today_summary": today_summary,
     "agenda_summary": agenda_summary,
     "start_pomodoro": start_pomodoro, "stop_focus": stop_focus,
@@ -1165,6 +1302,45 @@ TOOLS = [
         {"scope": {"type": "string",
                    "enum": ["today", "tomorrow", "week", "next", "analyze", "all"],
                    "description": "today=今天, tomorrow=明天, week=本周, next=下一节课, analyze=全量学情负荷分析与作息规划建议"}},
+        []),
+    _fn("add_course", "在课表中添加一门新课程或日常会议/日程活动",
+        {"name": {"type": "string", "description": "课程或活动名称，如「高等数学」「实验室组会」「班会」"},
+         "weekday": {"type": "integer", "description": "星期几（1~7，1=周一，7=周日）"},
+         "sec_start": {"type": "integer", "description": "起始节次（1~13）"},
+         "sec_end": {"type": "integer", "description": "结束节次（1~13）"},
+         "week_start": {"type": "integer", "description": "起始周（选填，单次活动应与 week_end 相同）"},
+         "week_end": {"type": "integer", "description": "结束周（选填）"},
+         "parity": {"type": "string", "enum": ["all", "odd", "even"], "description": "单双周，默认 all"},
+         "room": {"type": "string", "description": "教室或地点（选填）"},
+         "teacher": {"type": "string", "description": "授课教师或负责人（选填）"},
+         "custom_time": {"type": "string", "description": "具体真实时间，如「14:15-15:30」（选填）"}},
+        ["name", "weekday"]),
+    _fn("modify_course", "修改课表中已有课程或日程的信息（调时间、改教室、改名称等）",
+        {"target_name": {"type": "string", "description": "目标原课程/活动名称，如「高等数学」「组会」"},
+         "target_weekday": {"type": "integer", "description": "原星期（1~7，可选）"},
+         "target_sec_start": {"type": "integer", "description": "原起始节次（可选）"},
+         "target_week": {"type": "integer", "description": "原周次（可选）"},
+         "new_name": {"type": "string", "description": "修改后的新名称（可选）"},
+         "new_weekday": {"type": "integer", "description": "修改后的新星期（1~7，可选）"},
+         "new_sec_start": {"type": "integer", "description": "修改后的起始节次（1~13，可选）"},
+         "new_sec_end": {"type": "integer", "description": "修改后的结束节次（1~13，可选）"},
+         "new_room": {"type": "string", "description": "修改后的新教室/地点（可选）"},
+         "new_teacher": {"type": "string", "description": "修改后的新教师（可选）"},
+         "new_custom_time": {"type": "string", "description": "修改后的精准时间，如「14:00-15:30」（可选）"},
+         "new_week_start": {"type": "integer", "description": "修改后的起始周（可选）"},
+         "new_week_end": {"type": "integer", "description": "修改后的结束周（可选）"}},
+        ["target_name"]),
+    _fn("delete_course", "从课表中删除指定的课程/日程或退课",
+        {"name": {"type": "string", "description": "要删除的课程或活动名称，如「高等数学」「例会」"},
+         "weekday": {"type": "integer", "description": "星期几（1~7，可选）"},
+         "sec_start": {"type": "integer", "description": "起始节次（可选）"},
+         "target_week": {"type": "integer", "description": "指定周次（可选，若只需删除某一单周）"},
+         "room": {"type": "string", "description": "教室地点（可选）"},
+         "delete_all_weeks": {"type": "boolean", "description": "是否整门删除，默认 true"}},
+        ["name"]),
+    _fn("adjust_schedule", "录入学校教务处的教学安排调整通知（调课/放假停课）或清空调整",
+        {"notice_text": {"type": "string", "description": "学校通知原文文本（如「9月20日按第5周周二课表执行」「中秋节9月25日停课」）"},
+         "clear_all": {"type": "boolean", "description": "是否清空所有调整规则，默认 false"}},
         []),
     _fn("query_tasks", "查询未完成的作业/考试及剩余时间"),
     _fn("add_task", "添加一个作业或考试的截止提醒（待办）",
