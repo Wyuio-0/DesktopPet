@@ -35,8 +35,9 @@ Source: "..\dist\DesktopPet\*"; DestDir: "{app}"; \
     Excludes: "ai_config.json,.claude"
 
 [Icons]
-Name: "{group}\{#MyAppName}"; Filename: "{app}\DesktopPet.exe"
-Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\DesktopPet.exe"
+Name: "{group}\{#MyAppName}"; Filename: "{app}\DesktopPet.exe"; Comment: "阿米娅桌宠 · 罗德岛学业与科研全能 Copilot"
+Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\DesktopPet.exe"; Comment: "阿米娅桌宠 · 支持将课件/讲义直接拖拽至此图标一键导入知识库"
+Name: "{sendto}\导入到阿米娅课程知识库"; Filename: "{app}\DesktopPet.exe"; Comment: "将选中的课件/讲义导入阿米娅课程知识库"
 
 [Run]
 Filename: "{app}\DesktopPet.exe"; Description: "立即运行 {#MyAppName}"; \

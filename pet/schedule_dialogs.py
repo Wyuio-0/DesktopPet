@@ -80,6 +80,7 @@ class CourseDetailDialog(QtWidgets.QDialog):
     sig_edit_requested = QtCore.pyqtSignal(object)
     sig_delete_requested = QtCore.pyqtSignal(object)
     sig_ask_ai = QtCore.pyqtSignal(str)
+    sig_open_knowledge = QtCore.pyqtSignal(str)
 
     def __init__(self, course, color=None, sections=None, parent=None):
         super().__init__(parent)
@@ -156,14 +157,19 @@ class CourseDetailDialog(QtWidgets.QDialog):
             self._add_row(card_lay, "🏫 所在校区", self.course.campus)
 
         # 6. 备注
-        if self.course.note:
-            self._add_row(card_lay, "📝 课程备注", self.course.note)
+        # 7. 课程课件资料
+        kb_inst = None
+        if self.parent() and hasattr(self.parent(), "owner"):
+            kb_inst = getattr(getattr(self.parent().owner, "brain", None), "knowledge", None)
+        doc_count = len(kb_inst.get_course_files(self.course.name)) if kb_inst else 0
+        doc_str = f"{doc_count} 份资料已收录" if doc_count else "暂未收录课件 (可拖入PPT/PDF)"
+        self._add_row(card_lay, "📚 课件讲义", doc_str)
 
         root_lay.addWidget(info_card)
 
         # 底部操作按钮栏
         btn_lay = QtWidgets.QHBoxLayout()
-        btn_lay.setSpacing(10)
+        btn_lay.setSpacing(8)
 
         del_btn = QtWidgets.QPushButton("🗑 删除", root)
         del_btn.setObjectName("DangerBtn")
@@ -173,6 +179,10 @@ class CourseDetailDialog(QtWidgets.QDialog):
         edit_btn = QtWidgets.QPushButton("✏ 编辑", root)
         edit_btn.clicked.connect(self._on_edit)
         btn_lay.addWidget(edit_btn)
+
+        kw_btn = QtWidgets.QPushButton("📚 课件资料", root)
+        kw_btn.clicked.connect(self._on_open_knowledge)
+        btn_lay.addWidget(kw_btn)
 
         ai_btn = QtWidgets.QPushButton("✨ 咨询阿米娅", root)
         ai_btn.setObjectName("PrimaryBtn")
@@ -220,6 +230,10 @@ class CourseDetailDialog(QtWidgets.QDialog):
         prompt = (f"阿米娅，我想咨询一下课程《{self.course.name}》（教室：{self.course.room or '待定'}，"
                   f"教师：{self.course.teacher or '待定'}）的备考与学习规划建议！")
         self.sig_ask_ai.emit(prompt)
+
+    def _on_open_knowledge(self):
+        self.accept()
+        self.sig_open_knowledge.emit(self.course.name)
 
 
 class CourseEditDialog(QtWidgets.QDialog):
@@ -407,4 +421,147 @@ class CourseEditDialog(QtWidgets.QDialog):
             campus=campus,
             note=note
         )
+        self.accept()
+
+
+class CoursewareImportDialog(QtWidgets.QDialog):
+    """课件导入并关联课程弹窗。"""
+
+    def __init__(self, file_path, courses=None, default_course=None, parent=None):
+        super().__init__(parent)
+        self.file_path = file_path
+        self.courses = courses or []
+        self.default_course = default_course
+        self.selected_course = ""
+        self.setWindowTitle("导入课件资料")
+        self.setWindowFlags(QtCore.Qt.Dialog | QtCore.Qt.FramelessWindowHint)
+        self.setAttribute(QtCore.Qt.WA_TranslucentBackground, True)
+        self.setFixedWidth(440)
+        self._build_ui()
+
+    def _build_ui(self):
+        root = QtWidgets.QFrame(self)
+        root.setObjectName("DialogRoot")
+        root.setStyleSheet(DIALOG_QSS)
+        root_lay = QtWidgets.QVBoxLayout(root)
+        root_lay.setContentsMargins(22, 18, 22, 22)
+        root_lay.setSpacing(14)
+
+        # 顶栏
+        head_lay = QtWidgets.QHBoxLayout()
+        icon_lbl = QtWidgets.QLabel("📚", root)
+        icon_lbl.setStyleSheet("font-size: 16px;")
+        head_lay.addWidget(icon_lbl)
+
+        title_lbl = QtWidgets.QLabel("导入课程讲义与课件", root)
+        title_lbl.setStyleSheet("font-size: 16px; font-weight: bold; color: #FFFFFF;")
+        head_lay.addWidget(title_lbl)
+        head_lay.addStretch(1)
+
+        close_btn = QtWidgets.QPushButton("✕", root)
+        close_btn.setFixedSize(26, 26)
+        close_btn.setStyleSheet("border:none; font-size: 15px; color: #94A3B8; background: transparent;")
+        close_btn.clicked.connect(self.reject)
+        head_lay.addWidget(close_btn)
+        root_lay.addLayout(head_lay)
+
+        # 文件信息卡片
+        fn = os.path.basename(self.file_path)
+        sz = os.path.getsize(self.file_path) if os.path.isfile(self.file_path) else 0
+        sz_str = f"{sz / 1024 / 1024:.2f} MB" if sz >= 1024 * 1024 else f"{sz / 1024:.1f} KB"
+        ext = os.path.splitext(fn)[1].upper().replace(".", "")
+
+        file_card = QtWidgets.QFrame(root)
+        file_card.setStyleSheet("background: #1A1F29; border-radius: 8px; border: 1px solid #232A36;")
+        fc_lay = QtWidgets.QHBoxLayout(file_card)
+        fc_lay.setContentsMargins(12, 10, 12, 10)
+        fc_lay.setSpacing(10)
+
+        badge = QtWidgets.QLabel(ext, file_card)
+        badge.setStyleSheet("background: #00B0FF; color: #000000; font-weight: bold; font-size: 11px; padding: 4px 8px; border-radius: 4px;")
+        fc_lay.addWidget(badge)
+
+        info_lay = QtWidgets.QVBoxLayout()
+        name_l = QtWidgets.QLabel(fn, file_card)
+        name_l.setStyleSheet("color: #FFFFFF; font-weight: bold; font-size: 13px;")
+        name_l.setWordWrap(True)
+        size_l = QtWidgets.QLabel(f"大小: {sz_str}", file_card)
+        size_l.setStyleSheet("color: #94A3B8; font-size: 11px;")
+        info_lay.addWidget(name_l)
+        info_lay.addWidget(size_l)
+        fc_lay.addLayout(info_lay, 1)
+        root_lay.addWidget(file_card)
+
+        # 关联课程选项
+        hint_lbl = QtWidgets.QLabel("请选择该课件关联的学科课程：", root)
+        hint_lbl.setStyleSheet("color: #94A3B8; font-size: 13px;")
+        root_lay.addWidget(hint_lbl)
+
+        self.course_combo = QtWidgets.QComboBox(root)
+        self.course_combo.setStyleSheet("background: #1A1F29; color: #FFFFFF; border: 1px solid #232A36; padding: 6px 10px; border-radius: 6px; font-size: 13px;")
+
+        # 去重收集课表中的课程
+        seen_courses = []
+        for c in self.courses:
+            cname = getattr(c, "name", "").strip()
+            if cname and cname not in seen_courses:
+                seen_courses.append(cname)
+
+        if self.default_course and self.default_course not in seen_courses:
+            seen_courses.insert(0, self.default_course)
+
+        for cname in seen_courses:
+            self.course_combo.addItem(f"📖 {cname}", cname)
+
+        self.course_combo.addItem("🌐 通用讲义（不限课程）", "")
+        self.course_combo.addItem("➕ 自定义新课程名称...", "__custom__")
+
+        # 默认选中
+        if self.default_course:
+            idx = self.course_combo.findData(self.default_course)
+            if idx >= 0:
+                self.course_combo.setCurrentIndex(idx)
+
+        root_lay.addWidget(self.course_combo)
+
+        # 自定义课程名输入框（初始隐藏）
+        self.custom_course_edit = QtWidgets.QLineEdit(root)
+        self.custom_course_edit.setPlaceholderText("请输入新课程名称，例如「微积分」...")
+        self.custom_course_edit.setStyleSheet("background: #1A1F29; color: #FFFFFF; border: 1px solid #00B0FF; padding: 6px 10px; border-radius: 6px; font-size: 13px;")
+        self.custom_course_edit.setVisible(False)
+        self.course_combo.currentIndexChanged.connect(self._on_combo_changed)
+        root_lay.addWidget(self.custom_course_edit)
+
+        # 按钮栏
+        btn_lay = QtWidgets.QHBoxLayout()
+        btn_lay.setSpacing(10)
+        btn_cancel = QtWidgets.QPushButton("取消", root)
+        btn_cancel.clicked.connect(self.reject)
+        btn_lay.addWidget(btn_cancel)
+
+        btn_confirm = QtWidgets.QPushButton("确认导入", root)
+        btn_confirm.setObjectName("PrimaryBtn")
+        btn_confirm.clicked.connect(self._on_confirm)
+        btn_lay.addWidget(btn_confirm)
+
+        root_lay.addLayout(btn_lay)
+
+        dlg_lay = QtWidgets.QVBoxLayout(self)
+        dlg_lay.setContentsMargins(0, 0, 0, 0)
+        dlg_lay.addWidget(root)
+
+    def _on_combo_changed(self):
+        data = self.course_combo.currentData()
+        self.custom_course_edit.setVisible(data == "__custom__")
+
+    def _on_confirm(self):
+        data = self.course_combo.currentData()
+        if data == "__custom__":
+            custom_name = self.custom_course_edit.text().strip()
+            if not custom_name:
+                QtWidgets.QMessageBox.warning(self, "提示", "请输入自定义课程名称！")
+                return
+            self.selected_course = custom_name
+        else:
+            self.selected_course = str(data or "")
         self.accept()

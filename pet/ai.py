@@ -325,7 +325,7 @@ class AmiyaBrain:
         self.knowledge = None   # pet.knowledge.KnowledgeBase（由窗口注入）
 
     def _knowledge_context(self):
-        """按当前用户问题检索讲义片段，返回可注入 system 的上下文（或空串）。"""
+        """按当前用户问题检索讲义与课件切片，返回可注入 system 的上下文（或空串）。"""
         kb = self.knowledge
         if not kb:
             return ""
@@ -334,11 +334,41 @@ class AmiyaBrain:
             if m.get("role") == "user" and isinstance(m.get("content"), str):
                 question = m["content"]
                 break
-        ctx = kb.context(question)
+        if not question:
+            return ""
+
+        # 尝试确定目标课程
+        target_course = None
+        sched = actions._schedule_provider() if actions._schedule_provider else None
+        known_courses = kb.get_courses()
+        if sched and hasattr(sched, "courses"):
+            for c in sched.courses:
+                if c.name and c.name not in known_courses:
+                    known_courses.append(c.name)
+
+        from .knowledge import match_course_from_query
+        target_course = match_course_from_query(question, known_courses)
+
+        # 若问题问及“这门课/考纲/重点/复习/简答题”等且未明确指明课名，推测当前正在上的课程
+        if not target_course and any(w in question for w in ("这门课", "本课", "这节课", "考纲", "重点", "简答题", "考试", "复习", "期末", "上课")):
+            if sched:
+                cur_c = sched.get_current_course()
+                if cur_c:
+                    target_course = cur_c.name
+
+        ctx = kb.context(question, course=target_course)
         if not ctx:
             return ""
-        return ("\n\n以下是博士的课程资料片段（回答时请优先参考；"
-                "若与问题无关可忽略）：\n" + ctx)
+
+        prompt_ext = (
+            "\n\n【罗德岛学业中枢 · 课程课件权威资料】\n"
+            + ctx +
+            "\n\n【学业辅导与备考答疑规范】\n"
+            "- 博士正在针对该学科进行求知、复习或备考。请以严谨准确且温柔体贴的罗德岛领袖阿米娅的口吻，严格依据上述课件资料进行解答。\n"
+            "- 若博士询问「划重点」、「出考题/模拟题」或「核心考点」：请从课件中提取关键定理、定律、定义公式和考题要点，分条列出；模拟题需给出清晰题干并附带简要参考答案。\n"
+            "- 若课件资料未提及博士所问的细节，请诚恳说明课件表述，并结合通用学术知识谨慎解答，切勿捏造虚假结论。"
+        )
+        return prompt_ext
 
     def _profile_context(self):
         """获取博士档案本与长程记忆上下文（或空串）。"""
@@ -605,15 +635,16 @@ class AmiyaBrain:
         """Chat with an optional tool-call loop (max 4 tool rounds)."""
         use_tools = self.cfg.get("allow_actions", True) and self.has_custom_key
         sched_ctx = self._schedule_context()
+        know_ctx = self._knowledge_context()
         if self.has_custom_key:
-            system_content = self.persona + self._knowledge_context() + self._profile_context() + sched_ctx
+            system_content = self.persona + know_ctx + self._profile_context() + sched_ctx
         else:
             system_content = (
                 "你是《明日方舟》中的阿米娅，罗德岛的公开领袖。你温柔、坚定、富有责任感，"
                 "面对博士时既尊敬又亲近。你称呼对方为「博士」，自称「阿米娅」或「我」。"
                 "你说话礼貌、真诚，偶尔流露少女的关心与坚强。回答简洁自然，一般一到三句话，"
                 "像日常聊天，不要长篇大论，不要使用括号动作描写或表情符号，只用中文回答。"
-            ) + sched_ctx
+            ) + know_ctx + sched_ctx
         system = {"role": "system", "content": system_content}
         msgs = [system] + list(self.history)
         for _ in range(4):
@@ -696,15 +727,16 @@ class AmiyaBrain:
         """
         use_tools = self.cfg.get("allow_actions", True) and self.has_custom_key
         sched_ctx = self._schedule_context()
+        know_ctx = self._knowledge_context()
         if self.has_custom_key:
-            system_content = self.persona + self._knowledge_context() + self._profile_context() + sched_ctx
+            system_content = self.persona + know_ctx + self._profile_context() + sched_ctx
         else:
             system_content = (
                 "你是《明日方舟》中的阿米娅，罗德岛的公开领袖。你温柔、坚定、富有责任感，"
                 "面对博士时既尊敬又亲近。你称呼对方为「博士」，自称「阿米娅」或「我」。"
                 "你说话礼貌、真诚，偶尔流露少女的关心与坚强。回答简洁自然，一般一到三句话，"
                 "像日常聊天，不要长篇大论，不要使用括号动作描写或表情符号，只用中文回答。"
-            ) + sched_ctx
+            ) + know_ctx + sched_ctx
         system = {"role": "system", "content": system_content}
         msgs = [system] + list(self.history)
         for _ in range(4):

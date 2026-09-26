@@ -19,6 +19,7 @@ from .timetable import TimetableView
 PAGE_SCHEDULE = "schedule"
 PAGE_TASKS = "tasks"
 PAGE_OCR = "ocr"
+PAGE_KNOWLEDGE = "knowledge"
 
 
 def _esc(t):
@@ -209,6 +210,7 @@ class InfoPanel(QtWidgets.QWidget):
         )
         self.setMinimumSize(780, 580)
         self.resize(860, 680)
+        self.setAcceptDrops(True)
         self.setStyleSheet(_QSS)
         self.setObjectName("PanelRoot")
         self._build()
@@ -254,6 +256,7 @@ class InfoPanel(QtWidgets.QWidget):
         self.nav.addItem("课程表")
         self.nav.addItem("待办与考试")
         self.nav.addItem("OCR 结果")
+        self.nav.addItem("课程知识库")
         self.nav.currentRowChanged.connect(self._switch_page)
         body.addWidget(self.nav)
 
@@ -262,6 +265,7 @@ class InfoPanel(QtWidgets.QWidget):
         self.stack.addWidget(self._build_schedule_page())
         self.stack.addWidget(self._build_tasks_page())
         self.stack.addWidget(self._build_ocr_page())
+        self.stack.addWidget(self._build_knowledge_page())
         body.addWidget(self.stack, 1)
 
         self.nav.setCurrentRow(0)
@@ -420,6 +424,100 @@ class InfoPanel(QtWidgets.QWidget):
         lay.addWidget(split, 1)
         return page
 
+    def _build_knowledge_page(self):
+        page = QtWidgets.QWidget(self)
+        page.setAcceptDrops(True)
+        lay = QtWidgets.QVBoxLayout(page)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(10)
+
+        # 顶栏过滤与操作
+        top_bar = QtWidgets.QHBoxLayout()
+        top_bar.setSpacing(10)
+
+        lbl = QtWidgets.QLabel("目标课程：", page)
+        lbl.setStyleSheet("color: #94A3B8; font-size: 14px; font-weight: bold;")
+        top_bar.addWidget(lbl)
+
+        self.kw_course_combo = QtWidgets.QComboBox(page)
+        self.kw_course_combo.setStyleSheet(
+            "QComboBox{background:#1A1F29;color:#FFFFFF;border:1px solid #232A36;padding:5px 12px;border-radius:6px;font-size:13px;min-width:180px;}"
+            "QComboBox:focus{border:1px solid #00B0FF;}"
+        )
+        self.kw_course_combo.currentIndexChanged.connect(self._on_kw_filter_changed)
+        top_bar.addWidget(self.kw_course_combo)
+
+        self.kw_stat_label = QtWidgets.QLabel("📚 正在加载知识库...", page)
+        self.kw_stat_label.setStyleSheet("color: #00B0FF; font-size: 13px; font-weight: 500;")
+        top_bar.addWidget(self.kw_stat_label, 1)
+
+        self.btn_upload_doc = QtWidgets.QPushButton("➕ 上传课件", page)
+        self.btn_upload_doc.setObjectName("PrimaryBtn")
+        self.btn_upload_doc.setStyleSheet(
+            "QPushButton{background:#00B0FF;color:#000000;font-weight:bold;padding:6px 14px;border-radius:6px;}"
+            "QPushButton:hover{background:#40C4FF;}"
+        )
+        self.btn_upload_doc.clicked.connect(self._upload_courseware)
+        top_bar.addWidget(self.btn_upload_doc)
+
+        self.btn_open_folder = QtWidgets.QPushButton("📁 打开目录", page)
+        self.btn_open_folder.setStyleSheet(
+            "QPushButton{background:#1A1F29;color:#E2E8F0;border:1px solid #232A36;padding:6px 12px;border-radius:6px;}"
+            "QPushButton:hover{background:#2D3748;}"
+        )
+        self.btn_open_folder.clicked.connect(self._open_knowledge_folder)
+        top_bar.addWidget(self.btn_open_folder)
+
+        lay.addLayout(top_bar)
+
+        # 快捷 AI 问答推荐横栏 (Prompt Suggestions)
+        ai_bar = QtWidgets.QHBoxLayout()
+        ai_bar.setSpacing(8)
+        ai_tip = QtWidgets.QLabel("✨ 快捷学业辅导：", page)
+        ai_tip.setStyleSheet("color: #CBD5E1; font-size: 13px; font-weight: bold;")
+        ai_bar.addWidget(ai_tip)
+
+        self.btn_q_keypoints = QtWidgets.QPushButton("🎯 划出期末重点", page)
+        self.btn_q_exam = QtWidgets.QPushButton("📝 生成5道期末模拟题", page)
+        self.btn_q_summary = QtWidgets.QPushButton("💡 核心考点与公式梳理", page)
+
+        for b in (self.btn_q_keypoints, self.btn_q_exam, self.btn_q_summary):
+            b.setStyleSheet(
+                "QPushButton{background:rgba(0,176,255,0.12);color:#00E5FF;border:1px solid rgba(0,176,255,0.35);padding:4px 10px;border-radius:14px;font-size:12px;}"
+                "QPushButton:hover{background:rgba(0,176,255,0.25);border-color:#00E5FF;}"
+            )
+        self.btn_q_keypoints.clicked.connect(lambda: self._quick_ask_ai("请根据你掌握的本课程所有课件与考纲内容，帮我划出期末考试的核心重点与必考考点。"))
+        self.btn_q_exam.clicked.connect(lambda: self._quick_ask_ai("请严格依据本课程的课件资料，为我出5道常考的期末模拟简答题或分析题，并附带参考解析答案。"))
+        self.btn_q_summary.clicked.connect(lambda: self._quick_ask_ai("请帮我梳理本课程课件中的核心概念、定律、公式及解题步骤框架。"))
+
+        ai_bar.addWidget(self.btn_q_keypoints)
+        ai_bar.addWidget(self.btn_q_exam)
+        ai_bar.addWidget(self.btn_q_summary)
+        ai_bar.addStretch(1)
+        lay.addLayout(ai_bar)
+
+        # 课件列表表格
+        self.kw_table = QtWidgets.QTableWidget(page)
+        self.kw_table.setColumnCount(6)
+        self.kw_table.setHorizontalHeaderLabels(["格式", "课件/讲义文件名", "关联课程", "大小", "知识切片", "操作"])
+        self.kw_table.horizontalHeader().setSectionResizeMode(1, QtWidgets.QHeaderView.Stretch)
+        self.kw_table.setColumnWidth(0, 65)
+        self.kw_table.setColumnWidth(2, 110)
+        self.kw_table.setColumnWidth(3, 85)
+        self.kw_table.setColumnWidth(4, 90)
+        self.kw_table.setColumnWidth(5, 150)
+        self.kw_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        self.kw_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        self.kw_table.setStyleSheet("QTableWidget{background:#101318;border:1px solid #232A36;border-radius:8px;}")
+        lay.addWidget(self.kw_table, 1)
+
+        # 底部提示
+        bottom_tip = QtWidgets.QLabel("💡 提示：可直接将 PPT、PDF、Word 讲义从桌面拖拽到桌宠身上或此窗口，阿米娅会自动识别课程并建库！", page)
+        bottom_tip.setStyleSheet("color: #64748B; font-size: 12px;")
+        lay.addWidget(bottom_tip)
+
+        return page
+
     # ── 行为 ───────────────────────────────────────────────────────
 
     def _switch_page(self, row):
@@ -428,6 +526,8 @@ class InfoPanel(QtWidgets.QWidget):
             self.show_schedule("week")
         elif row == 1:
             self.refresh_tasks()
+        elif row == 3:
+            self.refresh_knowledge_page()
 
     def show_schedule(self, which):
         """展示课程表：'week' 用可视化色块表，'today'/'next' 用富文本列表。"""
@@ -522,6 +622,7 @@ class InfoPanel(QtWidgets.QWidget):
         dlg.sig_edit_requested.connect(self._on_edit_course)
         dlg.sig_delete_requested.connect(self._on_delete_course)
         dlg.sig_ask_ai.connect(self._on_ask_ai)
+        dlg.sig_open_knowledge.connect(self.show_knowledge)
         dlg.exec_()
 
     def _on_empty_slot_clicked(self, weekday, section):
@@ -650,6 +751,180 @@ class InfoPanel(QtWidgets.QWidget):
         self.ocr_status.setText("%s · %s 字符" % (label, len(text)))
         self.ocr_source.setPlainText(text)
         self.ocr_result.setPlainText(result)
+
+    def show_knowledge(self, course=None):
+        """展示课程知识库管理页，可指定过滤课程。"""
+        self.nav.setCurrentRow(3)
+        self.stack.setCurrentIndex(3)
+        self.refresh_knowledge_page(select_course=course)
+
+    def refresh_knowledge_page(self, select_course=None):
+        """刷新知识库页面列表与统计。"""
+        kb = getattr(self.owner.brain, "knowledge", None)
+        if not kb:
+            return
+
+        stats = kb.get_stats()
+        self.kw_stat_label.setText(
+            f"📚 已收录 {stats['course_count']} 门课程 · {stats['file_count']} 份课件 · {stats['chunk_count']} 个知识切片"
+        )
+
+        # 刷新下拉框
+        cur_selection = select_course or self.kw_course_combo.currentData()
+        self.kw_course_combo.blockSignals(True)
+        self.kw_course_combo.clear()
+        self.kw_course_combo.addItem(f"全部课程 ({stats['file_count']} 份课件)", "__ALL__")
+
+        all_courses = list(stats['courses'])
+        if hasattr(self.owner, "schedule") and self.owner.schedule:
+            for c in self.owner.schedule.courses:
+                if c.name and c.name not in all_courses:
+                    all_courses.append(c.name)
+
+        for cname in sorted(all_courses):
+            cnt = len(kb.get_course_files(cname))
+            self.kw_course_combo.addItem(f"📖 {cname} ({cnt} 份)", cname)
+
+        if cur_selection:
+            idx = self.kw_course_combo.findData(cur_selection)
+            if idx >= 0:
+                self.kw_course_combo.setCurrentIndex(idx)
+        self.kw_course_combo.blockSignals(False)
+
+        # 刷新表格
+        target_course = self.kw_course_combo.currentData()
+        if target_course == "__ALL__":
+            files = kb.get_course_files(None)
+        else:
+            files = kb.get_course_files(target_course)
+
+        self.kw_table.setRowCount(len(files))
+        for row, f in enumerate(files):
+            import os
+            ext = os.path.splitext(f["filename"])[1].upper().replace(".", "")
+            c_tag = f["course"] if f.get("course") else "通用讲义"
+            size_kb = f["size"] / 1024
+            size_str = f"{size_kb/1024:.1f} MB" if size_kb >= 1024 else f"{size_kb:.0f} KB"
+
+            item_ext = QtWidgets.QTableWidgetItem(ext)
+            item_ext.setTextAlignment(QtCore.Qt.AlignCenter)
+            item_ext.setForeground(QtGui.QColor("#00B0FF"))
+
+            item_name = QtWidgets.QTableWidgetItem(f["filename"])
+            item_name.setToolTip(f["path"])
+            item_name.setForeground(QtGui.QColor("#FFFFFF"))
+
+            item_course = QtWidgets.QTableWidgetItem(c_tag)
+            item_course.setTextAlignment(QtCore.Qt.AlignCenter)
+            item_course.setForeground(QtGui.QColor("#A78BFA"))
+
+            item_size = QtWidgets.QTableWidgetItem(size_str)
+            item_size.setTextAlignment(QtCore.Qt.AlignCenter)
+            item_size.setForeground(QtGui.QColor("#94A3B8"))
+
+            item_chunks = QtWidgets.QTableWidgetItem(f"{f['chunks']} 切片")
+            item_chunks.setTextAlignment(QtCore.Qt.AlignCenter)
+            item_chunks.setForeground(QtGui.QColor("#34D399"))
+
+            self.kw_table.setItem(row, 0, item_ext)
+            self.kw_table.setItem(row, 1, item_name)
+            self.kw_table.setItem(row, 2, item_course)
+            self.kw_table.setItem(row, 3, item_size)
+            self.kw_table.setItem(row, 4, item_chunks)
+
+            # 操作按钮组
+            act_widget = QtWidgets.QWidget()
+            act_lay = QtWidgets.QHBoxLayout(act_widget)
+            act_lay.setContentsMargins(4, 2, 4, 2)
+            act_lay.setSpacing(6)
+
+            btn_ask = QtWidgets.QPushButton("🔍 提问", act_widget)
+            btn_ask.setStyleSheet("QPushButton{background:rgba(0,176,255,0.18);color:#00B0FF;border:1px solid #00B0FF;padding:2px 8px;border-radius:4px;font-size:11px;}"
+                                  "QPushButton:hover{background:#00B0FF;color:#000;}")
+            btn_ask.clicked.connect(lambda _, fn=f["filename"], cn=f["course"]: self._ask_file_ai(fn, cn))
+
+            btn_del = QtWidgets.QPushButton("🗑", act_widget)
+            btn_del.setToolTip("从知识库移除此文件")
+            btn_del.setStyleSheet("QPushButton{background:rgba(255,82,82,0.15);color:#FF5252;border:1px solid #FF5252;padding:2px 6px;border-radius:4px;font-size:11px;}"
+                                  "QPushButton:hover{background:#FF5252;color:#FFF;}")
+            btn_del.clicked.connect(lambda _, fn=f["filename"], cn=f["course"]: self._delete_kw_file(fn, cn))
+
+            act_lay.addWidget(btn_ask)
+            act_lay.addWidget(btn_del)
+            self.kw_table.setCellWidget(row, 5, act_widget)
+
+    def _on_kw_filter_changed(self):
+        self.refresh_knowledge_page()
+
+    def _upload_courseware(self):
+        """弹出文件选择框上传课件文件。"""
+        files, _ = QtWidgets.QFileDialog.getOpenFileNames(
+            self, "选择要导入的课件与讲义", "",
+            "课件讲义文件 (*.pptx *.ppt *.pdf *.docx *.doc *.txt *.md *.png *.jpg);;所有文件 (*.*)"
+        )
+        if files:
+            self.owner._handle_dropped_files(files)
+
+    def _open_knowledge_folder(self):
+        """在系统资源管理器中打开知识库目录。"""
+        import os
+        from .settings import config_dir
+        kb = getattr(self.owner.brain, "knowledge", None)
+        path = kb.folder if kb else os.path.join(config_dir(), "knowledge")
+        os.makedirs(path, exist_ok=True)
+        QtGui.QDesktopServices.openUrl(QtCore.QUrl.fromLocalFile(path))
+
+    def _quick_ask_ai(self, prompt_prefix):
+        """针对当前选中的课程向阿米娅发起学术提问。"""
+        selected_course = self.kw_course_combo.currentData()
+        if selected_course and selected_course != "__ALL__":
+            prompt = f"针对《{selected_course}》这门课程：{prompt_prefix}"
+        else:
+            prompt = prompt_prefix
+        self.owner.open_chat()
+        if hasattr(self.owner, "_chat_widget") and self.owner._chat_widget:
+            self.owner._chat_widget.input.setPlainText(prompt)
+
+    def _ask_file_ai(self, filename, course_name):
+        c_desc = f"关于《{course_name}》的课件《{filename}》：" if course_name else f"关于课件《{filename}》："
+        self.owner.open_chat()
+        if hasattr(self.owner, "_chat_widget") and self.owner._chat_widget:
+            self.owner._chat_widget.input.setPlainText(f"{c_desc}请帮我总结其中的核心要点与可能考题。")
+
+    def _delete_kw_file(self, filename, course_name):
+        reply = QtWidgets.QMessageBox.question(
+            self, "确认删除",
+            f"确定要从知识库中移除课件《{filename}》吗？",
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No
+        )
+        if reply == QtWidgets.QMessageBox.Yes:
+            kb = getattr(self.owner.brain, "knowledge", None)
+            if kb:
+                kb.delete_file(filename, course=course_name)
+                self.refresh_knowledge_page()
+
+    def dragEnterEvent(self, e):
+        if e.mimeData().hasUrls():
+            e.acceptProposedAction()
+        else:
+            super().dragEnterEvent(e)
+
+    def dragMoveEvent(self, e):
+        if e.mimeData().hasUrls():
+            e.acceptProposedAction()
+        else:
+            super().dragMoveEvent(e)
+
+    def dropEvent(self, e):
+        if e.mimeData().hasUrls():
+            paths = [url.toLocalFile() for url in e.mimeData().urls() if url.isLocalFile()]
+            import os
+            valid = [p for p in paths if os.path.exists(p)]
+            if valid:
+                e.acceptProposedAction()
+                self.owner._handle_dropped_files(valid)
+                return
+        super().dropEvent(e)
 
     # ── 窗口行为（拖动 / Esc 关闭）─────────────────────────────────
 

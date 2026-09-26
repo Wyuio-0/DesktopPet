@@ -51,12 +51,22 @@ def main():
     # （%APPDATA%\AmiyaPet\pet.log），否则只能盲猜。
     petlog.init_logging()
 
-    # 单实例守护：已有实例在运行则让它回到前台，本实例退出——
-    # 避免两个桌宠抢全局热键 / 双份动画。
+    # 提取通过桌面快捷方式/发送到等拖拽传入的课件文件
+    pending_files = []
+    char_arg = None
+    from pet.knowledge import KnowledgeBase
+    for arg in sys.argv[1:]:
+        if os.path.isfile(arg) or any(arg.lower().endswith(ext) for ext in KnowledgeBase.SUPPORTED_EXTS):
+            if os.path.isfile(arg):
+                pending_files.append(os.path.abspath(arg))
+        elif char_arg is None and not arg.startswith("-"):
+            char_arg = arg
+
+    # 单实例守护：已有实例在运行则把待处理文件转交旧实例并让它回到前台，本实例退出
     from pet import single_instance
     if not single_instance.acquire():
-        petlog.log("已有实例在运行，请求显示后退出")
-        single_instance.request_show()
+        petlog.log("已有实例在运行，转交文件并请求显示后退出")
+        single_instance.request_show(pending_files)
         sys.exit(0)
 
     # High-DPI scaling is enabled by default in PyQt5 5.15+; the explicit
@@ -67,18 +77,20 @@ def main():
     if icon_path:
         app.setWindowIcon(QtGui.QIcon(icon_path))
 
-    arg_name = sys.argv[1] if len(sys.argv) > 1 else None
-    saved_name = None if arg_name else Settings().get("character")
+    saved_name = None if char_arg else Settings().get("character")
     try:
-        char_path = find_character(arg_name or saved_name)
+        char_path = find_character(char_arg or saved_name)
     except SystemExit:
-        if arg_name:
+        if char_arg:
             raise
         char_path = find_character(None)
     character = Character(char_path)
     petlog.log("角色: %s (%s)" % (character.key, character.display_name))
     window = PetWindow(character)
     window.show()
+
+    if pending_files:
+        QtCore.QTimer.singleShot(600, lambda: window._handle_dropped_files(pending_files))
 
     # Run at below-normal priority so the desktop pet never fights the user's
     # foreground apps for CPU time.  BELOW_NORMAL is one notch above idle —

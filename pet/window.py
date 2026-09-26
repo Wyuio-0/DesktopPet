@@ -167,6 +167,7 @@ class PetWindow(QtWidgets.QWidget):
             | QtCore.Qt.Tool  # no taskbar entry
         )
         self.setAttribute(QtCore.Qt.WA_TranslucentBackground)
+        self.setAcceptDrops(True)
         self.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
         self.customContextMenuRequested.connect(self._menu)
 
@@ -473,6 +474,7 @@ class PetWindow(QtWidgets.QWidget):
         actions.set_confirm_provider(self._confirm_action)
         self.brain.knowledge = knowledge.KnowledgeBase(
             use_embed=self.prefs.get("knowledge_embed", True))
+        actions.set_knowledge_provider(lambda: self.brain.knowledge)
         self.schedule.register_listener(self._on_schedule_changed)
 
     def _on_schedule_changed(self):
@@ -1146,6 +1148,10 @@ class PetWindow(QtWidgets.QWidget):
                 elif msg.message == self._show_request_msg():
                     # 单实例守护：第二实例广播的「显示请求」回到前台
                     self._show_pet()
+                    # 检查是否有通过桌面快捷方式/发送到传入的待处理课件
+                    pending = single_instance.consume_dropped_files()
+                    if pending:
+                        QtCore.QTimer.singleShot(200, lambda: self._handle_dropped_files(pending))
                     return True, 0
             except Exception:
                 pass  # 命中测试失败就按默认行为响应
@@ -1198,6 +1204,66 @@ class PetWindow(QtWidgets.QWidget):
     def mouseDoubleClickEvent(self, e):
         if self._opaque_at(e.pos()):
             self.open_chat()
+
+    def dragEnterEvent(self, e):
+        if e.mimeData().hasUrls():
+            e.acceptProposedAction()
+        else:
+            super().dragEnterEvent(e)
+
+    def dragMoveEvent(self, e):
+        if e.mimeData().hasUrls():
+            e.acceptProposedAction()
+        else:
+            super().dragMoveEvent(e)
+
+    def dropEvent(self, e):
+        if e.mimeData().hasUrls():
+            paths = [url.toLocalFile() for url in e.mimeData().urls() if url.isLocalFile()]
+            valid = [p for p in paths if os.path.exists(p)]
+            if valid:
+                e.acceptProposedAction()
+                self._handle_dropped_files(valid)
+                return
+        super().dropEvent(e)
+
+    def _handle_dropped_files(self, paths):
+        """处理外部拖拽至桌宠身上的讲义/课件文件（自动绑定课程并导入知识库）。"""
+        from . import knowledge
+        from .schedule_dialogs import CoursewareImportDialog
+
+        doc_paths = [p for p in paths if p.lower().endswith(knowledge.KnowledgeBase.SUPPORTED_EXTS)]
+        if not doc_paths:
+            self.bubble.say("博士，阿米娅目前支持导入 PPT、PDF、Word 讲义、Markdown 和文本笔记哦！", self._body_rect())
+            return
+
+        course_names = [c.name for c in self.schedule.courses if getattr(c, "name", None)]
+        active_c = self.schedule.get_current_course()
+        active_name = active_c.name if active_c else None
+
+        for path in doc_paths:
+            fn = os.path.basename(path)
+            # 智能匹配课程
+            matched = knowledge.match_course_for_file(fn, course_names, active_course=active_name)
+            if matched:
+                ok, chunk_count, c_name = self.brain.knowledge.import_file(path, course=matched)
+                if ok:
+                    self.bubble.say(f"好的博士！已将《{fn}》导入到课程【{c_name}】知识库啦！（提取了 {chunk_count} 个知识切片）\n随时可以问我这门课的重点哦～", self._body_rect())
+                    self.play(self.char.interaction("on_import") or "talk")
+                    if self._info_panel_widget and self._info_panel_widget.isVisible():
+                        QtCore.QTimer.singleShot(0, self._info_panel_widget.refresh_knowledge_page)
+            else:
+                # 弹窗让用户选择关联课程或新建
+                dlg = CoursewareImportDialog(path, courses=self.schedule.courses, parent=self)
+                if dlg.exec_() == QtWidgets.QDialog.Accepted:
+                    selected_course = dlg.selected_course
+                    ok, chunk_count, c_name = self.brain.knowledge.import_file(path, course=selected_course)
+                    if ok:
+                        c_desc = f"课程【{c_name}】" if c_name else "通用知识库"
+                        self.bubble.say(f"已将《{fn}》成功导入到{c_desc}！（共 {chunk_count} 个知识切片）\n随时可以向我提问哦～", self._body_rect())
+                        self.play(self.char.interaction("on_import") or "talk")
+                        if self._info_panel_widget and self._info_panel_widget.isVisible():
+                            QtCore.QTimer.singleShot(0, self._info_panel_widget.refresh_knowledge_page)
 
     def _apply_ai_settings(self, cfg):
         old_history = self.brain.history

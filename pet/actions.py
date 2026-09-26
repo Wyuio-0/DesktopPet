@@ -665,6 +665,7 @@ def stop_focus():
 
 _schedule_provider = None
 _tasks_provider = None
+_knowledge_provider = None
 
 
 def set_schedule_provider(fn):
@@ -677,6 +678,12 @@ def set_tasks_provider(fn):
     """注册回调 fn() -> Tasks 实例（或 None），供待办工具使用。"""
     global _tasks_provider
     _tasks_provider = fn
+
+
+def set_knowledge_provider(fn):
+    """注册回调 fn() -> KnowledgeBase 实例（或 None），供课程课件知识库工具使用。"""
+    global _knowledge_provider
+    _knowledge_provider = fn
 
 
 def _fmt_courses(label, courses, sched, week_no):
@@ -1185,6 +1192,37 @@ def read_sticky_notes():
         return f"读取便签出错了：{type(e).__name__}"
 
 
+def query_courseware(query, course=None):
+    """从课程课件、教材与复习考纲知识库中检索指定学科的核心知识点、重点或例题。"""
+    kb = _knowledge_provider() if _knowledge_provider else None
+    if kb is None or not kb:
+        return "知识库目前未收录任何课件讲义，博士可将 PPT/PDF/Word 课件直接拖入桌宠或信息面板导入。"
+    ctx = kb.context(query=query, course=course)
+    if not ctx:
+        c_desc = f"《{course}》" if course else "当前知识库"
+        return f"在{c_desc}的课件资料中未找到与「{query}」直接相关的知识点。"
+    return ctx
+
+
+def list_courseware(course=None):
+    """查询已导入阿米娅知识库的课程课件与教材清单。"""
+    kb = _knowledge_provider() if _knowledge_provider else None
+    if kb is None or not kb:
+        return "当前尚未收录任何课程课件或讲义。博士可以把 PPT、PDF、Word 讲义直接拖拽给我哦！"
+    files = kb.get_course_files(course=course)
+    if not files:
+        if course:
+            return f"课程《{course}》下暂未收录课件。"
+        return "当前知识库中没有文件。"
+    lines = [f"📚 已收录 {len(files)} 份课件讲义："]
+    for f in files:
+        c_tag = f"【{f['course']}】" if f.get("course") else "【通用】"
+        size_kb = f["size"] / 1024
+        size_str = f"{size_kb/1024:.1f} MB" if size_kb >= 1024 else f"{size_kb:.0f} KB"
+        lines.append(f"- {c_tag} {f['filename']} ({size_str}, {f['chunks']} 个知识切片)")
+    return "\n".join(lines)
+
+
 # name -> handler
 _HANDLERS = {
     "open_app": open_app, "open_url": open_url, "web_search": web_search,
@@ -1194,6 +1232,7 @@ _HANDLERS = {
     "query_schedule": query_schedule, "query_tasks": query_tasks,
     "add_course": add_course, "modify_course": modify_course,
     "delete_course": delete_course, "adjust_schedule": adjust_schedule,
+    "query_courseware": query_courseware, "list_courseware": list_courseware,
     "add_task": add_task, "today_summary": today_summary,
     "agenda_summary": agenda_summary,
     "start_pomodoro": start_pomodoro, "stop_focus": stop_focus,
@@ -1341,6 +1380,13 @@ TOOLS = [
     _fn("adjust_schedule", "录入学校教务处的教学安排调整通知（调课/放假停课）或清空调整",
         {"notice_text": {"type": "string", "description": "学校通知原文文本（如「9月20日按第5周周二课表执行」「中秋节9月25日停课」）"},
          "clear_all": {"type": "boolean", "description": "是否清空所有调整规则，默认 false"}},
+        []),
+    _fn("query_courseware", "从课程课件、教材与复习考纲知识库中检索指定学科的核心知识点、期末重点或例题",
+        {"query": {"type": "string", "description": "检索的学术问题或知识点，如「热力学第二定律」「PV操作步骤」「期末重点」"},
+         "course": {"type": "string", "description": "目标课程名称（可选，如「操作系统」「大学物理」）"}},
+        ["query"]),
+    _fn("list_courseware", "查询已导入阿米娅知识库的课程课件与教材清单",
+        {"course": {"type": "string", "description": "指定课程名称（可选，留空则列出所有课程的课件）"}},
         []),
     _fn("query_tasks", "查询未完成的作业/考试及剩余时间"),
     _fn("add_task", "添加一个作业或考试的截止提醒（待办）",
