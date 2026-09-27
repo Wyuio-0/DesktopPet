@@ -273,6 +273,11 @@ class PetWindow(QtWidgets.QWidget):
             lambda: tts.maybe_stop_idle_clone(600))
         self._clone_idle_timer.start(60 * 1000)
 
+        # 待处理课件文件队列检查（桌面快捷方式拖拽/发送到双重容灾）
+        self._drop_check_timer = QtCore.QTimer(self)
+        self._drop_check_timer.timeout.connect(self._check_dropped_queue)
+        self._drop_check_timer.start(800)
+
         # 跨端协同局域网互联服务
         self.sync_service = get_sync_service()
         self.sync_window = None
@@ -1163,6 +1168,14 @@ class PetWindow(QtWidgets.QWidget):
             self._show_msg_id = single_instance.show_message_id()
         return self._show_msg_id or -1
 
+    def _check_dropped_queue(self):
+        """检查并消费来自桌面快捷方式或文件管理器的待处理文件队列。"""
+        from . import single_instance
+        pending = single_instance.consume_dropped_files()
+        if pending:
+            self._show_pet()
+            QtCore.QTimer.singleShot(150, lambda: self._handle_dropped_files(pending))
+
     # ------------------------------------------------------------------ #
     # Interactions                                                         #
     # ------------------------------------------------------------------ #
@@ -1275,8 +1288,8 @@ class PetWindow(QtWidgets.QWidget):
             return
 
         course_names = [c.name for c in self.schedule.courses if getattr(c, "name", None)]
-        active_c = self.schedule.get_current_course()
-        active_name = active_c.name if active_c else None
+        active_c = getattr(self.schedule, "get_current_course", lambda: None)()
+        active_name = getattr(active_c, "name", None)
 
         for path in doc_paths:
             fn = os.path.basename(path)

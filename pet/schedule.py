@@ -412,6 +412,26 @@ class Schedule:
             return self.courses_for_day(date.today())
         return self.courses_on(date.today().isoweekday(), week_no)
 
+    def get_current_course(self, now=None):
+        """获取当前时刻正在进行的课程对象；若当前没有正在进行的课，返回最近的下一节课或 None。"""
+        now = now or datetime.now()
+        cur_day = now.date()
+        w_no = self.week_no(cur_day)
+        if w_no and w_no > 0:
+            weekday = cur_day.isoweekday()
+            cur_mins = now.hour * 60 + now.minute
+            for c in self.courses_on(weekday, w_no):
+                s_hm = c.start_time(w_no, self.sections)
+                if s_hm:
+                    s_mins = s_hm[0] * 60 + s_hm[1]
+                    # 每节课通常 45-50 分钟，依节数计算结束时间
+                    span = max(1, (getattr(c, "sec_end", c.sec_start) - c.sec_start + 1))
+                    e_mins = s_mins + 45 * span
+                    if s_mins <= cur_mins <= e_mins:
+                        return c
+        nxt = self.next_class(now)
+        return nxt[0] if nxt else None
+
     def next_class(self, now=None, week_no=None):
         """从 now 起最近的下一节课（若本周无后续课，自动跨周推算下一周首节课），返回 (course, weekday, week_no,
         start_datetime) 或 None（整学期已无后续课）。"""
