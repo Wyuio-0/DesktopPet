@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 # 桌面宠物 —— 一键构建脚本
 #
 # 作用：重新用 PyInstaller 打包 DesktopPet.exe，同步角色资源（阿米娅 / 圣聆初雪
@@ -24,12 +24,19 @@ $Shortcut  = Join-Path $Desktop '桌面宠物.lnk'
 Set-Location $Root
 Write-Host '==> 桌面宠物构建开始' -ForegroundColor Cyan
 
-# --- 0. 预检：关键文件是否齐全 ----------------------------------------------
+# --- 0. 预检：关键文件是否齐全与释放运行占用 ----------------------------------------------
 if (-not (Test-Path $Spec))    { throw "缺少打包配置 $Spec。" }
 if (-not (Test-Path $CharSrc)) { throw "缺少角色资源目录 $CharSrc。" }
 if (-not (Test-Path $IconPath)) {
     Write-Warning "未找到图标 $IconPath，快捷方式将使用 exe 自带图标。"
 }
+
+# 停止可能正在后台运行的桌宠进程，防止 exe / dll 文件占用导致构建覆盖失败
+Get-Process -Name "DesktopPet" -ErrorAction SilentlyContinue | ForEach-Object {
+    Write-Host "    关闭正在运行的桌宠进程 (PID: $($_.Id))..." -ForegroundColor DarkYellow
+    Stop-Process -Id $_.Id -Force
+}
+Start-Sleep -Milliseconds 800
 
 # --- 1. 选择 Python 解释器 --------------------------------------------------
 $Py = $null
@@ -62,53 +69,39 @@ $chars = Get-ChildItem $CharDst -Directory |
 Write-Host "    已同步: $CharDst" -ForegroundColor DarkGray
 Write-Host ("    角色（{0}个）: {1}" -f $chars.Count, ($chars -join ', ')) -ForegroundColor DarkGray
 
-# --- 4. 刷新桌面与发送到快捷方式 -------------------------------------------
-Write-Host '==> [3/4] 刷新桌面与系统快捷方式...' -ForegroundColor Yellow
+# 同步更新本地安装目录（如 D:\AmiyaDesktopPet）
+$InstalledDir = 'D:\AmiyaDesktopPet'
+if (Test-Path $InstalledDir) {
+    Write-Host "==> 同步最新构建至安装目录 $InstalledDir..." -ForegroundColor Yellow
+    Copy-Item "$AppDir\*" $InstalledDir -Recurse -Force -ErrorAction SilentlyContinue
+    Write-Host "    已更新安装目录: $InstalledDir" -ForegroundColor DarkGray
+}
+
+# --- 4. 刷新桌面快捷方式 ----------------------------------------------------
+Write-Host '==> [3/4] 刷新桌面快捷方式...' -ForegroundColor Yellow
 $wsh = New-Object -ComObject WScript.Shell
 
-# 优先同步到用户已安装的 D:\AmiyaDesktopPet 目录（若存在）
-$InstalledDir = "D:\AmiyaDesktopPet"
-$FinalExePath = $ExePath
-$FinalAppDir  = $AppDir
-
-if (Test-Path $InstalledDir) {
-    Write-Host "    检测到现有安装目录: $InstalledDir，正在同步最新程序文件..." -ForegroundColor DarkGray
-    Copy-Item (Join-Path $AppDir "DesktopPet.exe") (Join-Path $InstalledDir "DesktopPet.exe") -Force
-    if (Test-Path (Join-Path $AppDir "_internal")) {
-        Copy-Item (Join-Path $AppDir "_internal\*") (Join-Path $InstalledDir "_internal") -Recurse -Force
-    }
-    $FinalExePath = Join-Path $InstalledDir "DesktopPet.exe"
-    $FinalAppDir  = $InstalledDir
-    Write-Host "    已同步最新版本至: $InstalledDir" -ForegroundColor DarkGray
-}
-
-$DesktopShortcuts = @(
-    Join-Path $Desktop 'Amiya Desktop Pet.lnk',
-    Join-Path $Desktop '桌面宠物.lnk'
+$shortcuts = @(
+    (Join-Path $Desktop '桌面宠物.lnk'),
+    (Join-Path $Desktop 'Amiya Desktop Pet.lnk')
 )
 
-foreach ($sc in $DesktopShortcuts) {
-    $lnk = $wsh.CreateShortcut($sc)
-    $lnk.TargetPath       = $FinalExePath
+foreach ($scPath in $shortcuts) {
+    $lnk = $wsh.CreateShortcut($scPath)
+    # 如果存在安装目录且快捷方式原本指向安装目录，则保留指向安装目录
+    if ((Test-Path $InstalledDir) -and ($scPath -like "*Amiya Desktop Pet*")) {
+        $lnk.TargetPath       = Join-Path $InstalledDir 'DesktopPet.exe'
+        $lnk.WorkingDirectory = $InstalledDir
+        $lnk.IconLocation     = if (Test-Path $IconPath) { "$IconPath,0" } else { "$(Join-Path $InstalledDir 'DesktopPet.exe'),0" }
+    } else {
+        $lnk.TargetPath       = $ExePath
+        $lnk.WorkingDirectory = $AppDir
+        $lnk.IconLocation     = if (Test-Path $IconPath) { "$IconPath,0" } else { "$ExePath,0" }
+    }
     $lnk.Arguments        = ''
-    $lnk.WorkingDirectory = $FinalAppDir
-    $lnk.IconLocation     = if (Test-Path $IconPath) { "$IconPath,0" } else { "$FinalExePath,0" }
     $lnk.Description       = '阿米娅桌宠 · 支持将课件/讲义直接拖拽至此图标一键导入知识库'
     $lnk.Save()
-    Write-Host "    已更新快捷方式: $sc" -ForegroundColor DarkGray
-}
-
-# 刷新资源管理器「发送到」快捷方式
-$SendToDir = [Environment]::GetFolderPath('SendTo')
-if (Test-Path $SendToDir) {
-    $SendToLnk = Join-Path $SendToDir '导入到阿米娅课程知识库.lnk'
-    $slnk = $wsh.CreateShortcut($SendToLnk)
-    $slnk.TargetPath       = $FinalExePath
-    $slnk.WorkingDirectory = $FinalAppDir
-    $slnk.IconLocation     = if (Test-Path $IconPath) { "$IconPath,0" } else { "$FinalExePath,0" }
-    $slnk.Description      = '将选中的课件/讲义导入阿米娅课程知识库'
-    $slnk.Save()
-    Write-Host "    已更新发送到快捷方式: $SendToLnk" -ForegroundColor DarkGray
+    Write-Host "    已更新快捷方式: $scPath" -ForegroundColor DarkGray
 }
 
 # 清理历史遗留的旧快捷方式
@@ -118,4 +111,4 @@ if (Test-Path $LegacyShortcut) {
     Write-Host "    已清理历史遗留快捷方式: $LegacyShortcut" -ForegroundColor DarkGray
 }
 
-Write-Host '==> [4/4] 完成 ✅  桌面宠物已更新，双击桌面快捷方式即可运行。' -ForegroundColor Green
+Write-Host '==> [4/4] 完成 ✅  桌面宠物已构建并更新，双击桌面快捷方式即可运行。' -ForegroundColor Green

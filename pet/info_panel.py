@@ -905,17 +905,15 @@ class InfoPanel(QtWidgets.QWidget):
 
     def dragEnterEvent(self, e):
         if e.mimeData().hasUrls():
-            e.setDropAction(QtCore.Qt.CopyAction)
-            e.accept()
+            e.acceptProposedAction()
         else:
-            e.ignore()
+            super().dragEnterEvent(e)
 
     def dragMoveEvent(self, e):
         if e.mimeData().hasUrls():
-            e.setDropAction(QtCore.Qt.CopyAction)
-            e.accept()
+            e.acceptProposedAction()
         else:
-            e.ignore()
+            super().dragMoveEvent(e)
 
     def dropEvent(self, e):
         if e.mimeData().hasUrls():
@@ -923,11 +921,10 @@ class InfoPanel(QtWidgets.QWidget):
             import os
             valid = [p for p in paths if os.path.exists(p)]
             if valid:
-                e.setDropAction(QtCore.Qt.CopyAction)
-                e.accept()
+                e.acceptProposedAction()
                 self.owner._handle_dropped_files(valid)
                 return
-        e.ignore()
+        super().dropEvent(e)
 
     # ── 窗口行为（拖动 / Esc 关闭）─────────────────────────────────
 

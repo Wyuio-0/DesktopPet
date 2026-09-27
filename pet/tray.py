@@ -79,8 +79,8 @@ class PetTrayCoordinator(QtCore.QObject):
         vis = m.addAction("隐藏桌宠" if self.window.isVisible() else "显示桌宠")
         vis.triggered.connect(self.toggle_visible)
         m.addAction("聊天…", self.tray_chat)
-        m.addAction("课程知识库…", lambda: self.window.show_knowledge_page())
-        m.addAction("上传课件资料…", self.window.upload_courseware)
+        m.addAction("课程知识库…", self.window.show_knowledge_page)
+        m.addAction("导入课件/讲义…", self.window.upload_courseware_dialog)
         m.addSeparator()
 
         tts_act = m.addAction("朗读回答（语音合成）")

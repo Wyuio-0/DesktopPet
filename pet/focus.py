@@ -250,7 +250,7 @@ class PetFocusToolsManager(QtCore.QObject):
 
     def upload_courseware(self):
         """上传课件讲义资料并导入知识库。"""
-        self.window.upload_courseware()
+        self.window.upload_courseware_dialog()
 
     def import_schedule(self):
         """导入强智课表 JSON 文件。"""

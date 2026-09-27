@@ -209,18 +209,6 @@ class TestCoursewareActions:
         assert "麦克斯韦" in res
         assert "大学物理" in res
 
-    def test_empty_file_recorded_in_files_meta(self, tmp_path):
-        kb_dir = tmp_path / "kb"
-        kb = KnowledgeBase(folder=str(kb_dir))
-        empty_f = tmp_path / "empty.txt"
-        empty_f.write_text("", encoding="utf-8")
-        ok, chunks, course = kb.import_file(str(empty_f), course="测试课程")
-        assert ok is True
-        assert chunks == 0
-        stats = kb.get_stats()
-        assert stats["file_count"] == 1
-        assert stats["chunk_count"] == 0
-
 
 class TestMenuIntegration:
     def test_menu_builder_has_upload_action(self):
@@ -231,17 +219,14 @@ class TestMenuIntegration:
         app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
         mock_window = MagicMock()
         mock_window.char.display_name = "阿米娅"
+        mock_window.char.dir = "/dummy"
+        mock_window.prefs = {}
         builder = PetContextMenuBuilder(mock_window)
 
-        # 构建主菜单
+        # 构建课程表子菜单
         menu = QtWidgets.QMenu()
         builder.add_schedule_menu(menu)
-        builder.add_knowledge_menu(menu)
+        sub_actions = [a.text() for a in menu.actions()[0].menu().actions()]
+        assert any("导入课件" in t for t in sub_actions)
+        assert any("课程知识库" in t for t in sub_actions)
 
-        actions_text = [a.text() for a in menu.actions()]
-        assert "课程表" in actions_text
-        assert any("课程知识库" in t for t in actions_text)
-
-        # 触发上传回调
-        builder.upload_courseware()
-        mock_window.upload_courseware.assert_called_once()

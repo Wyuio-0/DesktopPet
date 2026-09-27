@@ -169,3 +169,22 @@ class TestSchedule:
         assert len(s_empty.courses) == 0
 
 
+def test_get_current_course(tmp_path):
+    p = tmp_path / "schedule.json"
+    s = Schedule(path=str(p))
+    s.term_start = date(2026, 9, 1)
+    # Week 1, Monday is 2026-09-07 or 2026-09-01 is Tuesday.
+    # 2026-09-01 is Tuesday (weekday=2).
+    c = Course("大学物理", 2, 1, 2, 1, 16, "all")
+    s.courses = [c]
+    # Check at 08:20 on Tuesday 2026-09-01 (during class 1-2)
+    dt_during = datetime(2026, 9, 1, 8, 20)
+    cur = s.get_current_course(now=dt_during)
+    assert cur is not None
+    assert cur.name == "大学物理"
+
+    # Check at 12:00 on Tuesday 2026-09-01 (no class)
+    dt_after = datetime(2026, 9, 1, 12, 0)
+    assert s.get_current_course(now=dt_after) is None
+
+

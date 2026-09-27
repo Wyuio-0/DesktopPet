@@ -352,7 +352,7 @@ class AmiyaBrain:
         # 若问题问及“这门课/考纲/重点/复习/简答题”等且未明确指明课名，推测当前正在上的课程
         if not target_course and any(w in question for w in ("这门课", "本课", "这节课", "考纲", "重点", "简答题", "考试", "复习", "期末", "上课")):
             if sched:
-                cur_c = sched.get_current_course()
+                cur_c = getattr(sched, "get_current_course", lambda: None)()
                 if cur_c:
                     target_course = cur_c.name
 

@@ -273,11 +273,6 @@ class PetWindow(QtWidgets.QWidget):
             lambda: tts.maybe_stop_idle_clone(600))
         self._clone_idle_timer.start(60 * 1000)
 
-        # 待处理课件文件队列检查（桌面快捷方式拖拽/发送到双重容灾）
-        self._drop_check_timer = QtCore.QTimer(self)
-        self._drop_check_timer.timeout.connect(self._check_dropped_queue)
-        self._drop_check_timer.start(800)
-
         # 跨端协同局域网互联服务
         self.sync_service = get_sync_service()
         self.sync_window = None
@@ -432,6 +427,28 @@ class PetWindow(QtWidgets.QWidget):
 
     def _open_settings(self):
         self.menu_builder.open_settings()
+
+    def upload_courseware_dialog(self):
+        """弹出文件选择框选择要导入的课件/讲义文件并收录。"""
+        filter_str = (
+            "课件讲义文件 (*.pptx *.ppt *.pdf *.docx *.doc *.txt *.md *.png *.jpg);;"
+            "PowerPoint 演示文稿 (*.pptx *.ppt);;"
+            "PDF 文档 (*.pdf);;"
+            "Word 文档 (*.docx *.doc);;"
+            "文本与笔记 (*.txt *.md);;"
+            "所有文件 (*.*)"
+        )
+        files, _ = QtWidgets.QFileDialog.getOpenFileNames(
+            self, "选择要导入的课件与讲义", "", filter_str
+        )
+        if files:
+            self._handle_dropped_files(files)
+
+    def show_knowledge_page(self, course=None):
+        """打开信息面板并切换至课程知识库页面。"""
+        p = self._info_panel()
+        p.present()
+        p.show_knowledge(course)
 
     # ------------------------------------------------------------------ #
     # Animation escalation & Rest config                                   #
@@ -1168,14 +1185,6 @@ class PetWindow(QtWidgets.QWidget):
             self._show_msg_id = single_instance.show_message_id()
         return self._show_msg_id or -1
 
-    def _check_dropped_queue(self):
-        """检查并消费来自桌面快捷方式或文件管理器的待处理文件队列。"""
-        from . import single_instance
-        pending = single_instance.consume_dropped_files()
-        if pending:
-            self._show_pet()
-            QtCore.QTimer.singleShot(150, lambda: self._handle_dropped_files(pending))
-
     # ------------------------------------------------------------------ #
     # Interactions                                                         #
     # ------------------------------------------------------------------ #
@@ -1220,106 +1229,65 @@ class PetWindow(QtWidgets.QWidget):
 
     def dragEnterEvent(self, e):
         if e.mimeData().hasUrls():
-            e.setDropAction(QtCore.Qt.CopyAction)
-            e.accept()
+            e.acceptProposedAction()
         else:
-            e.ignore()
+            super().dragEnterEvent(e)
 
     def dragMoveEvent(self, e):
         if e.mimeData().hasUrls():
-            e.setDropAction(QtCore.Qt.CopyAction)
-            e.accept()
+            e.acceptProposedAction()
         else:
-            e.ignore()
+            super().dragMoveEvent(e)
 
     def dropEvent(self, e):
         if e.mimeData().hasUrls():
             paths = [url.toLocalFile() for url in e.mimeData().urls() if url.isLocalFile()]
             valid = [p for p in paths if os.path.exists(p)]
             if valid:
-                e.setDropAction(QtCore.Qt.CopyAction)
-                e.accept()
+                e.acceptProposedAction()
                 self._handle_dropped_files(valid)
                 return
-        e.ignore()
-
-    def upload_courseware(self):
-        """弹出文件选择框上传课件/讲义文件并导入知识库。"""
-        filter_str = (
-            "课件与讲义文件 (*.pptx *.ppt *.pdf *.docx *.doc *.txt *.md *.png *.jpg);;"
-            "PowerPoint 演示文稿 (*.pptx *.ppt);;"
-            "PDF 文档 (*.pdf);;"
-            "Word 文档 (*.docx *.doc);;"
-            "Markdown 与文本笔记 (*.md *.txt);;"
-            "所有文件 (*.*)"
-        )
-        files, _ = QtWidgets.QFileDialog.getOpenFileNames(
-            self, "选择要导入到课程知识库的课件与资料", "", filter_str
-        )
-        if files:
-            self._handle_dropped_files(files)
-
-    def show_knowledge_page(self, course=None):
-        """展示课程知识库管理界面。"""
-        p = self._info_panel()
-        p.present()
-        p.show_knowledge(course)
-
-    def open_knowledge_dir(self):
-        """在系统资源管理器中打开知识库存储目录。"""
-        import os
-        from .settings import config_dir
-        kb = getattr(self.brain, "knowledge", None)
-        path = kb.folder if kb else os.path.join(config_dir(), "knowledge")
-        os.makedirs(path, exist_ok=True)
-        QtGui.QDesktopServices.openUrl(QtCore.QUrl.fromLocalFile(path))
+        super().dropEvent(e)
 
     def _handle_dropped_files(self, paths):
-        """处理外部拖拽至桌宠身上的讲义/课件文件（自动绑定课程并导入知识库）。"""
+        """处理外部拖拽至桌宠身上或快捷方式传入的讲义/课件文件（自动绑定课程并导入知识库）。"""
         from . import knowledge
         from .schedule_dialogs import CoursewareImportDialog
 
-        if not hasattr(self.brain, "knowledge") or self.brain.knowledge is None:
-            self._attach_brain_services()
+        if not paths:
+            return
+
+        self._show_pet()
 
         doc_paths = [p for p in paths if p.lower().endswith(knowledge.KnowledgeBase.SUPPORTED_EXTS)]
         if not doc_paths:
             self.bubble.say("博士，阿米娅目前支持导入 PPT、PDF、Word 讲义、Markdown 和文本笔记哦！", self._body_rect())
             return
 
+        if not getattr(self.brain, "knowledge", None):
+            self._attach_brain_services()
+
         course_names = [c.name for c in self.schedule.courses if getattr(c, "name", None)]
         active_c = getattr(self.schedule, "get_current_course", lambda: None)()
-        active_name = getattr(active_c, "name", None)
+        active_name = active_c.name if active_c else None
 
         for path in doc_paths:
             fn = os.path.basename(path)
-            # 智能匹配课程
+            # 智能匹配推荐课程
             matched = knowledge.match_course_for_file(fn, course_names, active_course=active_name)
-            if matched:
-                ok, chunk_count, c_name = self.brain.knowledge.import_file(path, course=matched)
+
+            dlg = CoursewareImportDialog(path, courses=self.schedule.courses, default_course=matched, parent=self)
+            dlg.raise_()
+            dlg.activateWindow()
+            if dlg.exec_() == QtWidgets.QDialog.Accepted:
+                selected_course = dlg.selected_course
+                ok, chunk_count, c_name = self.brain.knowledge.import_file(path, course=selected_course)
                 if ok:
-                    if chunk_count > 0:
-                        self.bubble.say(f"好的博士！已将《{fn}》导入到课程【{c_name}】知识库啦！（提取了 {chunk_count} 个知识切片）\n随时可以问我这门课的重点哦～", self._body_rect())
-                    else:
-                        self.bubble.say(f"已收录《{fn}》到课程【{c_name}】！（文件已归档，暂未提取到可读文本）", self._body_rect())
+                    c_desc = f"课程【{c_name}】" if c_name else "通用知识库"
+                    self.bubble.say(f"好的博士！已将《{fn}》成功导入到{c_desc}啦！（提取了 {chunk_count} 个知识切片）\n随时可以问我这门课的重点哦～", self._body_rect())
                     self.play(self.char.interaction("on_import") or "talk")
                     if self._info_panel_widget and self._info_panel_widget.isVisible():
                         QtCore.QTimer.singleShot(0, self._info_panel_widget.refresh_knowledge_page)
-            else:
-                # 弹窗让用户选择关联课程或新建
-                dlg = CoursewareImportDialog(path, courses=self.schedule.courses, parent=self)
-                if dlg.exec_() == QtWidgets.QDialog.Accepted:
-                    selected_course = dlg.selected_course
-                    ok, chunk_count, c_name = self.brain.knowledge.import_file(path, course=selected_course)
-                    if ok:
-                        c_desc = f"课程【{c_name}】" if c_name else "通用知识库"
-                        if chunk_count > 0:
-                            self.bubble.say(f"已将《{fn}》成功导入到{c_desc}！（共 {chunk_count} 个知识切片）\n随时可以向我提问哦～", self._body_rect())
-                        else:
-                            self.bubble.say(f"已收录《{fn}》到{c_desc}！（文件已归档，暂未提取到可读文本）", self._body_rect())
-                        self.play(self.char.interaction("on_import") or "talk")
-                        if self._info_panel_widget and self._info_panel_widget.isVisible():
-                            QtCore.QTimer.singleShot(0, self._info_panel_widget.refresh_knowledge_page)
 
     def _apply_ai_settings(self, cfg):
         old_history = self.brain.history

@@ -77,14 +77,9 @@ def request_show(files=None):
         return
     try:
         msg = ctypes.windll.user32.RegisterWindowMessageW(_SHOW_MSG)
-        try:
-            ctypes.windll.user32.ChangeWindowMessageFilter(msg, 1)
-        except Exception:
-            pass
-        # 异步 PostMessage + 短暂 SendMessageTimeout 双通道广播
-        ctypes.windll.user32.PostMessageW(0xFFFF, msg, 0, 0)
+        # HWND_BROADCAST + SMTO_ABORTIFHUNG：发完不等太久，防止旧实例卡死拖住新实例
         ctypes.windll.user32.SendMessageTimeoutW(
-            0xFFFF, msg, 0, 0, 0x0002, 500, None)
+            0xFFFF, msg, 0, 0, 0x0002, 1000, None)
     except Exception:
         pass
 
@@ -94,11 +89,6 @@ def show_message_id():
     if sys.platform != "win32":
         return None
     try:
-        mid = ctypes.windll.user32.RegisterWindowMessageW(_SHOW_MSG)
-        try:
-            ctypes.windll.user32.ChangeWindowMessageFilter(mid, 1)
-        except Exception:
-            pass
-        return mid
+        return ctypes.windll.user32.RegisterWindowMessageW(_SHOW_MSG)
     except Exception:
         return None
