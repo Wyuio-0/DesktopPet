@@ -83,6 +83,8 @@ class PetContextMenuBuilder(QtCore.QObject):
 
         # ── 2. 学业与效率工具 ────────────────────────────────────────
         self.add_schedule_menu(m)
+        self.add_knowledge_menu(m)
+        m.addAction("➕ 上传课件资料…", self.upload_courseware)
         self.add_tasks_menu(m)
         self.add_focus_menu(m)
         self.add_trans_ocr_menu(m)
@@ -194,7 +196,7 @@ class PetContextMenuBuilder(QtCore.QObject):
                        voice), use_tts=False)
 
     def add_schedule_menu(self, parent):
-        """课程表子菜单：今日课程 / 下一节课 / 本周课表 / 导入。"""
+        """课程表子菜单：今日课程 / 下一节课 / 本周课表 / 知识库 / 导入。"""
         fm = getattr(self.window, "focus_mgr", None)
         sub = parent.addMenu("课程表")
         if fm:
@@ -202,13 +204,29 @@ class PetContextMenuBuilder(QtCore.QObject):
             sub.addAction("下一节课", fm.show_next)
             sub.addAction("本周课表", fm.show_week)
             sub.addSeparator()
+            sub.addAction("课程知识库…", lambda: self.window.show_knowledge_page())
+            sub.addAction("上传课件/讲义…", self.upload_courseware)
+            sub.addSeparator()
             sub.addAction("导入课表…", fm.import_schedule)
         else:
             sub.addAction("今天课程", self.window._show_today)
             sub.addAction("下一节课", self.window._show_next)
             sub.addAction("本周课表", self.window._show_week)
             sub.addSeparator()
+            sub.addAction("课程知识库…", lambda: self.window.show_knowledge_page())
+            sub.addAction("上传课件/讲义…", self.upload_courseware)
+            sub.addSeparator()
             sub.addAction("导入课表…", self.window._import_schedule)
+
+    def add_knowledge_menu(self, parent):
+        """课程知识库子菜单：知识库中心 / 上传课件 / 打开目录 / 重新扫描。"""
+        w = self.window
+        sub = parent.addMenu("课程知识库 (学业 Copilot)")
+        sub.addAction("知识库看板…", lambda: w.show_knowledge_page())
+        sub.addAction("➕ 上传课件/讲义…", self.upload_courseware)
+        sub.addSeparator()
+        sub.addAction("打开课件存储目录", self.open_knowledge_dir)
+        sub.addAction("重新扫描加载知识库", self.reload_knowledge)
 
     def add_tasks_menu(self, parent):
         """待办与考试子菜单。"""
@@ -385,6 +403,14 @@ class PetContextMenuBuilder(QtCore.QObject):
         w.trans_popup.hide()
         w.bubble.say("好的博士，我们重新开始吧。", w._body_rect())
 
+    def upload_courseware(self):
+        """弹出文件选择框上传课件文件。"""
+        self.window.upload_courseware()
+
+    def open_knowledge_dir(self):
+        """在系统资源管理器中打开知识库目录。"""
+        self.window.open_knowledge_dir()
+
     def reload_knowledge(self):
         """重新扫描并加载讲义知识库目录。"""
         w = self.window
@@ -393,8 +419,8 @@ class PetContextMenuBuilder(QtCore.QObject):
             w._attach_brain_services()
             kb = w.brain.knowledge
         kb.reload()
-        if len(kb):
-            w.bubble.say("知识库已重新加载：%d 个片段。" % len(kb), w._body_rect())
+        stats = kb.get_stats()
+        if stats["file_count"]:
+            w.bubble.say(f"知识库已重新加载：已收录 {stats['course_count']} 门课程 · {stats['file_count']} 份课件（{stats['chunk_count']} 个片段）。", w._body_rect())
         else:
-            w.bubble.say("知识库为空。请把讲义 .txt / .md 放进\n%s"
-                        % kb.folder, w._body_rect())
+            w.bubble.say("知识库暂无课件。右键菜单点击「上传课件资料」或直接拖拽课件给阿米娅即可导入哦！", w._body_rect())

@@ -349,21 +349,19 @@ class KnowledgeBase:
                 size, mtime = 0, 0
 
             raw_text = extract_text_from_file(path)
-            if not raw_text or not raw_text.strip():
-                continue
-
             doc_chunks = []
-            for seg in _segment(raw_text):
-                seg = seg.strip()
-                if seg:
-                    c_obj = {
-                        "text": seg,
-                        "source": fn,
-                        "course": course or "",
-                        "path": path
-                    }
-                    self.chunks.append(c_obj)
-                    doc_chunks.append(c_obj)
+            if raw_text and raw_text.strip():
+                for seg in _segment(raw_text):
+                    seg = seg.strip()
+                    if seg:
+                        c_obj = {
+                            "text": seg,
+                            "source": fn,
+                            "course": course or "",
+                            "path": path
+                        }
+                        self.chunks.append(c_obj)
+                        doc_chunks.append(c_obj)
 
             self.files_meta.append({
                 "filename": fn,

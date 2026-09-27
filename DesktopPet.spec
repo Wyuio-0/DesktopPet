@@ -13,11 +13,16 @@ a = Analysis(
     pathex=[],
     binaries=[],
     datas=[('app.ico', '.')],
-    hiddenimports=['cv2', 'PyQt5.QtMultimedia'] + _tts_imports + ['psutil', 'PIL.ImageGrab', 'pet.memory', 'pet.ai_settings', 'pet.theme', 'pet.timers', 'pet.tray', 'pet.menu', 'pet.focus', 'pet.input_controller', 'pet.wander', 'pet.sedentary', 'pet.profile', 'pet.profile_ui', 'pet.weather', 'pet.music', 'pet.notes', 'pet.notes_ui', 'pet.sync_service', 'pet.sync_ui', 'pet.schedule_dialogs'],
+    hiddenimports=['cv2', 'PyQt5.QtMultimedia'] + _tts_imports + ['psutil', 'PIL.ImageGrab', 'pet.memory', 'pet.ai_settings', 'pet.theme', 'pet.timers', 'pet.tray', 'pet.menu', 'pet.focus', 'pet.input_controller', 'pet.wander', 'pet.sedentary', 'pet.profile', 'pet.profile_ui', 'pet.weather', 'pet.music', 'pet.notes', 'pet.notes_ui', 'pet.sync_service', 'pet.sync_ui', 'pet.schedule_dialogs', 'pet.knowledge', 'pet.single_instance'],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[],
+    excludes=[
+        'torch', 'torchvision', 'torchaudio', 'tensorflow', 'tensorboard',
+        'scipy', 'sympy', 'pandas', 'matplotlib', 'IPython',
+        'notebook', 'jupyter', 'pytest', 'unittest', 'sklearn',
+        'fsspec', 'zmq', 'lark',
+    ],
     noarchive=False,
     optimize=0,
 )

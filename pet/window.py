@@ -1207,30 +1207,67 @@ class PetWindow(QtWidgets.QWidget):
 
     def dragEnterEvent(self, e):
         if e.mimeData().hasUrls():
-            e.acceptProposedAction()
+            e.setDropAction(QtCore.Qt.CopyAction)
+            e.accept()
         else:
-            super().dragEnterEvent(e)
+            e.ignore()
 
     def dragMoveEvent(self, e):
         if e.mimeData().hasUrls():
-            e.acceptProposedAction()
+            e.setDropAction(QtCore.Qt.CopyAction)
+            e.accept()
         else:
-            super().dragMoveEvent(e)
+            e.ignore()
 
     def dropEvent(self, e):
         if e.mimeData().hasUrls():
             paths = [url.toLocalFile() for url in e.mimeData().urls() if url.isLocalFile()]
             valid = [p for p in paths if os.path.exists(p)]
             if valid:
-                e.acceptProposedAction()
+                e.setDropAction(QtCore.Qt.CopyAction)
+                e.accept()
                 self._handle_dropped_files(valid)
                 return
-        super().dropEvent(e)
+        e.ignore()
+
+    def upload_courseware(self):
+        """弹出文件选择框上传课件/讲义文件并导入知识库。"""
+        filter_str = (
+            "课件与讲义文件 (*.pptx *.ppt *.pdf *.docx *.doc *.txt *.md *.png *.jpg);;"
+            "PowerPoint 演示文稿 (*.pptx *.ppt);;"
+            "PDF 文档 (*.pdf);;"
+            "Word 文档 (*.docx *.doc);;"
+            "Markdown 与文本笔记 (*.md *.txt);;"
+            "所有文件 (*.*)"
+        )
+        files, _ = QtWidgets.QFileDialog.getOpenFileNames(
+            self, "选择要导入到课程知识库的课件与资料", "", filter_str
+        )
+        if files:
+            self._handle_dropped_files(files)
+
+    def show_knowledge_page(self, course=None):
+        """展示课程知识库管理界面。"""
+        p = self._info_panel()
+        p.present()
+        p.show_knowledge(course)
+
+    def open_knowledge_dir(self):
+        """在系统资源管理器中打开知识库存储目录。"""
+        import os
+        from .settings import config_dir
+        kb = getattr(self.brain, "knowledge", None)
+        path = kb.folder if kb else os.path.join(config_dir(), "knowledge")
+        os.makedirs(path, exist_ok=True)
+        QtGui.QDesktopServices.openUrl(QtCore.QUrl.fromLocalFile(path))
 
     def _handle_dropped_files(self, paths):
         """处理外部拖拽至桌宠身上的讲义/课件文件（自动绑定课程并导入知识库）。"""
         from . import knowledge
         from .schedule_dialogs import CoursewareImportDialog
+
+        if not hasattr(self.brain, "knowledge") or self.brain.knowledge is None:
+            self._attach_brain_services()
 
         doc_paths = [p for p in paths if p.lower().endswith(knowledge.KnowledgeBase.SUPPORTED_EXTS)]
         if not doc_paths:
@@ -1248,7 +1285,10 @@ class PetWindow(QtWidgets.QWidget):
             if matched:
                 ok, chunk_count, c_name = self.brain.knowledge.import_file(path, course=matched)
                 if ok:
-                    self.bubble.say(f"好的博士！已将《{fn}》导入到课程【{c_name}】知识库啦！（提取了 {chunk_count} 个知识切片）\n随时可以问我这门课的重点哦～", self._body_rect())
+                    if chunk_count > 0:
+                        self.bubble.say(f"好的博士！已将《{fn}》导入到课程【{c_name}】知识库啦！（提取了 {chunk_count} 个知识切片）\n随时可以问我这门课的重点哦～", self._body_rect())
+                    else:
+                        self.bubble.say(f"已收录《{fn}》到课程【{c_name}】！（文件已归档，暂未提取到可读文本）", self._body_rect())
                     self.play(self.char.interaction("on_import") or "talk")
                     if self._info_panel_widget and self._info_panel_widget.isVisible():
                         QtCore.QTimer.singleShot(0, self._info_panel_widget.refresh_knowledge_page)
@@ -1260,7 +1300,10 @@ class PetWindow(QtWidgets.QWidget):
                     ok, chunk_count, c_name = self.brain.knowledge.import_file(path, course=selected_course)
                     if ok:
                         c_desc = f"课程【{c_name}】" if c_name else "通用知识库"
-                        self.bubble.say(f"已将《{fn}》成功导入到{c_desc}！（共 {chunk_count} 个知识切片）\n随时可以向我提问哦～", self._body_rect())
+                        if chunk_count > 0:
+                            self.bubble.say(f"已将《{fn}》成功导入到{c_desc}！（共 {chunk_count} 个知识切片）\n随时可以向我提问哦～", self._body_rect())
+                        else:
+                            self.bubble.say(f"已收录《{fn}》到{c_desc}！（文件已归档，暂未提取到可读文本）", self._body_rect())
                         self.play(self.char.interaction("on_import") or "talk")
                         if self._info_panel_widget and self._info_panel_widget.isVisible():
                             QtCore.QTimer.singleShot(0, self._info_panel_widget.refresh_knowledge_page)

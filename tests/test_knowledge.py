@@ -208,3 +208,40 @@ class TestCoursewareActions:
         res = actions.query_courseware("麦克斯韦方程组", course="大学物理")
         assert "麦克斯韦" in res
         assert "大学物理" in res
+
+    def test_empty_file_recorded_in_files_meta(self, tmp_path):
+        kb_dir = tmp_path / "kb"
+        kb = KnowledgeBase(folder=str(kb_dir))
+        empty_f = tmp_path / "empty.txt"
+        empty_f.write_text("", encoding="utf-8")
+        ok, chunks, course = kb.import_file(str(empty_f), course="测试课程")
+        assert ok is True
+        assert chunks == 0
+        stats = kb.get_stats()
+        assert stats["file_count"] == 1
+        assert stats["chunk_count"] == 0
+
+
+class TestMenuIntegration:
+    def test_menu_builder_has_upload_action(self):
+        from pet.menu import PetContextMenuBuilder
+        from PyQt5 import QtWidgets
+        from unittest.mock import MagicMock
+
+        app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+        mock_window = MagicMock()
+        mock_window.char.display_name = "阿米娅"
+        builder = PetContextMenuBuilder(mock_window)
+
+        # 构建主菜单
+        menu = QtWidgets.QMenu()
+        builder.add_schedule_menu(menu)
+        builder.add_knowledge_menu(menu)
+
+        actions_text = [a.text() for a in menu.actions()]
+        assert "课程表" in actions_text
+        assert any("课程知识库" in t for t in actions_text)
+
+        # 触发上传回调
+        builder.upload_courseware()
+        mock_window.upload_courseware.assert_called_once()

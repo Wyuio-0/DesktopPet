@@ -434,7 +434,7 @@ class CoursewareImportDialog(QtWidgets.QDialog):
         self.default_course = default_course
         self.selected_course = ""
         self.setWindowTitle("导入课件资料")
-        self.setWindowFlags(QtCore.Qt.Dialog | QtCore.Qt.FramelessWindowHint)
+        self.setWindowFlags(QtCore.Qt.Dialog | QtCore.Qt.FramelessWindowHint | QtCore.Qt.WindowStaysOnTopHint)
         self.setAttribute(QtCore.Qt.WA_TranslucentBackground, True)
         self.setFixedWidth(440)
         self._build_ui()
