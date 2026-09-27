@@ -1,77 +1,133 @@
 """课程详情与编辑弹窗（对齐手机端交互体验）。"""
 
+import os
+
 from PyQt5 import QtCore, QtGui, QtWidgets
 
 from . import theme
 from .schedule import Course, WEEKDAY_NAMES, _PARITY_LABEL
 
 
+# These dialogs are frameless + translucent, so the visible surface is a
+# QFrame#DialogRoot rather than the QDialog itself — that plus DangerBtn and the
+# combo popup is why this isn't just theme.DIALOG_QSS. Every value comes from
+# theme; nothing here is a literal colour or size.
 DIALOG_QSS = """
 QFrame#DialogRoot {
-    background: #14171C;
-    border: 1px solid #2D3748;
-    border-radius: 12px;
+    background: %(panel)s;
+    border: 1px solid %(grid)s;
+    border-radius: %(r_lg)dpx;
 }
 QLabel {
-    color: #E2E8F0;
-    font-size: 13px;
-    font-family: 'Microsoft YaHei UI', 'Microsoft YaHei', 'Segoe UI';
+    color: %(text)s;
+    font-size: %(fs_sm)dpx;
+    font-family: %(font)s;
 }
 QLineEdit, QSpinBox, QComboBox {
-    background: #1E2430;
-    color: #F8FAFC;
-    border: 1px solid #334155;
-    border-radius: 6px;
+    background: %(field)s;
+    color: %(text)s;
+    border: 1px solid %(grid)s;
+    border-radius: %(r_sm)dpx;
     padding: 6px 10px;
-    font-size: 13px;
-    selection-background-color: #00B0FF;
+    font-size: %(fs_sm)dpx;
+    selection-background-color: %(accent_deep)s;
+    selection-color: #FFFFFF;
 }
 QLineEdit:focus, QSpinBox:focus, QComboBox:focus {
-    border: 1px solid #00B0FF;
+    border: 1px solid %(accent)s;
+    background: %(field_hi)s;
 }
 QComboBox::drop-down {
     border: none;
     width: 20px;
 }
 QComboBox QAbstractItemView {
-    background: #1E2430;
-    color: #F8FAFC;
-    border: 1px solid #334155;
-    selection-background-color: #00B0FF;
+    background: %(field)s;
+    color: %(text)s;
+    border: 1px solid %(border_strong)s;
+    selection-background-color: %(accent_deep)s;
     selection-color: #FFFFFF;
 }
 QPushButton {
-    background: #2A3342;
-    color: #E2E8F0;
-    border: 1px solid #3B485E;
-    border-radius: 8px;
-    padding: 7px 14px;
-    font-size: 13px;
+    background: %(field)s;
+    color: %(text)s;
+    border: 1px solid %(grid)s;
+    border-radius: %(r_sm)dpx;
+    padding: 7px %(sp_4)dpx;
+    font-size: %(fs_sm)dpx;
     font-weight: 500;
 }
 QPushButton:hover {
-    background: #374459;
-    border-color: #4B5E7D;
+    background: %(hover)s;
+    border-color: %(accent)s;
+}
+QPushButton:pressed {
+    background: %(pressed)s;
 }
 QPushButton#PrimaryBtn {
-    background: #00B0FF;
-    color: #FFFFFF;
-    border: 1px solid #0091EA;
+    background: %(accent)s;
+    color: %(on_accent)s;
+    border: 1px solid %(accent)s;
     font-weight: bold;
 }
 QPushButton#PrimaryBtn:hover {
-    background: #40C4FF;
+    background: %(accent_bright)s;
+    border-color: %(accent_bright)s;
+}
+QPushButton#PrimaryBtn:pressed {
+    background: %(accent_deep)s;
+    color: #FFFFFF;
 }
 QPushButton#DangerBtn {
-    background: #2D1A1F;
-    color: #FF5252;
-    border: 1px solid #7F1D1D;
+    background: %(field)s;
+    color: %(red)s;
+    border: 1px solid %(red)s;
 }
 QPushButton#DangerBtn:hover {
-    background: #4C1D24;
-    color: #FF8A80;
+    background: %(red)s;
+    color: %(panel)s;
 }
-"""
+""" % {
+    "panel": theme.PANEL_SOLID, "field": theme.FIELD,
+    "field_hi": theme.FIELD_DARK, "grid": theme.GRID,
+    "border_strong": theme.BORDER_STRONG, "text": theme.TEXT,
+    "accent": theme.ACCENT, "accent_bright": theme.ACCENT_BRIGHT,
+    "accent_deep": theme.ACCENT_DEEP, "on_accent": theme.ON_ACCENT,
+    "red": theme.RED, "hover": theme.DLG_HOVER, "pressed": theme.DLG_PRESSED,
+    "font": theme.FONT, "fs_sm": theme.FS_SM,
+    "r_sm": theme.R_SM, "r_lg": theme.R_LG, "sp_4": theme.SP_4,
+}
+
+# Fragments for widgets styled individually. These were repeated inline with
+# literal colours before — the close-button rule appeared verbatim three times.
+_S_CLOSE_BTN = ("border: none; background: transparent; font-size: %dpx; color: %s;"
+                % (theme.FS_MD, theme.TEXT_DIM))
+_S_SECTION_TITLE = ("font-size: %dpx; font-weight: bold; color: %s;"
+                    % (theme.FS_MD, theme.TEXT_DIM))
+_S_DIALOG_TITLE = ("font-size: %dpx; font-weight: bold; color: %s;"
+                   % (theme.FS_LG, theme.TEXT))
+_S_COURSE_NAME = ("font-size: %dpx; font-weight: bold; color: %s;"
+                  % (theme.FS_LG, theme.TEXT))
+_S_CARD = "background: %s; border-radius: %dpx;" % (theme.FIELD, theme.R_MD)
+_S_CARD_OUTLINED = ("background: %s; border-radius: %dpx; border: 1px solid %s;"
+                    % (theme.FIELD, theme.R_MD, theme.GRID))
+_S_META_KEY = ("color: %s; font-size: %dpx; min-width: 80px;"
+               % (theme.TEXT_DIM, theme.FS_SM))
+_S_META_VAL = ("color: %s; font-size: %dpx; font-weight: 500;"
+               % (theme.TEXT, theme.FS_SM))
+_S_HINT = "color: %s; font-size: %dpx;" % (theme.TEXT_DIM, theme.FS_SM)
+_S_SUBTLE = "color: %s; font-size: %dpx;" % (theme.TEXT_DIM, theme.FS_XS)
+# Light-violet fill needs the near-black foreground, not white (7.31:1).
+_S_BADGE = ("background: %s; color: %s; font-weight: bold; font-size: %dpx;"
+            " padding: 4px %dpx; border-radius: %dpx;"
+            % (theme.ACCENT, theme.ON_ACCENT, theme.FS_XS, theme.SP_2, theme.R_SM))
+
+
+def _s_input(border):
+    """Inline input style for the two combos/edits that opt out of DIALOG_QSS."""
+    return ("background: %s; color: %s; border: 1px solid %s;"
+            " padding: 6px 10px; border-radius: %dpx; font-size: %dpx;"
+            % (theme.FIELD, theme.TEXT, border, theme.R_SM, theme.FS_SM))
 
 
 class CourseDetailDialog(QtWidgets.QDialog):
@@ -85,7 +141,7 @@ class CourseDetailDialog(QtWidgets.QDialog):
     def __init__(self, course, color=None, sections=None, parent=None):
         super().__init__(parent)
         self.course = course
-        self.color = color or QtGui.QColor("#00B0FF")
+        self.color = color or QtGui.QColor(theme.ACCENT)
         self.sections = sections or {}
         self.setWindowTitle("课程详情")
         self.setWindowFlags(QtCore.Qt.Dialog | QtCore.Qt.FramelessWindowHint)
@@ -105,30 +161,32 @@ class CourseDetailDialog(QtWidgets.QDialog):
         head_lay = QtWidgets.QHBoxLayout()
         color_dot = QtWidgets.QFrame(root)
         color_dot.setFixedSize(5, 20)
+        # 2px, not theme.R_SM: the bar is only 5px wide, so a 4px radius would
+        # round it into a lozenge instead of a crisp indicator.
         color_dot.setStyleSheet(f"background: {self.color.name()}; border-radius: 2px;")
         head_lay.addWidget(color_dot)
 
         title_lbl = QtWidgets.QLabel("课程详情", root)
-        title_lbl.setStyleSheet("font-size: 15px; font-weight: bold; color: #94A3B8;")
+        title_lbl.setStyleSheet(_S_SECTION_TITLE)
         head_lay.addWidget(title_lbl)
         head_lay.addStretch(1)
 
         close_btn = QtWidgets.QPushButton("✕", root)
         close_btn.setFixedSize(26, 26)
-        close_btn.setStyleSheet("border:none; font-size: 15px; color: #94A3B8; background: transparent;")
+        close_btn.setStyleSheet(_S_CLOSE_BTN)
         close_btn.clicked.connect(self.reject)
         head_lay.addWidget(close_btn)
         root_lay.addLayout(head_lay)
 
         # 课程大标题
         name_lbl = QtWidgets.QLabel(self.course.name, root)
-        name_lbl.setStyleSheet("font-size: 18px; font-weight: bold; color: #FFFFFF;")
+        name_lbl.setStyleSheet(_S_COURSE_NAME)
         name_lbl.setWordWrap(True)
         root_lay.addWidget(name_lbl)
 
         # 详情条目卡片
         info_card = QtWidgets.QFrame(root)
-        info_card.setStyleSheet("background: #1A1F29; border-radius: 8px;")
+        info_card.setStyleSheet(_S_CARD)
         card_lay = QtWidgets.QVBoxLayout(info_card)
         card_lay.setContentsMargins(14, 12, 14, 12)
         card_lay.setSpacing(10)
@@ -200,9 +258,9 @@ class CourseDetailDialog(QtWidgets.QDialog):
         row = QtWidgets.QHBoxLayout()
         row.setSpacing(8)
         lbl = QtWidgets.QLabel(label)
-        lbl.setStyleSheet("color: #94A3B8; font-size: 13px; min-width: 80px;")
+        lbl.setStyleSheet(_S_META_KEY)
         val = QtWidgets.QLabel(value)
-        val.setStyleSheet("color: #F1F5F9; font-size: 13px; font-weight: 500;")
+        val.setStyleSheet(_S_META_VAL)
         val.setWordWrap(True)
         row.addWidget(lbl)
         row.addWidget(val, 1)
@@ -263,13 +321,13 @@ class CourseEditDialog(QtWidgets.QDialog):
         head_lay = QtWidgets.QHBoxLayout()
         title_text = "编辑课程" if self.editing_course else "添加新课程"
         title_lbl = QtWidgets.QLabel(title_text, root)
-        title_lbl.setStyleSheet("font-size: 16px; font-weight: bold; color: #FFFFFF;")
+        title_lbl.setStyleSheet(_S_DIALOG_TITLE)
         head_lay.addWidget(title_lbl)
         head_lay.addStretch(1)
 
         close_btn = QtWidgets.QPushButton("✕", root)
         close_btn.setFixedSize(26, 26)
-        close_btn.setStyleSheet("border:none; font-size: 15px; color: #94A3B8; background: transparent;")
+        close_btn.setStyleSheet(_S_CLOSE_BTN)
         close_btn.clicked.connect(self.reject)
         head_lay.addWidget(close_btn)
         root_lay.addLayout(head_lay)
@@ -450,17 +508,17 @@ class CoursewareImportDialog(QtWidgets.QDialog):
         # 顶栏
         head_lay = QtWidgets.QHBoxLayout()
         icon_lbl = QtWidgets.QLabel("📚", root)
-        icon_lbl.setStyleSheet("font-size: 16px;")
+        icon_lbl.setStyleSheet("font-size: %dpx;" % theme.FS_LG)
         head_lay.addWidget(icon_lbl)
 
         title_lbl = QtWidgets.QLabel("导入课程讲义与课件", root)
-        title_lbl.setStyleSheet("font-size: 16px; font-weight: bold; color: #FFFFFF;")
+        title_lbl.setStyleSheet(_S_DIALOG_TITLE)
         head_lay.addWidget(title_lbl)
         head_lay.addStretch(1)
 
         close_btn = QtWidgets.QPushButton("✕", root)
         close_btn.setFixedSize(26, 26)
-        close_btn.setStyleSheet("border:none; font-size: 15px; color: #94A3B8; background: transparent;")
+        close_btn.setStyleSheet(_S_CLOSE_BTN)
         close_btn.clicked.connect(self.reject)
         head_lay.addWidget(close_btn)
         root_lay.addLayout(head_lay)
@@ -472,21 +530,21 @@ class CoursewareImportDialog(QtWidgets.QDialog):
         ext = os.path.splitext(fn)[1].upper().replace(".", "")
 
         file_card = QtWidgets.QFrame(root)
-        file_card.setStyleSheet("background: #1A1F29; border-radius: 8px; border: 1px solid #232A36;")
+        file_card.setStyleSheet(_S_CARD_OUTLINED)
         fc_lay = QtWidgets.QHBoxLayout(file_card)
         fc_lay.setContentsMargins(12, 10, 12, 10)
         fc_lay.setSpacing(10)
 
         badge = QtWidgets.QLabel(ext, file_card)
-        badge.setStyleSheet("background: #00B0FF; color: #000000; font-weight: bold; font-size: 11px; padding: 4px 8px; border-radius: 4px;")
+        badge.setStyleSheet(_S_BADGE)
         fc_lay.addWidget(badge)
 
         info_lay = QtWidgets.QVBoxLayout()
         name_l = QtWidgets.QLabel(fn, file_card)
-        name_l.setStyleSheet("color: #FFFFFF; font-weight: bold; font-size: 13px;")
+        name_l.setStyleSheet(_S_META_VAL)
         name_l.setWordWrap(True)
         size_l = QtWidgets.QLabel(f"大小: {sz_str}", file_card)
-        size_l.setStyleSheet("color: #94A3B8; font-size: 11px;")
+        size_l.setStyleSheet(_S_SUBTLE)
         info_lay.addWidget(name_l)
         info_lay.addWidget(size_l)
         fc_lay.addLayout(info_lay, 1)
@@ -494,11 +552,11 @@ class CoursewareImportDialog(QtWidgets.QDialog):
 
         # 关联课程选项
         hint_lbl = QtWidgets.QLabel("请选择该课件关联的学科课程：", root)
-        hint_lbl.setStyleSheet("color: #94A3B8; font-size: 13px;")
+        hint_lbl.setStyleSheet(_S_HINT)
         root_lay.addWidget(hint_lbl)
 
         self.course_combo = QtWidgets.QComboBox(root)
-        self.course_combo.setStyleSheet("background: #1A1F29; color: #FFFFFF; border: 1px solid #232A36; padding: 6px 10px; border-radius: 6px; font-size: 13px;")
+        self.course_combo.setStyleSheet(_s_input(theme.GRID))
 
         # 去重收集课表中的课程
         seen_courses = []
@@ -527,7 +585,7 @@ class CoursewareImportDialog(QtWidgets.QDialog):
         # 自定义课程名输入框（初始隐藏）
         self.custom_course_edit = QtWidgets.QLineEdit(root)
         self.custom_course_edit.setPlaceholderText("请输入新课程名称，例如「微积分」...")
-        self.custom_course_edit.setStyleSheet("background: #1A1F29; color: #FFFFFF; border: 1px solid #00B0FF; padding: 6px 10px; border-radius: 6px; font-size: 13px;")
+        self.custom_course_edit.setStyleSheet(_s_input(theme.ACCENT))
         self.custom_course_edit.setVisible(False)
         self.course_combo.currentIndexChanged.connect(self._on_combo_changed)
         root_lay.addWidget(self.custom_course_edit)

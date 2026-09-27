@@ -27,9 +27,32 @@ def _esc(t):
 
 
 def _day_head(name):
-    """Markdown 风格的「标题行」（金色加粗）。"""
-    return ('<p style="margin:12px 0 2px 0;color:%s;font-size:20px;'
-            'font-weight:700;">%s</p>' % (theme.FLOAT_GOLD, _esc(name)))
+    """Markdown 风格的「标题行」（强调色加粗）。"""
+    return ('<p style="margin:12px 0 2px 0;color:%s;font-size:%dpx;'
+            'font-weight:700;">%s</p>'
+            % (theme.ACCENT_BRIGHT, theme.FS_XL, _esc(name)))
+
+
+def _badge(text, color, *, tint="18", bold=False):
+    """A pill badge tinted from `color`.
+
+    The three course-status badges and the countdown badge all shared this
+    markup with literal colours; `tint` is the fill alpha in hex-ish percent so
+    the fill stays a wash of the border colour rather than a second palette.
+    """
+    return (
+        '<span style="background:%s; color:%s; border:1px solid %s;'
+        ' padding:3px %dpx; border-radius:%dpx; font-size:%dpx;%s">%s</span>'
+        % (_tint(color, tint), color, color, theme.SP_2, theme.R_SM,
+           theme.FS_XS, " font-weight:bold;" if bold else "", text)
+    )
+
+
+def _tint(hex_color, pct):
+    """`hex_color` at `pct`% opacity as an rgba() string for inline HTML."""
+    h = hex_color.lstrip("#")
+    r, g, b = (int(h[i:i + 2], 16) for i in (0, 2, 4))
+    return "rgba(%d,%d,%d,%.2f)" % (r, g, b, int(pct) / 100.0)
 
 
 _DAY_LABELS = {1: "一", 2: "二", 3: "三", 4: "四", 5: "五", 6: "六", 7: "日"}
@@ -44,7 +67,7 @@ def _today_card_html(c, sched, now, week_no):
 
     # 判定课程状态 (进行中 / 即将开始 / 已结束)
     cur_mins = now.hour * 60 + now.minute
-    status_badge = '<span style="background:#2D3748; color:#94A3B8; padding:3px 8px; border-radius:4px; font-size:12px;">已结束</span>'
+    status_badge = _badge("已结束", theme.TEXT_DIM)
     if a and ":" in a:
         try:
             parts = a.split(":")
@@ -54,9 +77,10 @@ def _today_card_html(c, sched, now, week_no):
                 eparts = b.split(":")
                 end_m = int(eparts[0]) * 60 + int(eparts[1]) + 45
             if cur_mins < start_m:
-                status_badge = '<span style="background:rgba(0,176,255,0.18); color:#00B0FF; border:1px solid #00B0FF; padding:3px 8px; border-radius:4px; font-size:12px;">待上课</span>'
+                status_badge = _badge("待上课", theme.ACCENT)
             elif start_m <= cur_mins <= end_m:
-                status_badge = '<span style="background:rgba(76,175,80,0.22); color:#4CAF50; border:1px solid #4CAF50; padding:3px 8px; border-radius:4px; font-size:12px; font-weight:bold;">● 正在进行中</span>'
+                status_badge = _badge("● 正在进行中", theme.GREEN, tint="22",
+                                      bold=True)
         except Exception:
             pass
 
@@ -72,15 +96,17 @@ def _today_card_html(c, sched, now, week_no):
     meta_line = " &nbsp;·&nbsp; ".join(meta_parts)
 
     return f"""
-    <div style="background:#161B22; border:1px solid #30363D; border-radius:8px; padding:12px 16px; margin:8px 0;">
+    <div style="background:{theme.FIELD}; border:1px solid {theme.GRID};
+                border-radius:{theme.R_MD}px; padding:{theme.SP_3}px {theme.SP_4}px;
+                margin:{theme.SP_2}px 0;">
         <table width="100%" border="0" cellpadding="0" cellspacing="0">
             <tr>
-                <td align="left"><span style="color:#00B0FF; font-weight:bold; font-size:13px;">{secs} {time_str}</span></td>
+                <td align="left"><span style="color:{theme.ACCENT}; font-weight:bold; font-size:{theme.FS_SM}px;">{secs} {time_str}</span></td>
                 <td align="right">{status_badge}</td>
             </tr>
         </table>
-        <div style="color:#FFFFFF; font-size:16px; font-weight:bold; margin:6px 0;">{_esc(c.name)}</div>
-        <div style="color:#8B949E; font-size:12px;">{meta_line}</div>
+        <div style="color:{theme.TEXT}; font-size:{theme.FS_MD}px; font-weight:bold; margin:6px 0;">{_esc(c.name)}</div>
+        <div style="color:{theme.TEXT_DIM}; font-size:{theme.FS_XS}px;">{meta_line}</div>
     </div>
     """
 
@@ -94,18 +120,18 @@ def _schedule_html(which, sched, week_no):
         if not courses:
             return f"""
             <div style="text-align:center; padding:50px 20px;">
-                <div style="font-size:36px; margin-bottom:12px;">☕</div>
-                <div style="color:#FFFFFF; font-size:18px; font-weight:bold; margin-bottom:8px;">今日无课 · 自由自习</div>
-                <div style="color:#8B949E; font-size:13px; line-height:1.6;">
+                <div style="font-size:{theme.FS_HERO}px; margin-bottom:{theme.SP_3}px;">☕</div>
+                <div style="color:{theme.TEXT}; font-size:{theme.FS_LG}px; font-weight:bold; margin-bottom:{theme.SP_2}px;">今日无课 · 自由自习</div>
+                <div style="color:{theme.TEXT_DIM}; font-size:{theme.FS_SM}px; line-height:1.6;">
                     今天 ({today_date_str}) 没有排课，博士可以好好休息或自习备考~<br/>
                     点击上方「<b>📅 本周课表</b>」可浏览全周日程，或点击「<b>+ 录入课程</b>」手动添加。
                 </div>
             </div>
             """
         head = f"""
-        <div style="margin-bottom:12px;">
-            <span style="font-size:18px; font-weight:bold; color:#F8FAFC;">今日日程</span>
-            <span style="font-size:13px; color:#00B0FF; margin-left:8px;">{today_date_str} · 共 {len(courses)} 门课程</span>
+        <div style="margin-bottom:{theme.SP_3}px;">
+            <span style="font-size:{theme.FS_LG}px; font-weight:bold; color:{theme.TEXT};">今日日程</span>
+            <span style="font-size:{theme.FS_SM}px; color:{theme.ACCENT}; margin-left:{theme.SP_2}px;">{today_date_str} · 共 {len(courses)} 门课程</span>
         </div>
         """
         cards = "".join(_today_card_html(c, sched, now, week_no) for c in courses)
@@ -114,11 +140,11 @@ def _schedule_html(which, sched, week_no):
     # which == "next"
     nxt = sched.next_class()
     if not nxt:
-        return """
+        return f"""
         <div style="text-align:center; padding:50px 20px;">
-            <div style="font-size:36px; margin-bottom:12px;">🎉</div>
-            <div style="color:#FFFFFF; font-size:18px; font-weight:bold; margin-bottom:8px;">本周没有剩余课程了</div>
-            <div style="color:#8B949E; font-size:13px;">博士可以好好享受空闲时光！</div>
+            <div style="font-size:{theme.FS_HERO}px; margin-bottom:{theme.SP_3}px;">🎉</div>
+            <div style="color:{theme.TEXT}; font-size:{theme.FS_LG}px; font-weight:bold; margin-bottom:{theme.SP_2}px;">本周没有剩余课程了</div>
+            <div style="color:{theme.TEXT_DIM}; font-size:{theme.FS_SM}px;">博士可以好好享受空闲时光！</div>
         </div>
         """
     c, weekday, _, start = nxt
@@ -129,70 +155,126 @@ def _schedule_html(which, sched, week_no):
     meta_line = " &nbsp;·&nbsp; ".join(x for x in [where, teacher, f"周{_DAY_LABELS.get(weekday, '')} 第 {c.sec_start}-{c.sec_end} 节"] if x)
 
     return f"""
-    <div style="margin-bottom:16px;">
-        <span style="font-size:18px; font-weight:bold; color:#F8FAFC;">下一节课安排</span>
+    <div style="margin-bottom:{theme.SP_4}px;">
+        <span style="font-size:{theme.FS_LG}px; font-weight:bold; color:{theme.TEXT};">下一节课安排</span>
     </div>
-    <div style="background:#161B22; border:1px solid #00B0FF; border-radius:10px; padding:18px 20px;">
+    <div style="background:{theme.FIELD}; border:1px solid {theme.ACCENT};
+                border-radius:{theme.R_MD}px; padding:{theme.SP_5}px {theme.SP_5}px;">
         <table width="100%" border="0" cellpadding="0" cellspacing="0">
             <tr>
-                <td align="left"><span style="color:#00B0FF; font-size:13px; font-weight:bold;">🕒 开课时刻：{start.strftime('%H:%M')}</span></td>
-                <td align="right"><span style="background:rgba(245,158,11,0.2); color:#FBBF24; border:1px solid #F59E0B; padding:3px 10px; border-radius:12px; font-size:12px; font-weight:bold;">距离上课 {time_badge}</span></td>
+                <td align="left"><span style="color:{theme.ACCENT}; font-size:{theme.FS_SM}px; font-weight:bold;">🕒 开课时刻：{start.strftime('%H:%M')}</span></td>
+                <td align="right">{_badge("距离上课 " + time_badge, theme.AMBER, tint="20", bold=True)}</td>
             </tr>
         </table>
-        <div style="color:#FFFFFF; font-size:22px; font-weight:bold; margin:10px 0;">{_esc(c.name)}</div>
-        <div style="color:#94A3B8; font-size:13px;">{meta_line}</div>
+        <div style="color:{theme.TEXT}; font-size:{theme.FS_XL}px; font-weight:bold; margin:10px 0;">{_esc(c.name)}</div>
+        <div style="color:{theme.TEXT_DIM}; font-size:{theme.FS_SM}px;">{meta_line}</div>
     </div>
     """
 
 
 _QSS = """
-QWidget#PanelRoot { background:%s; color:%s; }
-QWidget#TitleBar { background:%s; }
-QLabel#TitleText { color:%s; font-size:20px; font-weight:700; }
-QLabel#TitleSub { color:%s; font-size:13px; }
-QPushButton#CloseBtn { color:%s; border:none; font-size:22px; }
-QPushButton#CloseBtn:hover { color:%s; }
-QListWidget#Nav { background:%s; border:none; font-size:18px; padding-top:10px; }
-QListWidget#Nav::item { padding:16px 18px; border-radius:4px; margin:2px 8px; }
-QListWidget#Nav::item:selected { background:%s; color:%s; }
+QWidget#PanelRoot { background:%(bg)s; color:%(text)s; }
+QWidget#TitleBar { background:%(panel)s; }
+QLabel#TitleText { color:%(accent_bright)s; font-size:%(fs_xl)dpx; font-weight:700; }
+QLabel#TitleSub { color:%(dim)s; font-size:%(fs_sm)dpx; }
+QPushButton#CloseBtn { color:%(dim)s; border:none; font-size:%(fs_xl)dpx; }
+QPushButton#CloseBtn:hover { color:%(accent)s; }
+QListWidget#Nav {
+    background:%(field)s; border:none; font-size:%(fs_lg)dpx; padding-top:10px;
+}
+QListWidget#Nav::item {
+    padding:%(sp_3)dpx %(sp_4)dpx; border-radius:%(r_sm)dpx; margin:2px %(sp_2)dpx;
+}
+QListWidget#Nav::item:selected {
+    background:%(select_bg)s; color:%(accent_bright)s;
+}
 QTextBrowser, QPlainTextEdit {
-    background:%s; color:%s; border:1px solid %s; border-radius:4px;
-    font-size:18px; padding:10px; line-height:1.5;
+    background:%(field)s; color:%(text)s; border:1px solid %(grid)s;
+    border-radius:%(r_md)dpx; font-size:%(fs_lg)dpx; padding:10px; line-height:1.5;
 }
 QTableWidget {
-    background:%s; color:%s; border:1px solid %s; gridline-color:%s;
-    font-size:16px; selection-background-color:%s;
+    background:%(field)s; color:%(text)s; border:1px solid %(grid)s;
+    gridline-color:%(grid)s; font-size:%(fs_md)dpx;
+    selection-background-color:%(select_bg)s;
 }
-QHeaderView::section { background:%s; color:%s; border:none; padding:8px; font-size:16px; }
+QHeaderView::section {
+    background:%(panel)s; color:%(dim)s; border:none;
+    padding:%(sp_2)dpx; font-size:%(fs_md)dpx;
+}
 QPushButton {
-    background:%s; color:%s; border:1px solid %s; border-radius:4px;
-    padding:6px 12px; font-size:13px;
+    background:%(field)s; color:%(text)s; border:1px solid %(grid)s;
+    border-radius:%(r_sm)dpx; padding:6px %(sp_3)dpx; font-size:%(fs_sm)dpx;
 }
-QPushButton:hover { background:%s; }
-QPushButton:disabled { color:%s; }
+QPushButton:hover { background:%(hover)s; border-color:%(accent)s; }
+QPushButton:pressed { background:%(pressed)s; }
+QPushButton:disabled { color:%(mute)s; }
 QPushButton#PrimaryBtn {
-    background: #00B0FF; color: #FFFFFF; border: 1px solid #0091EA; font-weight: bold;
+    background:%(accent)s; color:%(on_accent)s;
+    border:1px solid %(accent)s; font-weight:bold;
 }
-QPushButton#PrimaryBtn:hover { background: #40C4FF; }
+QPushButton#PrimaryBtn:hover {
+    background:%(accent_bright)s; border-color:%(accent_bright)s;
+}
+QPushButton#PrimaryBtn:pressed { background:%(accent_deep)s; color:#FFFFFF; }
 QPushButton#ActionBtn {
-    background: #1A2230; color: #00B0FF; border: 1px solid #00B0FF; font-weight: 500;
+    background:%(field_hi)s; color:%(accent)s;
+    border:1px solid %(accent)s; font-weight:500;
 }
-QPushButton#ActionBtn:hover { background: #00B0FF; color: #FFFFFF; }
-""" % (
-    theme.DLG_BG, theme.FLOAT_TEXT,
-    theme.PANEL_SOLID,
-    theme.FLOAT_GOLD, theme.FLOAT_TEXT_DIM,
-    theme.FLOAT_TEXT_DIM, theme.FLOAT_ACCENT,
-    theme.FLOAT_FIELD,
-    theme.FLOAT_SELECT_BG, theme.FLOAT_SELECT_TEXT,
-    theme.FLOAT_FIELD, theme.FLOAT_TEXT, theme.FLOAT_GRID,
-    theme.FLOAT_FIELD, theme.FLOAT_TEXT, theme.FLOAT_GRID,
-    theme.FLOAT_GRID, theme.FLOAT_SELECT_BG,
-    theme.PANEL_SOLID, theme.FLOAT_TEXT_DIM,
-    theme.FLOAT_FIELD, theme.FLOAT_TEXT, theme.FLOAT_GRID,
-    theme.DLG_HOVER,
-    theme.FLOAT_TEXT_DIM,
-)
+QPushButton#ActionBtn:hover { background:%(accent)s; color:%(on_accent)s; }
+""" % {
+    "bg": theme.DLG_BG, "panel": theme.PANEL_SOLID,
+    "field": theme.FLOAT_FIELD, "field_hi": theme.FIELD_DARK,
+    "grid": theme.FLOAT_GRID, "text": theme.FLOAT_TEXT,
+    "dim": theme.FLOAT_TEXT_DIM, "mute": theme.TEXT_MUTE,
+    "accent": theme.ACCENT, "accent_bright": theme.ACCENT_BRIGHT,
+    "accent_deep": theme.ACCENT_DEEP, "on_accent": theme.ON_ACCENT,
+    "select_bg": theme.FLOAT_SELECT_BG,
+    "hover": theme.DLG_HOVER, "pressed": theme.DLG_PRESSED,
+    "fs_sm": theme.FS_SM, "fs_md": theme.FS_MD,
+    "fs_lg": theme.FS_LG, "fs_xl": theme.FS_XL,
+    "r_sm": theme.R_SM, "r_md": theme.R_MD,
+    "sp_2": theme.SP_2, "sp_3": theme.SP_3, "sp_4": theme.SP_4,
+}
+
+
+# ── Fragments for widgets styled outside _QSS ────────────────────────────
+# The knowledge-base tab styles most of its widgets individually; these were
+# all literal cyan/slate before.
+_S_SUNK = ("background: %s; border: 1px solid %s; border-radius: %dpx;"
+           % (theme.BG, theme.GRID, theme.R_MD))
+_S_ACCENT_LABEL = ("color: %s; font-size: %dpx; font-weight: bold;"
+                   % (theme.ACCENT, theme.FS_MD))
+_S_DIM_LABEL = ("color: %s; font-size: %dpx; font-weight: bold;"
+                % (theme.TEXT_DIM, theme.FS_SM))
+_S_MUTE_TIP = "color: %s; font-size: %dpx;" % (theme.TEXT_MUTE, theme.FS_XS)
+_S_BTN_PRIMARY = (
+    "QPushButton{background:%s;color:%s;font-weight:bold;padding:6px %dpx;"
+    "border-radius:%dpx;}"
+    "QPushButton:hover{background:%s;}"
+    "QPushButton:pressed{background:%s;color:#FFFFFF;}"
+    % (theme.ACCENT, theme.ON_ACCENT, theme.SP_4, theme.R_SM,
+       theme.ACCENT_BRIGHT, theme.ACCENT_DEEP))
+_S_BTN_SECONDARY = (
+    "QPushButton{background:%s;color:%s;border:1px solid %s;padding:6px %dpx;"
+    "border-radius:%dpx;}"
+    "QPushButton:hover{background:%s;border-color:%s;}"
+    % (theme.FIELD, theme.TEXT, theme.GRID, theme.SP_3, theme.R_SM,
+       theme.FIELD_DARK, theme.ACCENT))
+_S_COMBO = (
+    "QComboBox{background:%s;color:%s;border:1px solid %s;padding:5px %dpx;"
+    "border-radius:%dpx;font-size:%dpx;min-width:180px;}"
+    "QComboBox:focus{border:1px solid %s;}"
+    % (theme.FIELD, theme.TEXT, theme.GRID, theme.SP_3, theme.R_SM,
+       theme.FS_SM, theme.ACCENT))
+
+
+def _s_pill(color):
+    """Small tinted pill button (ask / delete / suggestion chips)."""
+    return ("QPushButton{background:%s;color:%s;border:1px solid %s;"
+            "padding:3px %dpx;border-radius:%dpx;font-size:%dpx;}"
+            "QPushButton:hover{background:%s;color:%s;}"
+            % (_tint(color, "16"), color, color, theme.SP_2, theme.R_SM,
+               theme.FS_XS, color, theme.ON_ACCENT))
 
 
 class InfoPanel(QtWidgets.QWidget):
@@ -314,7 +396,7 @@ class InfoPanel(QtWidgets.QWidget):
         self.btn_prev_week = QtWidgets.QPushButton("◀ 上一周", page)
         self.week_label = QtWidgets.QLabel("第 1 周", page)
         self.week_label.setAlignment(QtCore.Qt.AlignCenter)
-        self.week_label.setStyleSheet("color: #00B0FF; font-size: 15px; font-weight: bold;")
+        self.week_label.setStyleSheet(_S_ACCENT_LABEL)
         self.btn_cur_week = QtWidgets.QPushButton("回到本周", page)
         self.btn_next_week = QtWidgets.QPushButton("下一周 ▶", page)
         self.btn_week_start = QtWidgets.QPushButton(page)
@@ -337,7 +419,7 @@ class InfoPanel(QtWidgets.QWidget):
 
         self.sched_view = QtWidgets.QTextBrowser(page)
         self.sched_view.setOpenExternalLinks(False)
-        self.sched_view.setStyleSheet("background: #101318; border: 1px solid #232A36; border-radius: 8px; padding: 12px;")
+        self.sched_view.setStyleSheet(_S_SUNK + " padding: %dpx;" % theme.SP_3)
 
         # 周课表可视化色块视图（自适应填满，无滚动条）
         self.timetable = TimetableView(page)
@@ -349,8 +431,8 @@ class InfoPanel(QtWidgets.QWidget):
         self.timetable_area.setWidgetResizable(True)
         self.timetable_area.setFrameShape(QtWidgets.QFrame.NoFrame)
         self.timetable_area.setStyleSheet(
-            "QScrollArea{background:#101318;border:none;}"
-            "QScrollArea>QWidget>QWidget{background:#101318;}")
+            "QScrollArea{background:%s;border:none;}"
+            "QScrollArea>QWidget>QWidget{background:%s;}" % (theme.BG, theme.BG))
         self.sched_stack = QtWidgets.QStackedWidget(page)
         self.sched_stack.addWidget(self.timetable_area)  # 0: 本周（色块）
         self.sched_stack.addWidget(self.sched_view)      # 1: 今天 / 下一节
@@ -364,7 +446,7 @@ class InfoPanel(QtWidgets.QWidget):
         lay.setSpacing(8)
 
         tip = QtWidgets.QLabel("双击任务可标记完成；选中后可用下方按钮操作。", page)
-        tip.setStyleSheet("color:%s;font-size:15px;" % theme.FLOAT_TEXT_DIM)
+        tip.setStyleSheet("color:%s;font-size:%dpx;" % (theme.FLOAT_TEXT_DIM, theme.FS_MD))
         lay.addWidget(tip)
 
         self.task_table = QtWidgets.QTableWidget(0, 5, page)
@@ -406,7 +488,7 @@ class InfoPanel(QtWidgets.QWidget):
 
         self.ocr_status = QtWidgets.QLabel("暂无 OCR 结果。", page)
         self.ocr_status.setStyleSheet(
-            "color:%s;font-size:16px;" % theme.FLOAT_TEXT_DIM)
+            "color:%s;font-size:%dpx;" % (theme.FLOAT_TEXT_DIM, theme.FS_MD))
         lay.addWidget(self.ocr_status)
 
         split = QtWidgets.QSplitter(QtCore.Qt.Horizontal, page)
@@ -436,34 +518,31 @@ class InfoPanel(QtWidgets.QWidget):
         top_bar.setSpacing(10)
 
         lbl = QtWidgets.QLabel("目标课程：", page)
-        lbl.setStyleSheet("color: #94A3B8; font-size: 14px; font-weight: bold;")
+        lbl.setStyleSheet(_S_DIM_LABEL)
         top_bar.addWidget(lbl)
 
         self.kw_course_combo = QtWidgets.QComboBox(page)
         self.kw_course_combo.setStyleSheet(
-            "QComboBox{background:#1A1F29;color:#FFFFFF;border:1px solid #232A36;padding:5px 12px;border-radius:6px;font-size:13px;min-width:180px;}"
-            "QComboBox:focus{border:1px solid #00B0FF;}"
+            _S_COMBO
         )
         self.kw_course_combo.currentIndexChanged.connect(self._on_kw_filter_changed)
         top_bar.addWidget(self.kw_course_combo)
 
         self.kw_stat_label = QtWidgets.QLabel("📚 正在加载知识库...", page)
-        self.kw_stat_label.setStyleSheet("color: #00B0FF; font-size: 13px; font-weight: 500;")
+        self.kw_stat_label.setStyleSheet("color: %s; font-size: %dpx; font-weight: 500;" % (theme.ACCENT, theme.FS_SM))
         top_bar.addWidget(self.kw_stat_label, 1)
 
         self.btn_upload_doc = QtWidgets.QPushButton("➕ 上传课件", page)
         self.btn_upload_doc.setObjectName("PrimaryBtn")
         self.btn_upload_doc.setStyleSheet(
-            "QPushButton{background:#00B0FF;color:#000000;font-weight:bold;padding:6px 14px;border-radius:6px;}"
-            "QPushButton:hover{background:#40C4FF;}"
+            _S_BTN_PRIMARY
         )
         self.btn_upload_doc.clicked.connect(self._upload_courseware)
         top_bar.addWidget(self.btn_upload_doc)
 
         self.btn_open_folder = QtWidgets.QPushButton("📁 打开目录", page)
         self.btn_open_folder.setStyleSheet(
-            "QPushButton{background:#1A1F29;color:#E2E8F0;border:1px solid #232A36;padding:6px 12px;border-radius:6px;}"
-            "QPushButton:hover{background:#2D3748;}"
+            _S_BTN_SECONDARY
         )
         self.btn_open_folder.clicked.connect(self._open_knowledge_folder)
         top_bar.addWidget(self.btn_open_folder)
@@ -474,7 +553,7 @@ class InfoPanel(QtWidgets.QWidget):
         ai_bar = QtWidgets.QHBoxLayout()
         ai_bar.setSpacing(8)
         ai_tip = QtWidgets.QLabel("✨ 快捷学业辅导：", page)
-        ai_tip.setStyleSheet("color: #CBD5E1; font-size: 13px; font-weight: bold;")
+        ai_tip.setStyleSheet(_S_DIM_LABEL)
         ai_bar.addWidget(ai_tip)
 
         self.btn_q_keypoints = QtWidgets.QPushButton("🎯 划出期末重点", page)
@@ -483,8 +562,7 @@ class InfoPanel(QtWidgets.QWidget):
 
         for b in (self.btn_q_keypoints, self.btn_q_exam, self.btn_q_summary):
             b.setStyleSheet(
-                "QPushButton{background:rgba(0,176,255,0.12);color:#00E5FF;border:1px solid rgba(0,176,255,0.35);padding:4px 10px;border-radius:14px;font-size:12px;}"
-                "QPushButton:hover{background:rgba(0,176,255,0.25);border-color:#00E5FF;}"
+                _s_pill(theme.ACCENT_BRIGHT)
             )
         self.btn_q_keypoints.clicked.connect(lambda: self._quick_ask_ai("请根据你掌握的本课程所有课件与考纲内容，帮我划出期末考试的核心重点与必考考点。"))
         self.btn_q_exam.clicked.connect(lambda: self._quick_ask_ai("请严格依据本课程的课件资料，为我出5道常考的期末模拟简答题或分析题，并附带参考解析答案。"))
@@ -508,12 +586,12 @@ class InfoPanel(QtWidgets.QWidget):
         self.kw_table.setColumnWidth(5, 150)
         self.kw_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
         self.kw_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
-        self.kw_table.setStyleSheet("QTableWidget{background:#101318;border:1px solid #232A36;border-radius:8px;}")
+        self.kw_table.setStyleSheet("QTableWidget{%s}" % _S_SUNK)
         lay.addWidget(self.kw_table, 1)
 
         # 底部提示
         bottom_tip = QtWidgets.QLabel("💡 提示：可直接将 PPT、PDF、Word 讲义从桌面拖拽到桌宠身上或此窗口，阿米娅会自动识别课程并建库！", page)
-        bottom_tip.setStyleSheet("color: #64748B; font-size: 12px;")
+        bottom_tip.setStyleSheet(_S_MUTE_TIP)
         lay.addWidget(bottom_tip)
 
         return page
@@ -536,7 +614,8 @@ class InfoPanel(QtWidgets.QWidget):
         self.stack.setCurrentIndex(0)
 
         # 选项卡高亮样式联动
-        active_qss = "background: #00B0FF; color: #FFFFFF; font-weight: bold; border: 1px solid #0091EA;"
+        active_qss = ("background: %s; color: %s; font-weight: bold;"
+                      " border: 1px solid %s;" % (theme.ACCENT, theme.ON_ACCENT, theme.ACCENT))
         self.btn_week.setStyleSheet(active_qss if which == "week" else "")
         self.btn_today.setStyleSheet(active_qss if which == "today" else "")
         self.btn_next.setStyleSheet(active_qss if which == "next" else "")
@@ -544,11 +623,11 @@ class InfoPanel(QtWidgets.QWidget):
         if not s.courses:
             self.week_nav_widget.hide()
             self.sched_stack.setCurrentWidget(self.sched_view)
-            self.sched_view.setHtml("""
+            self.sched_view.setHtml(f"""
             <div style="text-align:center; padding:60px 20px;">
-                <div style="font-size:40px; margin-bottom:12px;">📅</div>
-                <div style="color:#FFFFFF; font-size:18px; font-weight:bold; margin-bottom:8px;">暂无本科课表数据</div>
-                <div style="color:#8B949E; font-size:13px; line-height:1.6;">
+                <div style="font-size:{theme.FS_HERO}px; margin-bottom:{theme.SP_3}px;">📅</div>
+                <div style="color:{theme.TEXT}; font-size:{theme.FS_LG}px; font-weight:bold; margin-bottom:{theme.SP_2}px;">暂无本科课表数据</div>
+                <div style="color:{theme.TEXT_DIM}; font-size:{theme.FS_SM}px; line-height:1.6;">
                     点击右上角「<b>+ 录入课程</b>」手动规划课程，或点击「<b>📥 导入课表</b>」导入教务 JSON。<br/>
                     阿米娅将根据您的课表作息提供提醒与学情分析！
                 </div>
@@ -808,23 +887,23 @@ class InfoPanel(QtWidgets.QWidget):
 
             item_ext = QtWidgets.QTableWidgetItem(ext)
             item_ext.setTextAlignment(QtCore.Qt.AlignCenter)
-            item_ext.setForeground(QtGui.QColor("#00B0FF"))
+            item_ext.setForeground(QtGui.QColor(theme.ACCENT))
 
             item_name = QtWidgets.QTableWidgetItem(f["filename"])
             item_name.setToolTip(f["path"])
-            item_name.setForeground(QtGui.QColor("#FFFFFF"))
+            item_name.setForeground(QtGui.QColor(theme.TEXT))
 
             item_course = QtWidgets.QTableWidgetItem(c_tag)
             item_course.setTextAlignment(QtCore.Qt.AlignCenter)
-            item_course.setForeground(QtGui.QColor("#A78BFA"))
+            item_course.setForeground(QtGui.QColor(theme.ACCENT_BRIGHT))
 
             item_size = QtWidgets.QTableWidgetItem(size_str)
             item_size.setTextAlignment(QtCore.Qt.AlignCenter)
-            item_size.setForeground(QtGui.QColor("#94A3B8"))
+            item_size.setForeground(QtGui.QColor(theme.TEXT_DIM))
 
             item_chunks = QtWidgets.QTableWidgetItem(f"{f['chunks']} 切片")
             item_chunks.setTextAlignment(QtCore.Qt.AlignCenter)
-            item_chunks.setForeground(QtGui.QColor("#34D399"))
+            item_chunks.setForeground(QtGui.QColor(theme.GREEN))
 
             self.kw_table.setItem(row, 0, item_ext)
             self.kw_table.setItem(row, 1, item_name)
@@ -839,14 +918,12 @@ class InfoPanel(QtWidgets.QWidget):
             act_lay.setSpacing(6)
 
             btn_ask = QtWidgets.QPushButton("🔍 提问", act_widget)
-            btn_ask.setStyleSheet("QPushButton{background:rgba(0,176,255,0.18);color:#00B0FF;border:1px solid #00B0FF;padding:2px 8px;border-radius:4px;font-size:11px;}"
-                                  "QPushButton:hover{background:#00B0FF;color:#000;}")
+            btn_ask.setStyleSheet(_s_pill(theme.ACCENT))
             btn_ask.clicked.connect(lambda _, fn=f["filename"], cn=f["course"]: self._ask_file_ai(fn, cn))
 
             btn_del = QtWidgets.QPushButton("🗑", act_widget)
             btn_del.setToolTip("从知识库移除此文件")
-            btn_del.setStyleSheet("QPushButton{background:rgba(255,82,82,0.15);color:#FF5252;border:1px solid #FF5252;padding:2px 6px;border-radius:4px;font-size:11px;}"
-                                  "QPushButton:hover{background:#FF5252;color:#FFF;}")
+            btn_del.setStyleSheet(_s_pill(theme.RED))
             btn_del.clicked.connect(lambda _, fn=f["filename"], cn=f["course"]: self._delete_kw_file(fn, cn))
 
             act_lay.addWidget(btn_ask)

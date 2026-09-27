@@ -17,103 +17,113 @@ from .tasks import Tasks
 
 _SYNC_QSS = """
 QDialog, QWidget#RhodesSyncWindow {
-    background-color: %s;
-    color: %s;
-    font-family: %s;
+    background-color: %(bg)s;
+    color: %(text)s;
+    font-family: %(font)s;
 }
 QGroupBox {
-    border: 1px solid %s;
-    border-radius: 6px;
-    margin-top: 12px;
+    border: 1px solid %(grid)s;
+    border-radius: %(r_md)dpx;
+    margin-top: %(sp_3)dpx;
     padding-top: 14px;
-    font-size: 13px;
+    font-size: %(fs_sm)dpx;
     font-weight: bold;
-    color: %s;
+    color: %(accent_bright)s;
 }
 QGroupBox::title {
     subcontrol-origin: margin;
     subcontrol-position: top left;
-    left: 12px;
+    left: %(sp_3)dpx;
     padding: 0 4px;
 }
 QPushButton {
-    background-color: %s;
-    color: %s;
-    border: 1px solid %s;
-    border-radius: 4px;
-    padding: 6px 14px;
-    font-size: 12px;
+    background-color: %(field)s;
+    color: %(text)s;
+    border: 1px solid %(grid)s;
+    border-radius: %(r_sm)dpx;
+    padding: 6px %(sp_4)dpx;
+    font-size: %(fs_xs)dpx;
     font-weight: 500;
 }
 QPushButton:hover {
-    background-color: %s;
-    border-color: %s;
-    color: #FFFFFF;
+    background-color: %(field_hi)s;
+    border-color: %(accent)s;
+    color: %(text)s;
 }
 QPushButton:pressed {
-    background-color: %s;
+    background-color: %(pressed)s;
+}
+QPushButton:disabled {
+    color: %(mute)s;
+    border-color: %(grid)s;
 }
 QPushButton#PrimaryBtn {
-    background-color: #00838F;
-    border: 1px solid #00ACC1;
-    color: #FFFFFF;
+    background-color: %(accent)s;
+    border: 1px solid %(accent)s;
+    color: %(on_accent)s;
     font-weight: bold;
 }
 QPushButton#PrimaryBtn:hover {
-    background-color: #0097A7;
-    border-color: #26C6DA;
+    background-color: %(accent_bright)s;
+    border-color: %(accent_bright)s;
 }
-QPushButton#DangerBtn {
-    background-color: #5C2525;
-    border: 1px solid #8C3A3A;
-    color: #FFAAAA;
-}
-QPushButton#DangerBtn:hover {
-    background-color: #7A2E2E;
+QPushButton#PrimaryBtn:pressed {
+    background-color: %(accent_deep)s;
     color: #FFFFFF;
 }
+QPushButton#DangerBtn {
+    background-color: %(field)s;
+    border: 1px solid %(red)s;
+    color: %(red)s;
+}
+QPushButton#DangerBtn:hover {
+    background-color: %(red)s;
+    color: %(bg)s;
+}
 QLineEdit, QTextEdit {
-    background-color: %s;
-    color: %s;
-    border: 1px solid %s;
-    border-radius: 4px;
-    padding: 6px 8px;
-    selection-background-color: #00838F;
+    background-color: %(field)s;
+    color: %(text)s;
+    border: 1px solid %(grid)s;
+    border-radius: %(r_sm)dpx;
+    padding: 6px %(sp_2)dpx;
+    selection-background-color: %(accent_deep)s;
+    selection-color: #FFFFFF;
 }
 QLineEdit:focus, QTextEdit:focus {
-    border: 1px solid #00ACC1;
-    background-color: %s;
+    border: 1px solid %(accent)s;
+    background-color: %(field_hi)s;
 }
 QListWidget {
-    background-color: %s;
-    border: 1px solid %s;
-    border-radius: 4px;
-    color: %s;
+    background-color: %(field)s;
+    border: 1px solid %(grid)s;
+    border-radius: %(r_sm)dpx;
+    color: %(text)s;
     padding: 4px;
 }
 QListWidget::item {
-    padding: 8px;
-    border-bottom: 1px solid %s;
-    border-radius: 3px;
+    padding: %(sp_2)dpx;
+    border-bottom: 1px solid %(grid)s;
+    border-radius: %(r_sm)dpx;
 }
 QListWidget::item:selected {
-    background-color: #1A3038;
-    color: #00E5FF;
+    background-color: %(select_bg)s;
+    color: %(accent_bright)s;
 }
 QLabel {
-    color: %s;
+    color: %(text)s;
 }
-""" % (
-    theme.DLG_BG, theme.FLOAT_TEXT, theme.FONT,
-    theme.FLOAT_GRID, theme.FLOAT_GOLD,
-    theme.DLG_FIELD, theme.FLOAT_TEXT, theme.FLOAT_GRID,
-    "#222222", theme.FLOAT_ACCENT, "#111111",
-    theme.DLG_FIELD, theme.FLOAT_TEXT, theme.FLOAT_GRID,
-    theme.DLG_FIELD_FOCUS,
-    theme.DLG_FIELD, theme.FLOAT_GRID, theme.FLOAT_TEXT,
-    theme.FLOAT_GRID,
-    theme.FLOAT_TEXT
-)
+""" % {
+    "bg": theme.DLG_BG, "field": theme.DLG_FIELD,
+    "field_hi": theme.DLG_FIELD_FOCUS, "grid": theme.FLOAT_GRID,
+    "text": theme.FLOAT_TEXT, "mute": theme.TEXT_MUTE,
+    "accent": theme.ACCENT, "accent_bright": theme.ACCENT_BRIGHT,
+    "accent_deep": theme.ACCENT_DEEP, "on_accent": theme.ON_ACCENT,
+    "red": theme.RED, "pressed": theme.DLG_PRESSED,
+    "select_bg": theme.FLOAT_SELECT_BG, "font": theme.FONT,
+    "fs_xs": theme.FS_XS, "fs_sm": theme.FS_SM,
+    "r_sm": theme.R_SM, "r_md": theme.R_MD,
+    "sp_2": theme.SP_2, "sp_3": theme.SP_3, "sp_4": theme.SP_4,
+}
 
 
 class RhodesPairConfirmDialog(QtWidgets.QDialog):
@@ -145,14 +155,15 @@ class RhodesPairConfirmDialog(QtWidgets.QDialog):
         # 标题栏
         head_layout = QtWidgets.QHBoxLayout()
         icon_lbl = QtWidgets.QLabel("🛡️")
-        icon_lbl.setStyleSheet("font-size: 26px;")
+        icon_lbl.setStyleSheet("font-size: %dpx;" % theme.FS_2XL)
         head_layout.addWidget(icon_lbl)
 
         title_box = QtWidgets.QVBoxLayout()
         title_lbl = QtWidgets.QLabel("罗德岛终端配对请求")
-        title_lbl.setStyleSheet("font-size: 16px; font-weight: bold; color: #00E5FF;")
+        title_lbl.setStyleSheet("font-size: %dpx; font-weight: bold; color: %s;"
+                                % (theme.FS_LG, theme.ACCENT_BRIGHT))
         sub_lbl = QtWidgets.QLabel("检测到来自移动终端的连接申请，请核对配对码")
-        sub_lbl.setStyleSheet(f"font-size: 12px; color: {theme.FLOAT_TEXT_DIM};")
+        sub_lbl.setStyleSheet(f"font-size: {theme.FS_XS}px; color: {theme.FLOAT_TEXT_DIM};")
         title_box.addWidget(title_lbl)
         title_box.addWidget(sub_lbl)
         head_layout.addLayout(title_box)
@@ -161,7 +172,9 @@ class RhodesPairConfirmDialog(QtWidgets.QDialog):
 
         # 信息卡片
         info_card = QtWidgets.QFrame()
-        info_card.setStyleSheet(f"background-color: {theme.FIELD_DARK}; border: 1px solid {theme.FLOAT_GRID}; border-radius: 6px; padding: 10px;")
+        info_card.setStyleSheet(f"background-color: {theme.FIELD_DARK};"
+                                f" border: 1px solid {theme.FLOAT_GRID};"
+                                f" border-radius: {theme.R_MD}px; padding: 10px;")
         card_layout = QtWidgets.QVBoxLayout(info_card)
         card_layout.setSpacing(8)
 
@@ -176,7 +189,8 @@ class RhodesPairConfirmDialog(QtWidgets.QDialog):
         raw_pin = self.pair_req.pin
         formatted_pin = f"{raw_pin[:3]} {raw_pin[3:]}" if len(raw_pin) == 6 else raw_pin
         pin_val = QtWidgets.QLabel(formatted_pin)
-        pin_val.setStyleSheet("font-size: 24px; font-weight: bold; color: #00E5FF; letter-spacing: 2px;")
+        pin_val.setStyleSheet("font-size: %dpx; font-weight: bold; color: %s;"
+                              " letter-spacing: 2px;" % (theme.FS_2XL, theme.ACCENT_BRIGHT))
         pin_box.addWidget(pin_title)
         pin_box.addWidget(pin_val)
         pin_box.addStretch()
@@ -186,13 +200,14 @@ class RhodesPairConfirmDialog(QtWidgets.QDialog):
 
         tip_lbl = QtWidgets.QLabel("⚠️ 只有点击「确认配对」后，双方才会建立受信任连接并允许同步课表、考试、便签及剪贴板。若不是您本人的操作，请点击拒绝。")
         tip_lbl.setWordWrap(True)
-        tip_lbl.setStyleSheet(f"font-size: 11px; color: {theme.FLOAT_TEXT_DIM}; line-height: 1.4;")
+        tip_lbl.setStyleSheet(f"font-size: {theme.FS_XS}px;"
+                              f" color: {theme.FLOAT_TEXT_DIM}; line-height: 1.4;")
         layout.addWidget(tip_lbl)
 
         # 倒计时与按键
         btn_layout = QtWidgets.QHBoxLayout()
         self.countdown_lbl = QtWidgets.QLabel(f"自动拒绝倒计时: {self.countdown}s")
-        self.countdown_lbl.setStyleSheet(f"font-size: 11px; color: {theme.FLOAT_TEXT_DIM};")
+        self.countdown_lbl.setStyleSheet(f"font-size: {theme.FS_XS}px; color: {theme.FLOAT_TEXT_DIM};")
         btn_layout.addWidget(self.countdown_lbl)
         btn_layout.addStretch()
 
@@ -268,14 +283,15 @@ class RhodesSyncWindow(QtWidgets.QDialog):
         # ── 1. 本机终端状态栏 ─────────────────────────────────────────
         top_box = QtWidgets.QHBoxLayout()
         title_icon = QtWidgets.QLabel("📱💻")
-        title_icon.setStyleSheet("font-size: 24px;")
+        title_icon.setStyleSheet("font-size: %dpx;" % theme.FS_2XL)
         top_box.addWidget(title_icon)
 
         title_info = QtWidgets.QVBoxLayout()
         title_text = QtWidgets.QLabel("罗德岛终端局域网互联 (PC ↔ Android)")
-        title_text.setStyleSheet("font-size: 15px; font-weight: bold; color: #00E5FF;")
+        title_text.setStyleSheet("font-size: %dpx; font-weight: bold; color: %s;"
+                                 % (theme.FS_MD, theme.ACCENT_BRIGHT))
         self.lbl_status = QtWidgets.QLabel("服务状态: 🟢 监听中 | 本机 IP: 获取中...")
-        self.lbl_status.setStyleSheet(f"font-size: 12px; color: {theme.FLOAT_TEXT_DIM};")
+        self.lbl_status.setStyleSheet(f"font-size: {theme.FS_XS}px; color: {theme.FLOAT_TEXT_DIM};")
         title_info.addWidget(title_text)
         title_info.addWidget(self.lbl_status)
         top_box.addLayout(title_info)
@@ -342,7 +358,8 @@ class RhodesSyncWindow(QtWidgets.QDialog):
 
         # 数据概览
         self.lbl_data_counts = QtWidgets.QLabel("本地学业数据：课表 0 门 | 考试日程 0 场 | 灵感便签 0 篇")
-        self.lbl_data_counts.setStyleSheet(f"font-size: 12px; color: {theme.FLOAT_GOLD}; font-weight: bold;")
+        self.lbl_data_counts.setStyleSheet(f"font-size: {theme.FS_XS}px;"
+                                           f" color: {theme.ACCENT_BRIGHT}; font-weight: bold;")
         sync_layout.addWidget(self.lbl_data_counts)
 
         sync_btn_bar = QtWidgets.QHBoxLayout()
@@ -362,7 +379,7 @@ class RhodesSyncWindow(QtWidgets.QDialog):
         sync_layout.addLayout(sync_btn_bar)
 
         self.lbl_sync_result = QtWidgets.QLabel("就绪。")
-        self.lbl_sync_result.setStyleSheet(f"font-size: 11px; color: {theme.FLOAT_TEXT_DIM};")
+        self.lbl_sync_result.setStyleSheet(f"font-size: {theme.FS_XS}px; color: {theme.FLOAT_TEXT_DIM};")
         sync_layout.addWidget(self.lbl_sync_result)
 
         main_layout.addWidget(sync_group)

@@ -8,6 +8,8 @@
 
 from PyQt5 import QtCore, QtGui, QtWidgets
 
+from . import theme
+
 
 class RegionSelect(QtWidgets.QWidget):
     selected = QtCore.pyqtSignal(object)   # PIL Image（裁剪区域）
@@ -102,7 +104,8 @@ class RegionSelect(QtWidgets.QWidget):
                            int(self._rect.width() * d),
                            int(self._rect.height() * d))
         p.drawImage(self._rect, self._qimg, src)
-        p.setPen(QtGui.QPen(QtGui.QColor(255, 215, 0), 2))
+        # 选区描边走主题强调紫（原为纯金 #FFD700）。
+        p.setPen(QtGui.QPen(QtGui.QColor(theme.ACCENT), 2))
         p.drawRect(self._rect)
         # 尺寸提示
         p.setPen(QtGui.QColor(255, 255, 255))

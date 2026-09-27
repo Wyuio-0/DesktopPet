@@ -5,11 +5,16 @@ from PyQt5 import QtCore, QtWidgets
 from . import theme
 
 _BADGE_QSS = (
-    "QLabel{background:%s;color:%s;"
-    "border:1px solid %s;border-left:4px solid %s;border-radius:6px;"
-    "padding:11px 21px;font-family:%s;font-size:22px;font-weight:700;}"
-) % (theme.FLOAT_PANEL, theme.FLOAT_TEXT, theme.FLOAT_GRID,
-     theme.FLOAT_GOLD, theme.MONO)
+    "QLabel{background:%(panel)s;color:%(accent_bright)s;"
+    "border:1px solid %(grid)s;border-left:4px solid %(accent)s;"
+    "border-radius:%(r_lg)dpx;padding:%(pad_v)dpx %(pad_h)dpx;"
+    "font-family:%(mono)s;font-size:%(fs)dpx;font-weight:700;}"
+) % {
+    "panel": theme.FLOAT_PANEL, "accent_bright": theme.ACCENT_BRIGHT,
+    "grid": theme.FLOAT_GRID, "accent": theme.ACCENT,
+    "r_lg": theme.R_LG, "pad_v": theme.SP_3, "pad_h": theme.SP_5,
+    "mono": theme.MONO, "fs": theme.FS_XL,
+}
 
 
 class CountdownBadge(QtWidgets.QLabel):

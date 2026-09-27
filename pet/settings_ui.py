@@ -16,26 +16,46 @@ from . import theme, tts, updater
 
 # DIALOG_QSS 未覆盖的控件：页签、滑杆、组合键输入框——补上统一的 Terminal 风格。
 _EXTRA_QSS = """
-QTabWidget::pane { border: 1px solid %s; border-radius: 4px; background: %s; }
-QTabBar::tab { background: transparent; color: %s; padding: 8px 18px;
-               font-size: 18px; border-bottom: 2px solid transparent; }
-QTabBar::tab:selected { color: %s; border-bottom: 2px solid %s; }
-QTabBar::tab:hover { color: %s; }
-QSlider::groove:horizontal { height: 4px; background: %s; border-radius: 2px; }
-QSlider::handle:horizontal { width: 14px; margin: -5px 0; background: %s;
-                             border-radius: 7px; }
-QKeySequenceEdit { background: %s; color: %s; border: 1px solid %s;
-                   border-radius: 4px; padding: 6px 8px;
-                   selection-background-color: %s; font-family: %s; }
-QKeySequenceEdit:focus { border: 1px solid %s; background: %s; }
-""" % (
-    theme.FLOAT_GRID, theme.DLG_BG,
-    theme.FLOAT_TEXT_DIM, theme.FLOAT_ACCENT, theme.FLOAT_GOLD, theme.FLOAT_TEXT,
-    theme.FLOAT_GRID, theme.FLOAT_GOLD,
-    theme.DLG_FIELD, theme.FLOAT_TEXT, theme.FLOAT_GRID,
-    theme.FLOAT_ACCENT, theme.MONO,
-    theme.FLOAT_ACCENT, theme.DLG_FIELD_FOCUS,
-)
+QTabWidget::pane {
+    border: 1px solid %(grid)s; border-radius: %(r_sm)dpx; background: %(bg)s;
+}
+QTabBar::tab {
+    background: transparent; color: %(dim)s; padding: %(sp_2)dpx %(sp_5)dpx;
+    font-size: %(fs_md)dpx; border-bottom: 2px solid transparent;
+}
+QTabBar::tab:selected {
+    color: %(accent_bright)s; border-bottom: 2px solid %(accent)s;
+}
+QTabBar::tab:hover { color: %(text)s; }
+QSlider::groove:horizontal {
+    height: 4px; background: %(grid)s; border-radius: 2px;  /* half of 4px */
+}
+QSlider::handle:horizontal {
+    width: 14px; margin: -5px 0; background: %(accent)s;
+    border-radius: 7px;   /* half of 14px: a round handle, not theme.R_* */
+}
+QKeySequenceEdit {
+    background: %(field)s; color: %(text)s; border: 1px solid %(grid)s;
+    border-radius: %(r_sm)dpx; padding: 6px %(sp_2)dpx;
+    selection-background-color: %(accent_deep)s; selection-color: #FFFFFF;
+    font-family: %(mono)s;
+}
+QKeySequenceEdit:focus {
+    border: 1px solid %(accent)s; background: %(field_focus)s;
+}
+""" % {
+    "grid": theme.FLOAT_GRID, "bg": theme.DLG_BG,
+    "field": theme.DLG_FIELD, "field_focus": theme.DLG_FIELD_FOCUS,
+    "text": theme.FLOAT_TEXT, "dim": theme.FLOAT_TEXT_DIM,
+    "accent": theme.ACCENT, "accent_bright": theme.ACCENT_BRIGHT,
+    "accent_deep": theme.ACCENT_DEEP, "mono": theme.MONO,
+    "fs_md": theme.FS_MD, "r_sm": theme.R_SM,
+    "sp_2": theme.SP_2, "sp_5": theme.SP_5,
+}
+
+# The three inline hint labels (hotkey note / profile blurb / restart note) all
+# used the same literal size; one constant keeps them in step.
+_S_HINT = "color:%s;font-size:%dpx;" % (theme.FLOAT_TEXT_DIM, theme.FS_SM)
 
 
 def _spec_to_ks(spec):
@@ -137,7 +157,7 @@ class SettingsDialog(QtWidgets.QDialog):
         hl.addRow("OCR 截图", self.hk_ocr)
         note = QtWidgets.QLabel(
             "热键按当前角色保存；被其他程序占用的组合键会注册失败。", h)
-        note.setStyleSheet("color:%s;font-size:13px;" % theme.FLOAT_TEXT_DIM)
+        note.setStyleSheet(_S_HINT)
         hl.addRow("", note)
         self.tabs.addTab(h, "热键")
 
@@ -192,7 +212,7 @@ class SettingsDialog(QtWidgets.QDialog):
 
         profile_row = QtWidgets.QHBoxLayout()
         profile_lbl = QtWidgets.QLabel("记录专属称呼、偏好习惯与长程记忆", g)
-        profile_lbl.setStyleSheet("color:%s;font-size:13px;" % theme.FLOAT_TEXT_DIM)
+        profile_lbl.setStyleSheet(_S_HINT)
         self.btn_profile = QtWidgets.QPushButton("博士档案本…", g)
         self.btn_profile.clicked.connect(self._open_profile)
         profile_row.addWidget(profile_lbl)
@@ -225,7 +245,7 @@ class SettingsDialog(QtWidgets.QDialog):
         hrow.addWidget(self.btn_check_updates)
         gl.addRow("版本", hrow)
         note2 = QtWidgets.QLabel("默认角色在下一次启动时生效。", g)
-        note2.setStyleSheet("color:%s;font-size:13px;" % theme.FLOAT_TEXT_DIM)
+        note2.setStyleSheet(_S_HINT)
         gl.addRow("", note2)
         self.tabs.addTab(g, "通用")
 

@@ -324,9 +324,13 @@ class MusicNotesOverlay(QtWidgets.QWidget):
                 continue
 
             alpha = int(n.opacity * 220)
-            # 罗德岛金色主题音符 (#F5C842)
-            color = QtGui.QColor(245, 200, 66, alpha)
-            glow = QtGui.QColor(255, 240, 150, int(alpha * 0.45))
+            # 音符走主题强调紫；发光轮廓用更亮一档的 ACCENT_BRIGHT。
+            # （原为罗德岛金 #F5C842，统一配色后改紫，否则金色音符会和
+            #  紫色面板打架——这是全项目最后两处金色残留之一。）
+            color = QtGui.QColor(theme.ACCENT)
+            color.setAlpha(alpha)
+            glow = QtGui.QColor(theme.ACCENT_BRIGHT)
+            glow.setAlpha(int(alpha * 0.45))
 
             font = QtGui.QFont("Segoe UI Symbol", n.size, QtGui.QFont.Bold)
             painter.setFont(font)

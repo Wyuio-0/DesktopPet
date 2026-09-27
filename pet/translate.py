@@ -22,11 +22,16 @@ from . import theme
 # ── Popup styling ──────────────────────────────────────────────────────
 
 _POPUP_QSS = (
-    "QLabel{background:%s;color:%s;"
-    "border:1px solid %s;border-left:4px solid %s;border-radius:6px;"
-    "padding:14px 22px;font-family:%s;}"
-) % (theme.FLOAT_PANEL, theme.FLOAT_TEXT, theme.FLOAT_GRID,
-     theme.FLOAT_GOLD, theme.FONT)
+    "QLabel{background:%(panel)s;color:%(text)s;"
+    "border:1px solid %(grid)s;border-left:4px solid %(accent)s;"
+    "border-radius:%(r_lg)dpx;padding:%(pad_v)dpx %(pad_h)dpx;"
+    "font-family:%(font)s;font-size:%(fs)dpx;}"
+) % {
+    "panel": theme.FLOAT_PANEL, "text": theme.FLOAT_TEXT,
+    "grid": theme.FLOAT_GRID, "accent": theme.ACCENT,
+    "r_lg": theme.R_LG, "pad_v": theme.SP_4, "pad_h": theme.SP_6,
+    "font": theme.FONT, "fs": theme.FS_MD,
+}
 
 # Reading time scales with content length so longer translations stay visible
 # long enough to read, while short ones don't linger.
@@ -70,13 +75,18 @@ class TranslationPopup(QtWidgets.QLabel):
         longer texts stay visible proportionally longer.
         """
         self._hide.stop()
+        # Source dimmed above, translation emphasised below — same size so the
+        # pair reads as one block rather than a heading plus body.
         text = (
-            '<div style="font-size:21px;color:%s;margin-bottom:5px;'
-            'line-height:1.4;">%s</div>'
-            '<div style="font-size:21px;color:%s;font-weight:600;'
-            'line-height:1.5;">%s</div>'
-        ) % (theme.FLOAT_TEXT_DIM, _escape(source), theme.FLOAT_TEXT,
-             _escape(translated))
+            '<div style="font-size:%(fs)dpx;color:%(dim)s;margin-bottom:5px;'
+            'line-height:1.4;">%(src)s</div>'
+            '<div style="font-size:%(fs)dpx;color:%(text)s;font-weight:600;'
+            'line-height:1.5;">%(out)s</div>'
+        ) % {
+            "fs": theme.FS_FLOAT, "dim": theme.FLOAT_TEXT_DIM,
+            "text": theme.FLOAT_TEXT, "src": _escape(source),
+            "out": _escape(translated),
+        }
         self.setText(text)
         self.setMinimumWidth(0)          # allow shrinking to fit short text
         self.adjustSize()

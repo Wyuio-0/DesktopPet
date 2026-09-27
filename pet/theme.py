@@ -1,225 +1,253 @@
-"""Shared Qt theme — dark by default; the UI adapts to the system light/dark
-color scheme so text stays readable over either desktop.
+"""Shared Qt theme — unified dark violet（黑 + 淡紫）.
 
-The speech bubble, translation popup, input bar, countdown badge, right-click
-context menu and settings dialogs all pick their colors from the adaptive
-FLOAT_*/DLG_* names which match the system color scheme: light desktop ->
-light panels + dark text, dark desktop -> dark panels + light text.
+One palette, deliberately NOT following the Windows light/dark setting: the
+pet's panels and floating overlays keep the same identity on every desktop.
+The old light-mode fork was dropped when the UI was unified — before that the
+app carried two clashing languages (near-black grey/gold here, GitHub-slate
+plus cyan in the ported schedule panels).
+
+Every colour is a plain hex string so it can go straight into QtGui.QColor()
+from the QPainter-based views (timetable.py, music.py, region_select.py).
+PANEL is the sole exception: it is deliberately translucent for floating
+overlays and must never reach QColor(), which cannot parse rgba() and fails
+silently rather than raising.
+
+Contrast was measured, not eyeballed; each ratio below is against the surface
+that token is actually painted on. Two rules fall out and must hold for any
+new UI:
+
+  * A filled violet button needs ACCENT (light) + near-black text, or
+    ACCENT_DEEP + white text. Mid-violet #8B5CF6 with white text is only
+    4.23:1 and fails AA — that is the usual trap with purple.
+  * TEXT_MUTE is 3.11:1. Large text and icons only, never body copy.
 """
 
-# ── Dark palette (the app's signature look) ──────────────────────────────
-BG = "#070707"
-PANEL = "rgba(10, 10, 10, 242)"
-PANEL_SOLID = "#0B0B0B"
-FIELD = "#141414"
-FIELD_DARK = "#101010"
-TEXT = "#F1F1F1"
-TEXT_DIM = "#A4A4A4"
-ACCENT = "#C7C7C7"
-ACCENT_SOFT = "#6E6E6E"
-GOLD = "#B99A5B"
-RED = "#C76B5E"
-GRID = "#2A2A2A"
+# ── Structure: black-violet elevation ladder ─────────────────────────────
+BG = "#0A0810"                     # deepest — dialog background
+PANEL_SOLID = "#120E1A"            # panel / menu background (opaque)
+PANEL = "rgba(18, 14, 26, 242)"    # translucent — floating overlays only
+FIELD = "#1A1425"                  # card / input surface
+FIELD_DARK = "#241C33"             # hover / raised surface
+
+# ── Borders ──────────────────────────────────────────────────────────────
+# No violet hairline reaches 3:1 on FIELD, so GRID is decorative only and
+# real boundaries use BORDER_STRONG or a fill change.
+GRID = "#2E2440"                   # decorative hairline (1.23:1)
+BORDER_STRONG = "#7C66AD"          # meaningful boundary (3.73:1 on FIELD)
+
+# ── Accent: light violet carries the identity ────────────────────────────
+ACCENT = "#A78BFA"                 # accent text, active state, left bar (6.59:1)
+ACCENT_BRIGHT = "#C4B5FD"          # small accent text, more headroom (9.72:1)
+ACCENT_DEEP = "#7C3AED"            # pressed / filled with white text (5.70:1)
+ACCENT_SOFT = "#5B4380"            # dividers, inactive edges
+ON_ACCENT = "#120E1A"              # text on an ACCENT fill (7.31:1)
+
+# ── Text ─────────────────────────────────────────────────────────────────
+TEXT = "#EDE9F4"                   # body (15.00:1 on FIELD)
+TEXT_DIM = "#9D93AE"               # secondary (6.17:1 on FIELD)
+TEXT_MUTE = "#6B6278"              # 3.11:1 — large text / icons ONLY
+
+# ── Semantic ─────────────────────────────────────────────────────────────
+GREEN = "#34D399"                  # 9.33:1
+AMBER = "#FBBF24"                  # 10.75:1
+RED = "#F87171"                    # 6.48:1
 
 FONT = "'Microsoft YaHei UI', 'Microsoft YaHei', 'Segoe UI'"
 MONO = "'Cascadia Mono', 'Consolas', 'Microsoft YaHei UI'"
 
+# ── Type scale — 14 ad-hoc sizes collapsed into 8 roles ──────────────────
+# The old spread (11/12/13/14/15/16/18/20/21/22/24/26/36/40px) meant the chat
+# bubble sat at 21px while panel body copy was 13px. Pick a role, not a number.
+FS_XS = 12        # badges, timestamps, meta
+FS_SM = 13        # secondary body, table cells
+FS_MD = 15        # dialog body default
+FS_LG = 17        # card titles, section heads
+FS_FLOAT = 19     # overlays pinned to the pet (bubble / input / menu)
+FS_XL = 20        # panel & dialog titles
+FS_2XL = 24       # primary headings
+FS_HERO = 34      # empty-state glyphs
 
-# ── Light palette (floating overlays on a light desktop) ─────────────────
-_L_PANEL = "rgba(250, 250, 250, 246)"
-_L_TEXT = "#1F1F1F"
-_L_TEXT_DIM = "#666666"
-_L_ACCENT = "#3A3A3A"
-_L_ACCENT_SOFT = "#8A8A8A"
-_L_GOLD = "#8A6A2F"
-_L_GRID = "#CCCCCC"
-_L_FIELD = "#EFEFEF"
-_L_SOLID = "#FAFAFA"          # menu background
-_L_SELECT_BG = "#E8E8E8"      # menu hover highlight
-_L_SELECT_TEXT = "#1F1F1F"    # menu hover text
-_L_BG = "#F5F5F5"             # dialog background
-_L_FIELD_NORM = "#FFFFFF"     # dialog input background
-_L_FIELD_FOCUS = "#FFFFFF"    # dialog input focus background
-_L_TINT = "rgba(0, 0, 0, 10)"       # subtle note panel tint
-_L_HOVER = "rgba(0, 0, 0, 8)"       # button hover tint
-_L_PRESSED = "rgba(0, 0, 0, 16)"    # button pressed tint
+# ── Radii — 9 values collapsed into 3 ────────────────────────────────────
+R_SM = 4          # inputs, badges, small buttons
+R_MD = 8          # cards
+R_LG = 12         # dialogs, floating overlays
 
-
-def _system_is_dark():
-    """Best-effort detection of the Windows app color scheme.
-
-    Reads the per-app theme registry value "AppsUseLightTheme": 0 -> dark,
-    1 -> light.  Falls back to dark (the app's historical default) when the
-    registry is unavailable.
-    """
-    try:
-        import winreg
-        with winreg.OpenKey(
-            winreg.HKEY_CURRENT_USER,
-            r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize"
-        ) as key:
-            value, _ = winreg.QueryValueEx(key, "AppsUseLightTheme")
-            return int(value) == 0
-    except (OSError, ImportError):
-        return True
+# ── Spacing, 4px base ────────────────────────────────────────────────────
+SP_1, SP_2, SP_3, SP_4, SP_5, SP_6 = 4, 8, 12, 16, 20, 24
 
 
-if _system_is_dark():
-    FLOAT_PANEL = PANEL
-    FLOAT_TEXT = TEXT
-    FLOAT_TEXT_DIM = TEXT_DIM
-    FLOAT_ACCENT = ACCENT
-    FLOAT_ACCENT_SOFT = ACCENT_SOFT
-    FLOAT_GOLD = GOLD
-    FLOAT_GRID = GRID
-    FLOAT_FIELD = FIELD_DARK
-    FLOAT_SOLID = PANEL_SOLID
-    FLOAT_SELECT_BG = "rgba(255, 255, 255, 28)"
-    FLOAT_SELECT_TEXT = "white"
-    DLG_BG = BG
-    DLG_FIELD = FIELD
-    DLG_FIELD_FOCUS = FIELD_DARK
-    DLG_TINT = "rgba(255, 255, 255, 16)"
-    DLG_HOVER = "rgba(255, 255, 255, 26)"
-    DLG_PRESSED = "rgba(255, 255, 255, 42)"
-else:
-    FLOAT_PANEL = _L_PANEL
-    FLOAT_TEXT = _L_TEXT
-    FLOAT_TEXT_DIM = _L_TEXT_DIM
-    FLOAT_ACCENT = _L_ACCENT
-    FLOAT_ACCENT_SOFT = _L_ACCENT_SOFT
-    FLOAT_GOLD = _L_GOLD
-    FLOAT_GRID = _L_GRID
-    FLOAT_FIELD = _L_FIELD
-    FLOAT_SOLID = _L_SOLID
-    FLOAT_SELECT_BG = _L_SELECT_BG
-    FLOAT_SELECT_TEXT = _L_SELECT_TEXT
-    DLG_BG = _L_BG
-    DLG_FIELD = _L_FIELD_NORM
-    DLG_FIELD_FOCUS = _L_FIELD_FOCUS
-    DLG_TINT = _L_TINT
-    DLG_HOVER = _L_HOVER
-    DLG_PRESSED = _L_PRESSED
+# ── Consumer-facing names ────────────────────────────────────────────────
+# What the UI modules actually reference (~165 call sites). The FLOAT_*/DLG_*
+# names are kept from the light/dark era on purpose: unifying the palette
+# changed only their values, so no call site had to be touched.
+FLOAT_PANEL = PANEL
+FLOAT_TEXT = TEXT
+FLOAT_TEXT_DIM = TEXT_DIM
+FLOAT_ACCENT = ACCENT
+FLOAT_ACCENT_SOFT = ACCENT_SOFT
+FLOAT_ACCENT_BRIGHT = ACCENT_BRIGHT
+FLOAT_GRID = GRID
+FLOAT_FIELD = FIELD
+FLOAT_SOLID = PANEL_SOLID
+FLOAT_SELECT_BG = "rgba(167, 139, 250, 38)"
+FLOAT_SELECT_TEXT = TEXT
+DLG_BG = BG
+DLG_FIELD = FIELD
+DLG_FIELD_FOCUS = FIELD_DARK
+DLG_TINT = "rgba(167, 139, 250, 20)"
+DLG_HOVER = "rgba(167, 139, 250, 30)"
+DLG_PRESSED = "rgba(167, 139, 250, 48)"
+
+# Deprecated alias: FLOAT_GOLD predates the violet palette, where "gold" is a
+# misleading name for what is really the bright-accent role. Kept pointing at
+# the new value so nothing breaks; prefer FLOAT_ACCENT_BRIGHT in new code.
+GOLD = ACCENT_BRIGHT
+FLOAT_GOLD = FLOAT_ACCENT_BRIGHT
 
 
+# Both sheets below are formatted at import time, so a placeholder that does
+# not resolve takes the whole app down rather than degrading one widget. They
+# use %(name)s rather than positional %s precisely so the substitutions cannot
+# silently shift when a rule is added — QSS braces are untouched by % mapping.
 MENU_QSS = """
 QMenu {
-    background: %s;
-    color: %s;
-    border: 1px solid %s;
-    padding: 6px;
-    font-family: %s;
-    font-size: 21px;
+    background: %(solid)s;
+    color: %(text)s;
+    border: 1px solid %(grid)s;
+    border-radius: %(r_md)dpx;
+    padding: %(sp_2)dpx;
+    font-family: %(font)s;
+    font-size: %(fs_float)dpx;
 }
 QMenu::item {
-    padding: 12px 42px 12px 24px;
-    border-radius: 4px;
+    padding: 10px 32px 10px 20px;
+    border-radius: %(r_sm)dpx;
 }
 QMenu::item:selected {
-    background: %s;
-    color: %s;
+    background: %(select_bg)s;
+    color: %(select_text)s;
 }
 QMenu::item:disabled {
-    color: %s;
+    color: %(mute)s;
 }
 QMenu::separator {
     height: 1px;
-    background: %s;
-    margin: 6px 4px;
+    background: %(grid)s;
+    margin: %(sp_1)dpx %(sp_1)dpx;
 }
-""" % (FLOAT_SOLID, FLOAT_TEXT, FLOAT_ACCENT_SOFT, FONT,
-       FLOAT_SELECT_BG, FLOAT_SELECT_TEXT,
-       FLOAT_TEXT_DIM, FLOAT_GRID)
+""" % {
+    "solid": FLOAT_SOLID, "text": FLOAT_TEXT, "grid": FLOAT_GRID,
+    "font": FONT, "fs_float": FS_FLOAT, "r_md": R_MD, "r_sm": R_SM,
+    "sp_1": SP_1, "sp_2": SP_2,
+    "select_bg": FLOAT_SELECT_BG, "select_text": FLOAT_SELECT_TEXT,
+    "mute": TEXT_MUTE,
+}
 
 
 DIALOG_QSS = """
 QDialog {
-    background: %s;
-    color: %s;
-    font-family: %s;
-    font-size: 21px;
+    background: %(bg)s;
+    color: %(text)s;
+    font-family: %(font)s;
+    font-size: %(fs_md)dpx;
 }
 QLabel {
-    color: %s;
+    color: %(text)s;
 }
 QLabel#TerminalTitle {
-    color: %s;
-    font-family: %s;
-    font-size: 24px;
+    color: %(text)s;
+    font-family: %(mono)s;
+    font-size: %(fs_xl)dpx;
     font-weight: 700;
     padding: 0 0 2px 0;
 }
 QLabel#TerminalSubTitle {
-    color: %s;
-    font-family: %s;
-    font-size: 18px;
-    padding: 0 0 8px 0;
+    color: %(dim)s;
+    font-family: %(mono)s;
+    font-size: %(fs_sm)dpx;
+    padding: 0 0 %(sp_2)dpx 0;
 }
 QLabel#TerminalNote {
-    color: %s;
-    background: %s;
-    border-left: 3px solid %s;
+    color: %(dim)s;
+    background: %(tint)s;
+    border-left: 3px solid %(accent)s;
+    border-radius: %(r_sm)dpx;
     padding: 7px 9px;
 }
 QLineEdit, QComboBox, QDoubleSpinBox, QSpinBox {
-    background: %s;
-    color: %s;
-    border: 1px solid %s;
-    border-radius: 4px;
-    padding: 6px 8px;
-    selection-background-color: %s;
-    font-family: %s;
+    background: %(field)s;
+    color: %(text)s;
+    border: 1px solid %(grid)s;
+    border-radius: %(r_sm)dpx;
+    padding: 6px %(sp_2)dpx;
+    selection-background-color: %(accent_deep)s;
+    selection-color: #FFFFFF;
+    font-family: %(mono)s;
 }
 QLineEdit:focus, QComboBox:focus, QDoubleSpinBox:focus, QSpinBox:focus {
-    border: 1px solid %s;
-    background: %s;
+    border: 1px solid %(accent)s;
+    background: %(field_focus)s;
 }
 QComboBox::drop-down {
     width: 24px;
-    border-left: 1px solid %s;
+    border-left: 1px solid %(grid)s;
 }
 QCheckBox {
-    color: %s;
-    spacing: 8px;
+    color: %(text)s;
+    spacing: %(sp_2)dpx;
 }
 QCheckBox::indicator {
     width: 15px;
     height: 15px;
-    border: 1px solid %s;
-    background: %s;
+    border: 1px solid %(border_strong)s;
+    border-radius: 3px;   /* 15px box: R_SM would look almost circular */
+    background: %(field)s;
 }
 QCheckBox::indicator:checked {
-    background: %s;
-    border: 1px solid %s;
+    background: %(accent)s;
+    border: 1px solid %(accent)s;
 }
 QPushButton {
-    background: %s;
-    color: %s;
-    border: 1px solid %s;
-    border-radius: 4px;
-    padding: 6px 14px;
+    background: %(field)s;
+    color: %(text)s;
+    border: 1px solid %(grid)s;
+    border-radius: %(r_sm)dpx;
+    padding: 6px %(sp_4)dpx;
     min-width: 62px;
 }
 QPushButton:hover {
-    background: %s;
-    border-color: %s;
+    background: %(hover)s;
+    border-color: %(accent)s;
 }
 QPushButton:pressed {
-    background: %s;
+    background: %(pressed)s;
 }
-""" % (
-    DLG_BG, FLOAT_TEXT, FONT,
-    FLOAT_TEXT,
-    FLOAT_ACCENT, MONO,
-    FLOAT_TEXT_DIM, MONO,
-    FLOAT_TEXT_DIM, DLG_TINT, FLOAT_GOLD,
-    DLG_FIELD, FLOAT_TEXT, FLOAT_GRID, FLOAT_ACCENT, MONO,
-    FLOAT_ACCENT, DLG_FIELD_FOCUS,
-    FLOAT_GRID,
-    FLOAT_TEXT,
-    FLOAT_GRID, DLG_FIELD,
-    FLOAT_ACCENT, FLOAT_ACCENT,
-    DLG_FIELD, FLOAT_TEXT, FLOAT_GRID,
-    DLG_HOVER, FLOAT_ACCENT,
-    DLG_PRESSED,
-)
+QPushButton:disabled {
+    color: %(mute)s;
+    border-color: %(grid)s;
+}
+QPushButton#PrimaryBtn {
+    background: %(accent)s;
+    color: %(on_accent)s;
+    border: 1px solid %(accent)s;
+    font-weight: 700;
+}
+QPushButton#PrimaryBtn:hover {
+    background: %(accent_bright)s;
+    border-color: %(accent_bright)s;
+}
+QPushButton#PrimaryBtn:pressed {
+    background: %(accent_deep)s;
+    color: #FFFFFF;
+}
+""" % {
+    "bg": DLG_BG, "text": FLOAT_TEXT, "dim": FLOAT_TEXT_DIM,
+    "mute": TEXT_MUTE, "font": FONT, "mono": MONO,
+    "fs_sm": FS_SM, "fs_md": FS_MD, "fs_xl": FS_XL,
+    "r_sm": R_SM, "sp_2": SP_2, "sp_4": SP_4,
+    "field": DLG_FIELD, "field_focus": DLG_FIELD_FOCUS, "grid": FLOAT_GRID,
+    "tint": DLG_TINT, "hover": DLG_HOVER, "pressed": DLG_PRESSED,
+    "accent": ACCENT, "accent_bright": ACCENT_BRIGHT,
+    "accent_deep": ACCENT_DEEP, "on_accent": ON_ACCENT,
+    "border_strong": BORDER_STRONG,
+}

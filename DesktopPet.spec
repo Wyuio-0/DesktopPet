@@ -17,7 +17,23 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[],
+    # 必须显式排除：本项目的运行依赖只有 requirements.txt 里那几个
+    # （PyQt5 / opencv / numpy / edge-tts / psutil / Pillow）。但如果在**共享的全局
+    # 解释器**下打包（例如 D:\Python 同时装了 GPT-SoVITS 那套 torch 环境），
+    # PyInstaller 会顺着 import 链把 torch / scipy / matplotlib 整套拖进来：
+    # dist 从 ~200 MB 膨胀到 883 MB，Analysis 阶段光遍历 torch 目录树就要 3~5 分钟
+    # （看起来像卡死，实际是在啃磁盘）。这些包桌宠一个都不 import。
+    # 语音克隆是**独立进程**（D:\Dev\voiceclone\serve.py，走 HTTP 9881），
+    # 不在本 exe 内，所以排除 torch 不影响声线功能。
+    excludes=[
+        'torch', 'torchaudio', 'torchvision',   # 语音克隆走独立进程，不进 exe
+        'scipy', 'matplotlib', 'pandas',
+        'tkinter', 'IPython', 'jupyter', 'notebook', 'traitlets',
+        'transformers', 'tensorboard', 'sympy', 'numba', 'llvmlite',
+        'pymupdf', 'fitz',                      # knowledge.py 有零依赖回退
+        'win32com', 'pythoncom', 'pywintypes',
+        'pygame', 'sklearn', 'sentence_transformers',
+    ],
     noarchive=False,
     optimize=0,
 )

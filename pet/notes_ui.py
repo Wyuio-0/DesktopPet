@@ -9,6 +9,17 @@ from datetime import datetime
 from PyQt5 import QtCore, QtGui, QtWidgets
 
 from . import theme
+
+
+def _saved_style(color):
+    """自动保存状态行：保存中用强调紫，已保存回落为次要灰。"""
+    return "color: %s; font-size: %dpx;" % (color, theme.FS_XS)
+
+
+def _pin_style(color):
+    """置顶按钮配色：置顶时用强调紫，未置顶时用次要灰。"""
+    return ("QPushButton { color: %s; border: none; font-size: %dpx; }"
+            % (color, theme.FS_SM))
 from .notes import get_notes_manager
 
 
@@ -104,9 +115,9 @@ class StickyNoteWindow(QtWidgets.QWidget):
                 background: %s;
                 border: 1px solid %s;
                 border-left: 4px solid %s;
-                border-radius: 6px;
+                border-radius: %dpx;
             }
-        """ % (theme.FLOAT_PANEL, theme.FLOAT_GRID, theme.FLOAT_GOLD))
+        """ % (theme.FLOAT_PANEL, theme.FLOAT_GRID, theme.ACCENT, theme.R_MD))
 
         card_layout = QtWidgets.QVBoxLayout(self.container)
         card_layout.setContentsMargins(0, 0, 0, 0)
@@ -119,7 +130,7 @@ class StickyNoteWindow(QtWidgets.QWidget):
         tb_layout.setSpacing(6)
 
         icon_lbl = QtWidgets.QLabel("📝", self.title_bar)
-        icon_lbl.setStyleSheet("font-size: 14px;")
+        icon_lbl.setStyleSheet("font-size: %dpx;" % theme.FS_SM)
         tb_layout.addWidget(icon_lbl)
 
         # 便签下拉切换器
@@ -130,10 +141,10 @@ class StickyNoteWindow(QtWidgets.QWidget):
                 background: %s;
                 color: %s;
                 border: 1px solid %s;
-                border-radius: 4px;
+                border-radius: %dpx;
                 padding: 2px 8px;
                 font-family: %s;
-                font-size: 12px;
+                font-size: %dpx;
                 font-weight: 600;
                 min-width: 110px;
             }
@@ -145,7 +156,8 @@ class StickyNoteWindow(QtWidgets.QWidget):
                 border: 1px solid %s;
             }
         """ % (
-            theme.FLOAT_FIELD, theme.FLOAT_TEXT, theme.FLOAT_GRID, theme.FONT,
+            theme.FLOAT_FIELD, theme.FLOAT_TEXT, theme.FLOAT_GRID,
+            theme.R_SM, theme.FONT, theme.FS_XS,
             theme.FLOAT_SOLID, theme.FLOAT_TEXT, theme.FLOAT_SELECT_BG, theme.FLOAT_GRID
         ))
         self.combo_notes.currentIndexChanged.connect(self._on_note_selected)
@@ -156,16 +168,17 @@ class StickyNoteWindow(QtWidgets.QWidget):
                 background: transparent;
                 color: %s;
                 border: none;
-                border-radius: 4px;
+                border-radius: %dpx;
                 padding: 3px 6px;
-                font-size: 13px;
+                font-size: %dpx;
                 font-family: %s;
             }
             QPushButton:hover {
                 background: %s;
                 color: %s;
             }
-        """ % (theme.FLOAT_TEXT_DIM, theme.FONT, theme.FLOAT_SELECT_BG, theme.FLOAT_TEXT)
+        """ % (theme.FLOAT_TEXT_DIM, theme.R_SM, theme.FS_SM, theme.FONT,
+               theme.FLOAT_SELECT_BG, theme.FLOAT_TEXT)
 
         # ➕ 新建
         self.btn_new = QtWidgets.QPushButton("➕", self.title_bar)
@@ -185,7 +198,7 @@ class StickyNoteWindow(QtWidgets.QWidget):
         self.btn_pin = QtWidgets.QPushButton("📌", self.title_bar)
         self.btn_pin.setToolTip("切换置顶状态")
         self.btn_pin.setStyleSheet(
-            btn_style + "QPushButton { color: %s; }" % theme.FLOAT_GOLD
+            btn_style + "QPushButton { color: %s; }" % theme.ACCENT_BRIGHT
         )
         self.btn_pin.clicked.connect(self._toggle_pin)
         tb_layout.addWidget(self.btn_pin)
@@ -216,7 +229,7 @@ class StickyNoteWindow(QtWidgets.QWidget):
                 border: none;
                 padding: 10px 12px;
                 font-family: %s;
-                font-size: 14px;
+                font-size: %dpx;
                 line-height: 1.5;
             }
             QScrollBar:vertical {
@@ -226,10 +239,10 @@ class StickyNoteWindow(QtWidgets.QWidget):
             }
             QScrollBar::handle:vertical {
                 background: %s;
-                border-radius: 3px;
+                border-radius: 3px;   /* half of the 6px scrollbar width */
                 min-height: 20px;
             }
-        """ % (theme.FLOAT_TEXT, theme.FONT, theme.FLOAT_GRID))
+        """ % (theme.FLOAT_TEXT, theme.FONT, theme.FS_SM, theme.FLOAT_GRID))
         self.editor.textChanged.connect(self._on_editor_changed)
         card_layout.addWidget(self.editor, 1)
 
@@ -246,8 +259,8 @@ class StickyNoteWindow(QtWidgets.QWidget):
 
         self.lbl_char_count = QtWidgets.QLabel("0 字", status_bar)
         self.lbl_char_count.setStyleSheet(
-            "color: %s; font-size: 11px; font-family: %s;"
-            % (theme.FLOAT_TEXT_DIM, theme.FONT)
+            "color: %s; font-size: %dpx; font-family: %s;"
+            % (theme.FLOAT_TEXT_DIM, theme.FS_XS, theme.FONT)
         )
         sb_layout.addWidget(self.lbl_char_count)
 
@@ -255,8 +268,8 @@ class StickyNoteWindow(QtWidgets.QWidget):
 
         self.lbl_saved = QtWidgets.QLabel("已自动保存", status_bar)
         self.lbl_saved.setStyleSheet(
-            "color: %s; font-size: 11px; font-family: %s;"
-            % (theme.FLOAT_TEXT_DIM, theme.FONT)
+            "color: %s; font-size: %dpx; font-family: %s;"
+            % (theme.FLOAT_TEXT_DIM, theme.FS_XS, theme.FONT)
         )
         sb_layout.addWidget(self.lbl_saved)
 
@@ -316,10 +329,10 @@ class StickyNoteWindow(QtWidgets.QWidget):
         if saved:
             now_time = datetime.now().strftime("%H:%M")
             self.lbl_saved.setText(f"已保存 {now_time}")
-            self.lbl_saved.setStyleSheet("color: %s; font-size: 11px;" % theme.FLOAT_TEXT_DIM)
+            self.lbl_saved.setStyleSheet(_saved_style(theme.FLOAT_TEXT_DIM))
         else:
             self.lbl_saved.setText("保存中…")
-            self.lbl_saved.setStyleSheet("color: %s; font-size: 11px;" % theme.FLOAT_GOLD)
+            self.lbl_saved.setStyleSheet(_saved_style(theme.ACCENT))
 
     def _on_new_note(self):
         self._do_auto_save()
@@ -351,10 +364,10 @@ class StickyNoteWindow(QtWidgets.QWidget):
         flags = self.windowFlags()
         if self.is_pinned:
             flags |= QtCore.Qt.WindowStaysOnTopHint
-            self.btn_pin.setStyleSheet("QPushButton { color: %s; border: none; font-size: 13px; }" % theme.FLOAT_GOLD)
+            self.btn_pin.setStyleSheet(_pin_style(theme.ACCENT))
         else:
             flags &= ~QtCore.Qt.WindowStaysOnTopHint
-            self.btn_pin.setStyleSheet("QPushButton { color: %s; border: none; font-size: 13px; }" % theme.FLOAT_TEXT_DIM)
+            self.btn_pin.setStyleSheet(_pin_style(theme.FLOAT_TEXT_DIM))
         self.setWindowFlags(flags)
         self.show()
 
@@ -366,7 +379,7 @@ class StickyNoteWindow(QtWidgets.QWidget):
                 background: %s;
                 color: %s;
                 border: 1px solid %s;
-                border-radius: 6px;
+                border-radius: %dpx;
                 padding: 4px;
                 font-family: %s;
             }
@@ -375,7 +388,8 @@ class StickyNoteWindow(QtWidgets.QWidget):
                 color: %s;
             }
         """ % (
-            theme.FLOAT_SOLID, theme.FLOAT_TEXT, theme.FLOAT_GRID, theme.FONT,
+            theme.FLOAT_SOLID, theme.FLOAT_TEXT, theme.FLOAT_GRID,
+            theme.R_MD, theme.FONT,
             theme.FLOAT_SELECT_BG, theme.FLOAT_TEXT
         ))
         act_task = menu.addAction("⚡ 提取待办任务加入日程…")

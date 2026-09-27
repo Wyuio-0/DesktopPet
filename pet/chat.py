@@ -4,25 +4,37 @@ from PyQt5 import QtCore, QtWidgets
 
 from . import theme
 
+# The bubble is the most-seen surface in the app, so the violet identity is
+# carried mainly by its left bar — that used to be a neutral grey, which is why
+# the pet read as colourless even though a palette existed.
 _BUBBLE_QSS = (
-    "QLabel{background:%s;color:%s;"
-    "border:1px solid %s;border-left:4px solid %s;border-radius:6px;"
-    "padding:15px 24px;"
-    "font-family:%s;font-size:21px;font-weight:600;}"
-) % (theme.FLOAT_PANEL, theme.FLOAT_TEXT, theme.FLOAT_GRID,
-     theme.FLOAT_ACCENT_SOFT, theme.FONT)
+    "QLabel{background:%(panel)s;color:%(text)s;"
+    "border:1px solid %(grid)s;border-left:4px solid %(accent)s;"
+    "border-radius:%(r_lg)dpx;padding:%(pad_v)dpx %(pad_h)dpx;"
+    "font-family:%(font)s;font-size:%(fs)dpx;font-weight:600;}"
+) % {
+    "panel": theme.FLOAT_PANEL, "text": theme.FLOAT_TEXT,
+    "grid": theme.FLOAT_GRID, "accent": theme.ACCENT,
+    "r_lg": theme.R_LG, "pad_v": theme.SP_4, "pad_h": theme.SP_6,
+    "font": theme.FONT, "fs": theme.FS_FLOAT,
+}
 
 _INPUT_QSS = (
-    "QLineEdit{background:%s;color:%s;"
-    "border:1px solid %s;border-bottom:2px solid %s;border-radius:6px;"
-    "padding:12px 18px;font-family:%s;font-size:21px;}"
-    "QLineEdit:focus{border:1px solid %s;border-bottom:2px solid %s;"
-    "background:%s;}"
-    "QLineEdit::placeholder{color:%s;}"
-) % (theme.FLOAT_PANEL, theme.FLOAT_TEXT, theme.FLOAT_GRID,
-     theme.FLOAT_ACCENT_SOFT, theme.FONT,
-     theme.FLOAT_ACCENT, theme.FLOAT_ACCENT, theme.FLOAT_FIELD,
-     theme.FLOAT_TEXT_DIM)
+    "QLineEdit{background:%(panel)s;color:%(text)s;"
+    "border:1px solid %(grid)s;border-bottom:2px solid %(accent_soft)s;"
+    "border-radius:%(r_lg)dpx;padding:%(pad_v)dpx %(pad_h)dpx;"
+    "font-family:%(font)s;font-size:%(fs)dpx;}"
+    "QLineEdit:focus{border:1px solid %(accent)s;"
+    "border-bottom:2px solid %(accent)s;background:%(field)s;}"
+    "QLineEdit::placeholder{color:%(dim)s;}"
+) % {
+    "panel": theme.FLOAT_PANEL, "text": theme.FLOAT_TEXT,
+    "grid": theme.FLOAT_GRID, "accent": theme.ACCENT,
+    "accent_soft": theme.ACCENT_SOFT, "field": theme.FLOAT_FIELD,
+    "dim": theme.FLOAT_TEXT_DIM, "r_lg": theme.R_LG,
+    "pad_v": theme.SP_3, "pad_h": theme.SP_5,
+    "font": theme.FONT, "fs": theme.FS_FLOAT,
+}
 
 
 class ReplyWorker(QtCore.QThread):

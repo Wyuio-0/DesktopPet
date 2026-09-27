@@ -24,28 +24,40 @@ PROVIDERS = [
 
 CHIP_STYLE = """
 QPushButton {
-    background: #181E27;
-    color: #E2E8F0;
-    border: 1px solid #2D3748;
-    border-radius: 6px;
-    padding: 7px 8px;
+    background: %(field)s;
+    color: %(text)s;
+    border: 1px solid %(grid)s;
+    border-radius: %(r_sm)dpx;
+    padding: 7px %(sp_2)dpx;
     min-height: 24px;
-    font-family: 'Microsoft YaHei UI', 'Microsoft YaHei', 'Segoe UI';
-    font-size: 12px;
+    font-family: %(font)s;
+    font-size: %(fs_xs)dpx;
     font-weight: 500;
 }
 QPushButton:hover {
-    background: #232D3B;
-    border-color: #00B0FF;
-    color: #FFFFFF;
+    background: %(field_hi)s;
+    border-color: %(accent)s;
+    color: %(text)s;
 }
 QPushButton:checked {
-    background: rgba(0, 176, 255, 0.15);
-    border: 1.5px solid #00B0FF;
-    color: #00B0FF;
+    background: %(tint)s;
+    border: 1.5px solid %(accent)s;
+    color: %(accent_bright)s;
     font-weight: bold;
 }
-"""
+""" % {
+    "field": theme.FIELD, "field_hi": theme.FIELD_DARK, "grid": theme.GRID,
+    "text": theme.TEXT, "accent": theme.ACCENT,
+    "accent_bright": theme.ACCENT_BRIGHT, "tint": theme.DLG_TINT,
+    "font": theme.FONT, "fs_xs": theme.FS_XS,
+    "r_sm": theme.R_SM, "sp_2": theme.SP_2,
+}
+
+
+def _status_style(color):
+    """Connectivity-test status line (testing / ok / failed all share this)."""
+    return ("color: %s; font-size: %dpx; font-weight: bold;"
+            % (color, theme.FS_XS))
 
 
 def do_test_connection(base_url, model, api_key, timeout=8):
@@ -217,11 +229,11 @@ class AiSettingsDialog(QtWidgets.QDialog):
         chip_box = QtWidgets.QGroupBox("常用大模型一键配置（对齐手机端快捷选项）", self)
         chip_box.setStyleSheet("""
             QGroupBox {
-                color: #00B0FF;
+                color: %(accent)s;
                 font-weight: bold;
-                font-size: 13px;
-                border: 1px solid #232A36;
-                border-radius: 6px;
+                font-size: %(fs_sm)dpx;
+                border: 1px solid %(grid)s;
+                border-radius: %(r_sm)dpx;
                 margin-top: 6px;
                 padding-top: 14px;
             }
@@ -231,7 +243,8 @@ class AiSettingsDialog(QtWidgets.QDialog):
                 left: 10px;
                 padding: 0 4px;
             }
-        """)
+        """ % {"accent": theme.ACCENT, "grid": theme.GRID,
+               "fs_sm": theme.FS_SM, "r_sm": theme.R_SM})
         chip_grid = QtWidgets.QGridLayout(chip_box)
         chip_grid.setContentsMargins(10, 10, 10, 10)
         chip_grid.setHorizontalSpacing(8)
@@ -308,28 +321,32 @@ class AiSettingsDialog(QtWidgets.QDialog):
         self.btn_test.setCursor(QtCore.Qt.PointingHandCursor)
         self.btn_test.setStyleSheet("""
             QPushButton {
-                background: #1A2230;
-                color: #00B0FF;
-                border: 1px solid #00B0FF;
-                border-radius: 4px;
-                padding: 6px 14px;
+                background: %(field_hi)s;
+                color: %(accent)s;
+                border: 1px solid %(accent)s;
+                border-radius: %(r_sm)dpx;
+                padding: 6px %(sp_4)dpx;
                 font-weight: bold;
-                font-size: 13px;
+                font-size: %(fs_sm)dpx;
             }
             QPushButton:hover {
-                background: rgba(0, 176, 255, 0.2);
+                background: %(accent)s;
+                color: %(on_accent)s;
             }
             QPushButton:disabled {
-                color: #64748B;
-                border-color: #334155;
-                background: #14171F;
+                color: %(mute)s;
+                border-color: %(grid)s;
+                background: %(field)s;
             }
-        """)
+        """ % {"field": theme.FIELD, "field_hi": theme.FIELD_DARK,
+               "grid": theme.GRID, "mute": theme.TEXT_MUTE,
+               "accent": theme.ACCENT, "on_accent": theme.ON_ACCENT,
+               "fs_sm": theme.FS_SM, "r_sm": theme.R_SM, "sp_4": theme.SP_4})
         self.btn_test.clicked.connect(self._start_test_connection)
         test_bar.addWidget(self.btn_test)
 
         self.lbl_test_status = QtWidgets.QLabel(self)
-        self.lbl_test_status.setStyleSheet("font-size: 12px;")
+        self.lbl_test_status.setStyleSheet("font-size: %dpx;" % theme.FS_XS)
         self.lbl_test_status.setWordWrap(True)
         test_bar.addWidget(self.lbl_test_status, 1)
         root.addLayout(test_bar)
@@ -344,19 +361,8 @@ class AiSettingsDialog(QtWidgets.QDialog):
 
         btn_save = QtWidgets.QPushButton("保存配置", self)
         btn_save.setObjectName("PrimaryBtn")
-        btn_save.setStyleSheet("""
-            QPushButton#PrimaryBtn {
-                background: #00B0FF;
-                color: #FFFFFF;
-                border: 1px solid #0091EA;
-                border-radius: 4px;
-                font-weight: bold;
-                padding: 6px 16px;
-            }
-            QPushButton#PrimaryBtn:hover {
-                background: #40C4FF;
-            }
-        """)
+        # No inline style: theme.DIALOG_QSS (applied at __init__) already styles
+        # QPushButton#PrimaryBtn, so overriding here would just fork the accent.
         btn_save.clicked.connect(self._save)
         bottom_bar.addWidget(btn_save)
 
@@ -426,7 +432,7 @@ class AiSettingsDialog(QtWidgets.QDialog):
         self.btn_test.setEnabled(False)
         self.btn_test.setText("测试中...")
         self.lbl_test_status.setText("⏳ 正在测试网络与接口连通性...")
-        self.lbl_test_status.setStyleSheet("color: #FBBF24; font-size: 12px; font-weight: bold;")
+        self.lbl_test_status.setStyleSheet(_status_style(theme.AMBER))
 
         self._test_worker = TestConnectionWorker(base_url, model, api_key, self)
         self._test_worker.sig_result.connect(self._on_test_finished)
@@ -437,10 +443,10 @@ class AiSettingsDialog(QtWidgets.QDialog):
         self.btn_test.setText("⚡ 测试连通性")
         if success:
             self.lbl_test_status.setText(f"✓ {msg}")
-            self.lbl_test_status.setStyleSheet("color: #00E676; font-size: 12px; font-weight: bold;")
+            self.lbl_test_status.setStyleSheet(_status_style(theme.GREEN))
         else:
             self.lbl_test_status.setText(f"✗ {msg}")
-            self.lbl_test_status.setStyleSheet("color: #FF5252; font-size: 12px; font-weight: bold;")
+            self.lbl_test_status.setStyleSheet(_status_style(theme.RED))
 
     def _save(self):
         base_url = self.base_url.text().strip().rstrip("/")
