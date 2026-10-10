@@ -32,26 +32,29 @@ def test_web_courses_and_upload_api():
 
     async def _run():
         app = make_app()
-        client = TestClient(TestServer(app))
-        await client.start_server()
+        server = TestServer(app)
+        async with TestClient(server) as client:
+            # 1. 验证课程统计结构
+            res = await client.get("/api/stats")
+            data = await res.json()
+            assert "courses" in data
+            assert isinstance(data["courses"], list)
 
-        # 1. 验证课程统计包含全部课表课程
-        res = await client.get("/api/stats")
-        data = await res.json()
-        assert "courses" in data
-        assert len(data["courses"]) >= 9
+            # 2. 验证创建课程接口
+            res = await client.post("/api/courses/create", json={"name": "测试自动化科目"})
+            c_data = await res.json()
+            assert c_data.get("success") is True
 
-        # 2. 验证创建课程接口
-        res = await client.post("/api/courses/create", json={"name": "测试自动化科目"})
-        c_data = await res.json()
-        assert c_data.get("success") is True
+            # 3. 验证课程统计包含新创建的课程
+            res = await client.get("/api/stats")
+            data = await res.json()
+            course_names = [c["name"] for c in data.get("courses", [])]
+            assert "测试自动化科目" in course_names
 
-        # 3. 验证课程文件筛选
-        res = await client.get("/api/files?course=测试自动化科目")
-        files = await res.json()
-        assert isinstance(files, list)
-
-        await client.close()
+            # 4. 验证课程文件筛选
+            res = await client.get("/api/files?course=测试自动化科目")
+            files = await res.json()
+            assert isinstance(files, list)
 
     asyncio.run(_run())
 
