@@ -64,12 +64,6 @@ def ensure_server_running(host: str = "127.0.0.1", port: int = 5050, brain=None,
         def _run_server():
             global _LOOP, _RUNNER, _SITE
             try:
-                # 兼容旧版本 Windows asyncio 循环
-                if sys.platform == "win32" and sys.version_info < (3, 14):
-                    try:
-                        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
-                    except Exception:
-                        pass
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
                 _LOOP = loop
@@ -117,14 +111,14 @@ def ensure_server_running(host: str = "127.0.0.1", port: int = 5050, brain=None,
 
 
 def stop_server(timeout: float = 2.0, host: str = "127.0.0.1", port: int = 5050) -> bool:
-    """优雅停止 NotebookLM Web 服务并释放 5050 端口。
+    """优雅停止 NotebookLM Web 服务并释放端口。
 
     Returns:
         bool: 服务是否已成功停止并释放端口。
     """
     global _SERVER_STARTED, _LOOP, _RUNNER, _SITE, _SERVER_THREAD
     with _SERVER_LOCK:
-        if not is_server_listening(host, port):
+        if not is_server_listening(host, port) and not (_SERVER_THREAD and _SERVER_THREAD.is_alive()):
             _SERVER_STARTED = False
             _LOOP = None
             _RUNNER = None
@@ -136,15 +130,22 @@ def stop_server(timeout: float = 2.0, host: str = "127.0.0.1", port: int = 5050)
         loop = _LOOP
         runner = _RUNNER
 
-        if loop and loop.is_running() and runner:
+        if loop and loop.is_running():
             try:
-                cleanup_future = asyncio.run_coroutine_threadsafe(runner.cleanup(), loop)
+                async def _shutdown():
+                    if runner:
+                        try:
+                            await runner.cleanup()
+                        except Exception:
+                            pass
+                    loop.stop()
+
+                f = asyncio.run_coroutine_threadsafe(_shutdown(), loop)
                 try:
-                    cleanup_future.result(timeout=timeout)
+                    f.result(timeout=timeout)
                 except Exception as e:
                     petlog.warn(f"web_launcher: cleanup runner 异常: {e}")
-
-                loop.call_soon_threadsafe(loop.stop)
+                    loop.call_soon_threadsafe(loop.stop)
             except Exception as e:
                 petlog.warn(f"web_launcher: 停止事件循环异常: {e}")
 

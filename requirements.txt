@@ -10,5 +10,3 @@ pymupdf==1.28.2        # PDF text and slide parser
 pypdf==6.19.0          # Pure-Python fallback PDF parser
 python-pptx==1.0.2     # PowerPoint PPTX slide parser
 python-docx==1.2.0     # Word document parser
-rapidocr-onnxruntime==1.2.3  # 本地高精度离线 OCR 引擎（图表讲义/纯图 PPTX 自动文字提取）
-onnxruntime==1.30.0          # RapidOCR 底层推理引擎

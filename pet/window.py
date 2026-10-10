@@ -267,10 +267,6 @@ class PetWindow(QtWidgets.QWidget):
         self.play("start")
         self._setup_hotkey()
         self._attach_brain_services()
-
-        # 静默在后台确保 NotebookLM Web 服务就绪（延时 1 秒，不占用首屏启动时间）
-        QtCore.QTimer.singleShot(1000, lambda: self._ensure_web_service_bg())
-
         # 自动更新：启动数秒后静默检查
         if self.prefs.get("check_updates", True):
             QtCore.QTimer.singleShot(4000, self._check_updates)

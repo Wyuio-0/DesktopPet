@@ -14,13 +14,19 @@ class TestOcrBackends:
     def test_winrt_available_returns_bool(self):
         assert isinstance(winrt_available(), bool)
 
-    def test_ocr_image_without_backends(self, sample_image):
+    def test_ocr_image_without_backends(self, sample_image, monkeypatch):
         """无 winsdk 且无 api_key 时必须给出清晰错误。"""
+        monkeypatch.setattr("pet.ocr.winrt_available", lambda: False)
+        monkeypatch.setattr("pet.ocr.rapidocr_available", lambda: False)
+        monkeypatch.setattr("pet.ocr._get_rapid_ocr", lambda: None)
         with pytest.raises(OcrError) as ei:
             ocr_image(sample_image, brain_cfg={})
         assert "winsdk" in str(ei.value)
 
-    def test_ocr_image_no_cfg(self, sample_image):
+    def test_ocr_image_no_cfg(self, sample_image, monkeypatch):
+        monkeypatch.setattr("pet.ocr.winrt_available", lambda: False)
+        monkeypatch.setattr("pet.ocr.rapidocr_available", lambda: False)
+        monkeypatch.setattr("pet.ocr._get_rapid_ocr", lambda: None)
         with pytest.raises(OcrError):
             ocr_image(sample_image, brain_cfg=None)
 
