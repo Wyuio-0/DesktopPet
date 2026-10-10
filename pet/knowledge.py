@@ -108,8 +108,132 @@ def _encode_query(query):
 
 # ── 文档解析与文本提取 ─────────────────────────────────────────────────────────
 
-def extract_text_from_file(path):
-    """从 PPTX, PDF, DOCX, TXT, MD 等多种格式文件中提取全文纯文本。"""
+def _extract_ppt_legacy(path):
+    """从传统二进制 .ppt (OLE2) 文件中提取幻灯片文本。"""
+    texts = []
+    try:
+        with open(path, "rb") as f:
+            data = f.read()
+
+        # 1. 匹配 UTF-16LE 连续中英文字符块
+        utf16_pattern = re.compile(rb'(?:[\x20-\x7e]\x00|[\x00-\xff][\x4e-\x9f]|[\x00-\xff][\x30-\x39]){3,}')
+        for m in utf16_pattern.finditer(data):
+            try:
+                s = m.group(0).decode("utf-16le", errors="ignore").strip()
+                if len(s) >= 3 and any('\u4e00' <= c <= '\u9fa5' or c.isalnum() for c in s):
+                    if not s.startswith(("_", "PowerPoint", "Current User", "Document")):
+                        texts.append(s)
+            except Exception:
+                pass
+
+        # 2. 匹配 ASCII 连续文本块 (长度 >= 4)
+        ascii_pattern = re.compile(rb'[\x20-\x7e\n\r\t]{5,}')
+        for m in ascii_pattern.finditer(data):
+            try:
+                s = m.group(0).decode("ascii", errors="ignore").strip()
+                if len(s) >= 4 and any(c.isalnum() for c in s):
+                    if not any(noise in s for noise in ["Font", "Arial", "Times New", "PowerPoint", "Microsoft"]):
+                        texts.append(s)
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+    seen = set()
+    cleaned = []
+    for t in texts:
+        t = t.strip()
+        if t and t not in seen and len(t) >= 2:
+            seen.add(t)
+            cleaned.append(t)
+    return "\n\n".join(cleaned)
+
+
+def _text_cache_path(path):
+    """计算课件文本的本地缓存文件路径（按文件名+大小+首尾采样哈希，实现跨目录/拷贝复用的内容寻址缓存）。"""
+    try:
+        stat = os.stat(path)
+        import hashlib
+        h = hashlib.md5(f"{os.path.basename(path)}_{stat.st_size}".encode("utf-8"))
+        with open(path, "rb") as f:
+            h.update(f.read(65536))
+            if stat.st_size > 65536:
+                f.seek(max(0, stat.st_size - 65536))
+                h.update(f.read(65536))
+        digest_hex = h.hexdigest()
+        safe_name = re.sub(r'[\/\\:\*\?"<>\|]', "_", os.path.basename(path))[:30]
+        cdir = os.path.join(config_dir(), "knowledge", ".cache")
+        os.makedirs(cdir, exist_ok=True)
+        return os.path.join(cdir, f"{safe_name}_{digest_hex}.txt")
+    except OSError:
+        return None
+
+
+def _extract_pptx_images_fallback(path, max_slides=20):
+    """当 PPTX 没有文本框或仅包含全页背景图时（例如 Marp/全图导出），直接从 PPTX 的 zip 结构提取幻灯片对应图片执行 OCR。"""
+    import zipfile
+    import xml.etree.ElementTree as ET
+    from . import ocr
+    texts = []
+    try:
+        with zipfile.ZipFile(path) as z:
+            names = z.namelist()
+            slide_files = [n for n in names if n.startswith("ppt/slides/slide") and n.endswith(".xml")]
+            def get_num(fn):
+                m = re.search(r"\d+", os.path.basename(fn))
+                return int(m.group(0)) if m else 0
+            slide_files = sorted(slide_files, key=get_num)
+            total = len(slide_files)
+            if not total:
+                return ""
+
+            # 步长自适应：前3页(大纲/目录) + 末尾总结页 + 中间均匀平铺，抽取最多 max_slides 页
+            if total <= max_slides:
+                sampled = slide_files
+            else:
+                step = max(1, (total - 5) // max(1, (max_slides - 5)))
+                middle = slide_files[3:-2:step]
+                selected_set = set(slide_files[:3] + middle + slide_files[-2:])
+                sampled = [s for s in slide_files if s in selected_set][:max_slides]
+
+            petlog.log(f"knowledge: 纯图片 PPT 幻灯片，启动快速离线 OCR 提取 ({len(sampled)}/{total} 页)...")
+
+            for sfile in sampled:
+                page_num = get_num(sfile)
+                base = os.path.basename(sfile)
+                rel_file = f"ppt/slides/_rels/{base}.rels"
+                img_rel_path = None
+                if rel_file in names:
+                    try:
+                        rel_tree = ET.fromstring(z.read(rel_file))
+                        for rel in rel_tree.iter():
+                            if rel.tag.endswith("Relationship") and "image" in rel.attrib.get("Type", ""):
+                                img_rel_path = rel.attrib.get("Target", "")
+                                break
+                    except Exception:
+                        pass
+                if not img_rel_path:
+                    # 备选：直接按 Marp 常见命名查找媒体图片
+                    cand = f"ppt/media/Slide-{page_num}-image-1.png"
+                    if cand in names:
+                        img_rel_path = f"../media/Slide-{page_num}-image-1.png"
+                if img_rel_path:
+                    norm_path = os.path.normpath(os.path.join("ppt/slides", img_rel_path)).replace("\\", "/")
+                    if norm_path in names:
+                        try:
+                            img_bytes = z.read(norm_path)
+                            txt = ocr.recognize(img_bytes)
+                            if txt and txt.strip():
+                                texts.append(f"=== 第 {page_num} 页 ===\n" + txt.strip())
+                        except Exception as e:
+                            petlog.warn(f"knowledge: 第 {page_num} 页 OCR 异常: {e}")
+    except Exception as e:
+        petlog.warn(f"knowledge: _extract_pptx_images_fallback 异常: {e}")
+    return "\n\n".join(texts)
+
+
+def _do_extract_text_from_file(path):
+    """从 PPTX, PDF, DOCX, TXT, MD 等多种格式文件中提取全文纯文本（内部实现）。"""
     if not os.path.isfile(path):
         return ""
 
@@ -157,22 +281,59 @@ def extract_text_from_file(path):
             pass
         return ""
 
-    # 3. PPTX 文件 (优先使用 python-pptx，失败回退纯标准库 zip+xml 解析)
+
+    # 3. PPTX 与 PPT 演示文稿文件
+    if ext == ".ppt":
+        return _extract_ppt_legacy(path)
+
     if ext == ".pptx":
         try:
             import pptx
             prs = pptx.Presentation(path)
             slide_texts = []
+            ocr_count = 0
+            MAX_OCR_PAGES = 30  # 纯图片 PPT/PDF 幻灯片 OCR 数量上限，防卡死
             for idx, slide in enumerate(prs.slides, 1):
-                cur_slide = [f"=== 第 {idx} 页 ==="]
+                cur_slide = []
+                title_text = ""
+                # 尝试提取幻灯片自带的主标题
+                try:
+                    title_shape = getattr(slide.shapes, "title", None)
+                    if title_shape and title_shape.has_text_frame:
+                        title_text = title_shape.text_frame.text.strip()
+                except Exception:
+                    pass
+
                 for shape in slide.shapes:
                     if shape.has_text_frame:
                         for p in shape.text_frame.paragraphs:
                             t = p.text.strip()
-                            if t:
+                            if t and t != title_text:
                                 cur_slide.append(t)
-                if len(cur_slide) > 1:
-                    slide_texts.append("\n".join(cur_slide))
+                    elif getattr(shape, "has_table", False):
+                        try:
+                            for row in shape.table.rows:
+                                for cell in row.cells:
+                                    ct = cell.text.strip()
+                                    if ct:
+                                        cur_slide.append(ct)
+                        except Exception:
+                            pass
+                    elif hasattr(shape, "image") and shape.image:
+                        # 纯图片 PPT 幻灯片兜底：若当前页没有文字框，自动对图片运行 OCR 提取
+                        if not cur_slide and not title_text and ocr_count < MAX_OCR_PAGES:
+                            try:
+                                from . import ocr
+                                ocr_res = ocr.recognize(shape.image.blob)
+                                if ocr_res and ocr_res.strip():
+                                    cur_slide.append(ocr_res.strip())
+                                    ocr_count += 1
+                            except Exception:
+                                pass
+                header = f"=== 第 {idx} 页" + (f" · {title_text}" if title_text else "") + " ==="
+                body = "\n".join(cur_slide)
+                if body or title_text:
+                    slide_texts.append(f"{header}\n{body}".strip())
             if slide_texts:
                 return "\n\n".join(slide_texts)
         except Exception:
@@ -193,18 +354,42 @@ def extract_text_from_file(path):
                     return "\n\n".join(res)
         except Exception:
             pass
+
+        # 终极兜底：针对全页背景图/Marp 导出的 PPTX，执行背景图片 OCR 提取
+        bg_ocr_text = _extract_pptx_images_fallback(path)
+        if bg_ocr_text and bg_ocr_text.strip():
+            return bg_ocr_text.strip()
+
         return ""
 
-    # 4. PDF 文件 (优先使用 PyMuPDF / fitz，支持多页文本提取)
+    # 4. PDF 文件 (优先使用 PyMuPDF / fitz，保留页面编号与边界；图片扫描页支持 OCR 兜底)
     if ext == ".pdf":
         try:
-            import fitz
+            try:
+                import pymupdf as fitz
+            except ImportError:
+                import fitz
             doc = fitz.open(path)
             pages = []
+            ocr_count = 0
+            MAX_OCR_PAGES = 30  # 避免百页纯扫描教材无限制 OCR 导致长时间占用 CPU
             for i in range(len(doc)):
-                txt = doc[i].get_text()
+                page = doc[i]
+                txt = page.get_text()
                 if txt and txt.strip():
                     pages.append(f"--- 第 {i+1} 页 ---\n" + txt.strip())
+                elif ocr_count < MAX_OCR_PAGES:
+                    # 本页无矢量文字（纯图片/扫描件），自动调用 OCR 渲染提取
+                    try:
+                        from . import ocr
+                        pix = page.get_pixmap(dpi=150)
+                        img_bytes = pix.tobytes("png")
+                        ocr_txt = ocr.recognize(img_bytes)
+                        if ocr_txt and ocr_txt.strip():
+                            pages.append(f"--- 第 {i+1} 页 (OCR) ---\n" + ocr_txt.strip())
+                            ocr_count += 1
+                    except Exception:
+                        pass
             doc.close()
             if pages:
                 return "\n\n".join(pages)
@@ -237,6 +422,31 @@ def extract_text_from_file(path):
             pass
 
     return ""
+
+
+def extract_text_from_file(path):
+    """从 PPTX, PDF, DOCX, TXT, MD 等多种格式文件中提取全文纯文本（带本地磁盘缓存加速）。"""
+    if not os.path.isfile(path):
+        return ""
+
+    cp = _text_cache_path(path)
+    if cp and os.path.isfile(cp):
+        try:
+            with open(cp, "r", encoding="utf-8") as f:
+                cached = f.read()
+            if cached and cached.strip():
+                return cached
+        except OSError:
+            pass
+
+    text = _do_extract_text_from_file(path)
+    if text and text.strip() and cp:
+        try:
+            with open(cp, "w", encoding="utf-8") as f:
+                f.write(text)
+        except OSError:
+            pass
+    return text
 
 
 def match_course_for_file(filename, course_names, active_course=None):
@@ -348,22 +558,36 @@ class KnowledgeBase:
             except OSError:
                 size, mtime = 0, 0
 
-            raw_text = extract_text_from_file(path)
-            if not raw_text or not raw_text.strip():
-                continue
-
             doc_chunks = []
-            for seg in _segment(raw_text):
-                seg = seg.strip()
-                if seg:
-                    c_obj = {
-                        "text": seg,
-                        "source": fn,
-                        "course": course or "",
-                        "path": path
-                    }
-                    self.chunks.append(c_obj)
-                    doc_chunks.append(c_obj)
+            raw_text = extract_text_from_file(path)
+            if raw_text and raw_text.strip():
+                for seg in _segment(raw_text):
+                    seg = seg.strip()
+                    if seg:
+                        c_obj = {
+                            "text": seg,
+                            "source": fn,
+                            "course": course or "",
+                            "path": path
+                        }
+                        self.chunks.append(c_obj)
+                        doc_chunks.append(c_obj)
+
+            # 若已生成 AI 核心考点纲要，作为高权重知识切片一并收录
+            has_digest = self.has_digest(fn, course)
+            if has_digest:
+                digest_text = self.get_digest(fn, course)
+                if digest_text:
+                    for d_seg in _segment_digest(digest_text):
+                        d_obj = {
+                            "text": d_seg,
+                            "source": f"{fn} (考点提炼)",
+                            "course": course or "",
+                            "path": path,
+                            "is_digest": True,
+                        }
+                        self.chunks.append(d_obj)
+                        doc_chunks.append(d_obj)
 
             self.files_meta.append({
                 "filename": fn,
@@ -371,8 +595,44 @@ class KnowledgeBase:
                 "size": size,
                 "chunks": len(doc_chunks),
                 "mtime": mtime,
-                "path": path
+                "path": path,
+                "has_digest": has_digest,
             })
+
+    def get_digest_path(self, filename, course=None):
+        """获取指定课件的知识点考纲 Markdown 存储路径。"""
+        safe_course = re.sub(r'[\/\\:\*\?"<>\|]', "_", str(course).strip()) if course and str(course).strip() else "_global"
+        safe_fn = re.sub(r'[\/\\:\*\?"<>\|]', "_", filename)
+        d_dir = os.path.join(self.folder, "digests", safe_course)
+        os.makedirs(d_dir, exist_ok=True)
+        return os.path.join(d_dir, f"{safe_fn}.md")
+
+    def has_digest(self, filename, course=None):
+        """检查指定课件是否已经提炼过 AI 知识点与考纲。"""
+        return os.path.isfile(self.get_digest_path(filename, course))
+
+    def get_digest(self, filename, course=None):
+        """读取指定课件提炼出的核心知识点与考纲 Markdown 全文。若未生成或读取失败返回空字符串。"""
+        p = self.get_digest_path(filename, course)
+        if os.path.isfile(p):
+            try:
+                with open(p, "r", encoding="utf-8") as f:
+                    return f.read()
+            except OSError:
+                return ""
+        return ""
+
+    def save_digest(self, filename, course, content):
+        """持久化保存 AI 提炼出的考纲，并重载知识切片索引。"""
+        p = self.get_digest_path(filename, course)
+        try:
+            with open(p, "w", encoding="utf-8") as f:
+                f.write(content)
+            self.reload()
+            return True
+        except OSError as e:
+            petlog.warn(f"knowledge: 保存知识考点大纲失败 {p}: {e}")
+            return False
 
     def _build_index(self):
         """重建 TF-IDF 索引；embedding 可用时额外编码向量矩阵。"""
@@ -410,7 +670,7 @@ class KnowledgeBase:
 
     # ── 知识库管理与导入操作 ───────────────────────────────────────────────────
 
-    def import_file(self, src_path, course=None, copy=True):
+    def import_file(self, src_path, course=None, copy=True, reload_index=True):
         """将外部课件导入知识库，并与指定课程关联绑定。
         返回: (bool 成功与否, int 生成切片数, str 课程名称)
         """
@@ -431,7 +691,8 @@ class KnowledgeBase:
         if copy and os.path.abspath(src_path) != os.path.abspath(dest_path):
             shutil.copy2(src_path, dest_path)
 
-        self.reload()
+        if reload_index:
+            self.reload()
 
         # 统计刚导入文件的切片数
         chunks_count = sum(1 for c in self.chunks if c.get("source") == fn and c.get("course") == course_clean)
@@ -453,6 +714,12 @@ class KnowledgeBase:
                 deleted = True
 
         if deleted:
+            d_path = self.get_digest_path(filename, course)
+            if os.path.isfile(d_path):
+                try:
+                    os.remove(d_path)
+                except OSError:
+                    pass
             self.reload()
         return deleted
 
@@ -462,9 +729,11 @@ class KnowledgeBase:
         return sorted(list(cs))
 
     def get_course_files(self, course=None):
-        """获取指定课程（或全部）的课件文件列表。"""
-        if course is None:
+        """获取指定课程（或全部/通用）的课件文件列表。"""
+        if course is None or course == "__ALL__":
             return list(self.files_meta)
+        if course == "__GLOBAL__":
+            return [m for m in self.files_meta if not m.get("course")]
         return [m for m in self.files_meta if m.get("course") == course]
 
     def get_stats(self):
@@ -594,9 +863,81 @@ def _retrieve_tfidf(query, idf, doc_weights, chunks, top_k):
     return [ch for _, ch in scored[:top_k]]
 
 
-def _segment(text, max_len=500):
-    """按段落切块；超长段落再按句子（。！？；）切到 ≤ max_len。"""
+def _segment_digest(text):
+    """将提炼的考纲按二级标题 (##) 划分为高密度知识点卡片。"""
+    sections = []
+    parts = re.split(r"(?m)^(?=##\s+)", text.strip())
+    for p in parts:
+        p = p.strip()
+        if p:
+            sections.append(p)
+    return sections if sections else [text.strip()]
+
+
+def _segment(text, max_len=600):
+    """按幻灯片/页面感知切块（Slide-Aware Chunking）。
+    若检测到 PPT/PDF 页码标记，以完整一页为天然知识单元；
+    超长页面切分时仍保留页码与页面标题上下文。
+    """
     chunks = []
+    text = (text or "").strip()
+    if not text:
+        return []
+
+    # 1. 检测 PPT 页码标记 (=== 第 X 页) 或 PDF 页面标记 (--- 第 X 页 ---)
+    is_slide_marked = bool(re.search(r"(?:=== 第 \d+ 页|--- 第 \d+ 页)", text))
+    if is_slide_marked:
+        pages = re.split(r"(?=(?:=== 第 \d+ 页|--- 第 \d+ 页))", text)
+        for page in pages:
+            page = page.strip()
+            if not page:
+                continue
+            m_head = re.match(r"^((?:=== 第 \d+ 页.*?===|--- 第 \d+ 页.*?---))(?:\n|$)", page)
+            header = m_head.group(1).strip() if m_head else ""
+            body = page[len(m_head.group(0)):].strip() if m_head else page
+
+            if len(page) <= max_len:
+                chunks.append(page)
+            else:
+                # 页面超长，先按段落切分，再按句子细分，始终保留页眉标题标记
+                clean_title = header.strip("=- ")
+                prefix = f"【{clean_title}】\n" if clean_title else ""
+                sub_paras = re.split(r"\n\s*\n", body)
+                buf = ""
+                for sp in sub_paras:
+                    sp = sp.strip()
+                    if not sp:
+                        continue
+                    sentences = [s for s in re.split(r"(?<=[。！？；;\n])", sp) if s.strip()] or [sp]
+                    for sent in sentences:
+                        if len(buf) + len(sent) > max_len and buf:
+                            chunks.append(f"{prefix}{buf}".strip())
+                            buf = sent
+                        else:
+                            buf = f"{buf}{sent}"
+                if buf:
+                    chunks.append(f"{prefix}{buf}".strip())
+        if chunks:
+            return chunks
+
+    # 2. Markdown 标题感知分割 (# / ##)
+    if re.search(r"(?m)^#{1,3}\s+", text):
+        sections = re.split(r"(?m)^(?=#{1,3}\s+)", text)
+        for sec in sections:
+            sec = sec.strip()
+            if not sec:
+                continue
+            if len(sec) <= max_len:
+                chunks.append(sec)
+            else:
+                for p in re.split(r"\n\s*\n", sec):
+                    p = p.strip()
+                    if p:
+                        chunks.append(p)
+        if chunks:
+            return chunks
+
+    # 3. 常规普通段落分割
     for para in re.split(r"\n\s*\n", text):
         para = para.strip()
         if not para:

@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 # 桌面宠物 —— 一键构建脚本
 #
 # 作用：重新用 PyInstaller 打包 DesktopPet.exe，同步角色资源（阿米娅 / 圣聆初雪
@@ -59,8 +59,6 @@ if (-not (Test-Path $ExePath)) { throw "打包结束但未找到 $ExePath。" }
 Write-Host '==> [2/4] 同步角色资源...' -ForegroundColor Yellow
 if (Test-Path $CharDst) { Remove-Item $CharDst -Recurse -Force }
 Copy-Item $CharSrc $CharDst -Recurse -Force
-Get-ChildItem $CharDst -Recurse -Filter 'ai_config.json' -File |
-    Remove-Item -Force -ErrorAction SilentlyContinue
 Get-ChildItem $CharDst -Recurse -Directory -Filter '.claude' |
     Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
 $chars = Get-ChildItem $CharDst -Directory |
@@ -74,6 +72,10 @@ $InstalledDir = 'D:\AmiyaDesktopPet'
 if (Test-Path $InstalledDir) {
     Write-Host "==> 同步最新构建至安装目录 $InstalledDir..." -ForegroundColor Yellow
     Copy-Item "$AppDir\*" $InstalledDir -Recurse -Force -ErrorAction SilentlyContinue
+    $WebStaticSrc = Join-Path $Root 'web\static'
+    if (Test-Path $WebStaticSrc) {
+        Copy-Item $WebStaticSrc $InstalledDir -Recurse -Force -ErrorAction SilentlyContinue
+    }
     Write-Host "    已更新安装目录: $InstalledDir" -ForegroundColor DarkGray
 }
 
@@ -86,18 +88,14 @@ $shortcuts = @(
     (Join-Path $Desktop 'Amiya Desktop Pet.lnk')
 )
 
+$targetDir = if (Test-Path $InstalledDir) { $InstalledDir } else { $AppDir }
+$targetExe = Join-Path $targetDir 'DesktopPet.exe'
+
 foreach ($scPath in $shortcuts) {
     $lnk = $wsh.CreateShortcut($scPath)
-    # 如果存在安装目录且快捷方式原本指向安装目录，则保留指向安装目录
-    if ((Test-Path $InstalledDir) -and ($scPath -like "*Amiya Desktop Pet*")) {
-        $lnk.TargetPath       = Join-Path $InstalledDir 'DesktopPet.exe'
-        $lnk.WorkingDirectory = $InstalledDir
-        $lnk.IconLocation     = if (Test-Path $IconPath) { "$IconPath,0" } else { "$(Join-Path $InstalledDir 'DesktopPet.exe'),0" }
-    } else {
-        $lnk.TargetPath       = $ExePath
-        $lnk.WorkingDirectory = $AppDir
-        $lnk.IconLocation     = if (Test-Path $IconPath) { "$IconPath,0" } else { "$ExePath,0" }
-    }
+    $lnk.TargetPath       = $targetExe
+    $lnk.WorkingDirectory = $targetDir
+    $lnk.IconLocation     = if (Test-Path $IconPath) { "$IconPath,0" } else { "$targetExe,0" }
     $lnk.Arguments        = ''
     $lnk.Description       = '阿米娅桌宠 · 支持将课件/讲义直接拖拽至此图标一键导入知识库'
     $lnk.Save()

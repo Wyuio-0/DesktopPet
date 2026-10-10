@@ -147,36 +147,62 @@ def config_path(char_dir):
 
 
 def read_raw_config(char_dir):
-    """Read ai_config.json, falling back to ai_config.example.json.
-
-    On a fresh clone only the .example.json template exists (the real config is
-    gitignored to prevent API-key leaks).  When the user opens AI settings for
-    the first time, the .example.json values pre-fill the dialog and get saved
-    to the local-only ai_config.json on confirm.
-    """
+    """Read ai_config.json, falling back to installed/appdata paths or ai_config.example.json."""
+    char_name = os.path.basename(os.path.normpath(char_dir)) if char_dir else "amiya"
     path = config_path(char_dir)
     example = os.path.join(char_dir, "ai_config.example.json")
-    candidates = [path, example]
+
+    candidates = [
+        path,
+        os.path.join(r"D:\AmiyaDesktopPet", "characters", char_name, "ai_config.json"),
+        os.path.join(r"D:\Dev\project\floating", "characters", char_name, "ai_config.json"),
+    ]
+    try:
+        from .settings import config_dir
+        candidates.append(os.path.join(config_dir(), "characters", char_name, "ai_config.json"))
+    except Exception:
+        pass
+    candidates.append(example)
+
     for p in candidates:
-        if not os.path.isfile(p):
+        if not p or not os.path.isfile(p):
             continue
         try:
             with open(p, encoding="utf-8") as f:
                 data = json.load(f)
+            if isinstance(data, dict):
+                if data.get("api_key") or p == path:
+                    return data
         except Exception:
             continue
-        return data if isinstance(data, dict) else {}
     return {}
 
 
 def save_config(char_dir, cfg):
-    path = config_path(char_dir)
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(cfg, f, ensure_ascii=False, indent=2)
-        f.write("\n")
-    os.replace(tmp, path)
+    char_name = os.path.basename(os.path.normpath(char_dir)) if char_dir else "amiya"
+    paths_to_save = [config_path(char_dir)]
+    for target in [r"D:\AmiyaDesktopPet", r"D:\Dev\project\floating"]:
+        char_p = os.path.join(target, "characters", char_name, "ai_config.json")
+        if os.path.isdir(os.path.dirname(char_p)) and char_p not in paths_to_save:
+            paths_to_save.append(char_p)
+    try:
+        from .settings import config_dir
+        appdata_p = os.path.join(config_dir(), "characters", char_name, "ai_config.json")
+        if appdata_p not in paths_to_save:
+            paths_to_save.append(appdata_p)
+    except Exception:
+        pass
+
+    for path in paths_to_save:
+        try:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            tmp = path + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(cfg, f, ensure_ascii=False, indent=2)
+                f.write("\n")
+            os.replace(tmp, path)
+        except Exception:
+            pass
 
 
 class AiSettingsDialog(QtWidgets.QDialog):

@@ -79,8 +79,10 @@ class PetTrayCoordinator(QtCore.QObject):
         vis = m.addAction("隐藏桌宠" if self.window.isVisible() else "显示桌宠")
         vis.triggered.connect(self.toggle_visible)
         m.addAction("聊天…", self.tray_chat)
-        m.addAction("课程知识库…", self.window.show_knowledge_page)
-        m.addAction("导入课件/讲义…", self.window.upload_courseware_dialog)
+        m.addAction("课程知识库 (NotebookLM 网页版)…", self.window.show_knowledge_page)
+        from . import web_launcher
+        if web_launcher.is_server_listening():
+            m.addAction("🛑 停止知识库 Web 服务 (释放 5050 端口)", self.window.stop_knowledge_web_service)
         m.addSeparator()
 
         tts_act = m.addAction("朗读回答（语音合成）")

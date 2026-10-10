@@ -6,6 +6,9 @@ numpy==2.5.1
 edge-tts==7.2.8
 psutil==5.9.8          # adaptive memory tiers (pet/memory.py); degrades if absent
 Pillow==12.0.0         # ImageGrab for the screenshot action (pet/actions.py)
-# winsdk 可选：安装后启用离线 OCR（Windows 自带识别，中文支持好）。
-# 未安装时截图 OCR 会降级到 AI 视觉模型（需在 ai_config.json 配置）。
-# winsdk==1.0.0b10
+pymupdf==1.28.2        # PDF text and slide parser
+pypdf==6.19.0          # Pure-Python fallback PDF parser
+python-pptx==1.0.2     # PowerPoint PPTX slide parser
+python-docx==1.2.0     # Word document parser
+rapidocr-onnxruntime==1.2.3  # 本地高精度离线 OCR 引擎（图表讲义/纯图 PPTX 自动文字提取）
+onnxruntime==1.30.0          # RapidOCR 底层推理引擎

@@ -109,7 +109,7 @@ class TestFailoverExecution:
 
         err_503_1 = urllib.error.HTTPError("https://wmntwvrw57.sealosbja.site", 503, "Unavailable", {}, io.BytesIO(b""))
         err_503_2 = urllib.error.HTTPError("https://amiya-ai-relay.wyuio-0.workers.dev", 503, "Unavailable", {}, io.BytesIO(b""))
-        mock_urlopen.side_effect = [err_503_1, err_503_2]
+        mock_urlopen.side_effect = [err_503_1, err_503_1, err_503_2, err_503_2]
 
         reply = brain.reply("博士，你好")
         assert "公共免 Key" in reply

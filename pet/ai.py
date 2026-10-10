@@ -2,10 +2,11 @@
 
 import json
 import os
+import sys
 import urllib.request
 
-from . import actions
-from .settings import history_path
+from . import actions, logging as petlog
+from .settings import config_dir, history_path
 
 # Default Amiya persona (Arknights). Overridable via config.json "persona".
 PERSONA = (
@@ -86,6 +87,29 @@ def diagnose_network_error(e, url="", has_custom_key=False):
         "bigmodel.cn", "deepseek.com", "moonshot.cn", "aliyuncs.com", "dashscope", "sealos", "bja.site"
     ])
 
+    if code == 400:
+        detail = ""
+        if hasattr(e, "read"):
+            try:
+                raw_body = e.read().decode("utf-8", errors="ignore")
+                err_data = json.loads(raw_body)
+                if isinstance(err_data, dict):
+                    err_obj = err_data.get("error")
+                    if isinstance(err_obj, dict):
+                        detail = err_obj.get("message") or str(err_obj)
+                    elif isinstance(err_obj, str):
+                        detail = err_obj
+                    else:
+                        detail = err_data.get("message", "")
+            except Exception:
+                pass
+        if not has_custom_key:
+            if "内容过长" in detail or not detail:
+                return "（公共免 Key 线路请求超出长度限制 [HTTP 400]。请在右键菜单「模型配置」中配置个人智谱 API Key [永久免费]，即可无字数限制提炼长课件考纲。）"
+        if detail:
+            return f"（模型服务商拒绝请求 [HTTP 400]：{detail}）"
+        return "（模型服务商请求格式或参数不合法 [HTTP 400]，请检查模型名称或字数是否超出限制。）"
+
     if code == 401:
         return "（API 认证失败 [HTTP 401]：您的 API Key 无效或未生效，请在「模型配置」中核对密钥。）"
     if code == 403:
@@ -97,7 +121,8 @@ def diagnose_network_error(e, url="", has_custom_key=False):
     if code in (500, 502, 503, 504):
         if not has_custom_key:
             return f"（公共免 Key 线路临时维护中 [HTTP {code}]，多节点轮询均未响应。建议在设置中点击「智谱 GLM [永久免费]」标签一键换用个人专属免翻线路。）"
-        return f"（服务商服务端暂时不可用 [HTTP {code}]，请稍后重试或检查服务商状态页。）"
+        provider_name = "智谱/模型" if is_domestic else "服务商"
+        return f"（{provider_name}服务端暂时繁忙或瞬时抖动 [HTTP {code}]：模型与 API Key 均有效正常，此情况为服务商推理集群瞬时负载波动或短时维护，请稍候 1~2 分钟重试即可恢复。）"
 
     if "ssl" in e_str or "certificate" in e_str:
         return "（安全握手失败：SSL 证书校验异常，通常由 VPN/代理或中间人拦截引起。建议将 AI 服务商域名加入代理软件的「直连」规则。）"
@@ -126,10 +151,56 @@ def load_ai_config(char_dir):
     cfg = {"base_url": "https://api.deepseek.com", "model": "deepseek-chat",
            "api_key": "", "temperature": 0.8, "allow_actions": True,
            "public_relay_url": ""}
-    path = os.path.join(char_dir, "ai_config.json")
-    if os.path.isfile(path):
-        with open(path, encoding="utf-8") as f:
-            cfg.update(json.load(f))
+
+    char_name = os.path.basename(os.path.normpath(char_dir)) if char_dir else "amiya"
+    candidate_paths = [os.path.join(char_dir, "ai_config.json")]
+
+    # 候选 fallback 路径：已安装目录、用户 AppData 目录、开发源码目录、exe 所在目录
+    installed_dir = r"D:\AmiyaDesktopPet"
+    candidate_paths.append(os.path.join(installed_dir, "characters", char_name, "ai_config.json"))
+    try:
+        candidate_paths.append(os.path.join(config_dir(), "characters", char_name, "ai_config.json"))
+    except Exception:
+        pass
+    repo_dir = r"D:\Dev\project\floating"
+    candidate_paths.append(os.path.join(repo_dir, "characters", char_name, "ai_config.json"))
+    if getattr(sys, "frozen", False):
+        candidate_paths.append(os.path.join(os.path.dirname(sys.executable), "characters", char_name, "ai_config.json"))
+
+    for p in candidate_paths:
+        if p and os.path.isfile(p):
+            try:
+                with open(p, encoding="utf-8") as f:
+                    file_cfg = json.load(f)
+                if isinstance(file_cfg, dict):
+                    if not cfg.get("api_key"):
+                        cfg.update(file_cfg)
+                    if file_cfg.get("api_key") and str(file_cfg.get("api_key")).strip():
+                        cfg.update(file_cfg)
+                        break
+            except Exception:
+                continue
+
+    if not cfg.get("api_key") and char_name != "amiya":
+        amiya_paths = [
+            os.path.join(installed_dir, "characters", "amiya", "ai_config.json"),
+            os.path.join(repo_dir, "characters", "amiya", "ai_config.json"),
+        ]
+        try:
+            amiya_paths.append(os.path.join(config_dir(), "characters", "amiya", "ai_config.json"))
+        except Exception:
+            pass
+        for p in amiya_paths:
+            if p and os.path.isfile(p):
+                try:
+                    with open(p, encoding="utf-8") as f:
+                        file_cfg = json.load(f)
+                    if isinstance(file_cfg, dict) and file_cfg.get("api_key"):
+                        cfg.update(file_cfg)
+                        break
+                except Exception:
+                    continue
+
     cfg["api_key"] = os.environ.get("PET_AI_KEY", cfg.get("api_key", ""))
     cfg["base_url"] = os.environ.get("PET_AI_BASE", cfg["base_url"])
     cfg["model"] = os.environ.get("PET_AI_MODEL", cfg["model"])
@@ -363,8 +434,8 @@ class AmiyaBrain:
         prompt_ext = (
             "\n\n【罗德岛学业中枢 · 课程课件权威资料】\n"
             + ctx +
-            "\n\n【学业辅导与备考答疑规范】\n"
             "- 博士正在针对该学科进行求知、复习或备考。请以严谨准确且温柔体贴的罗德岛领袖阿米娅的口吻，严格依据上述课件资料进行解答。\n"
+            "- 涉及数学、物理、理科与工程计算公式时，必须规范使用标准 LaTeX 格式排版（行内公式用 $...$，独立推导公式用 $$...$$），严禁使用粗糙 ASCII 字符拼凑公式。\n"
             "- 若博士询问「划重点」、「出考题/模拟题」或「核心考点」：请从课件中提取关键定理、定律、定义公式和考题要点，分条列出；模拟题需给出清晰题干并附带简要参考答案。\n"
             "- 若课件资料未提及博士所问的细节，请诚恳说明课件表述，并结合通用学术知识谨慎解答，切勿捏造虚假结论。"
         )
@@ -666,7 +737,7 @@ class AmiyaBrain:
         last_user = next((m["content"] for m in reversed(self.history) if m.get("role") == "user" and isinstance(m.get("content"), str)), "")
         return _execute_embedded_schedule_commands(raw_text, last_user)
 
-    def _target_endpoint_and_headers(self, stream=False, use_tools=False, msgs=None, target_url=None):
+    def _target_endpoint_and_headers(self, stream=False, use_tools=False, msgs=None, target_url=None, max_tokens=None):
         has_custom = self.has_custom_key
         if has_custom:
             url = resolve_chat_endpoint(target_url or self.cfg.get("base_url", ""))
@@ -690,11 +761,16 @@ class AmiyaBrain:
             "temperature": self.cfg.get("temperature", 0.8),
             "stream": stream,
         }
+        if max_tokens is not None:
+            payload["max_tokens"] = max_tokens
+        elif "max_tokens" in self.cfg:
+            payload["max_tokens"] = self.cfg["max_tokens"]
+
         if use_tools and has_custom:
             payload["tools"] = actions.TOOLS
         return url, headers, json.dumps(payload).encode("utf-8")
 
-    def _post(self, msgs, use_tools):
+    def _post(self, msgs, use_tools, max_tokens=None):
         if self.has_custom_key:
             endpoints = [resolve_chat_endpoint(self.cfg.get("base_url", ""))]
         else:
@@ -702,20 +778,31 @@ class AmiyaBrain:
 
         last_err = None
         for i, ep in enumerate(endpoints):
-            try:
-                url, headers, body = self._target_endpoint_and_headers(
-                    stream=False, use_tools=use_tools, msgs=msgs, target_url=ep
-                )
-                req = urllib.request.Request(url, data=body, method="POST", headers=headers)
-                with urllib.request.urlopen(req, timeout=30) as resp:
-                    data = json.loads(resp.read().decode("utf-8"))
-                return data["choices"][0]["message"]
-            except Exception as e:
-                last_err = e
-                # 若还有备用节点可供容灾，则继续静默 failover 重试
-                if i < len(endpoints) - 1:
-                    continue
-                raise last_err
+            for retry in range(2):
+                try:
+                    url, headers, body = self._target_endpoint_and_headers(
+                        stream=False, use_tools=use_tools, msgs=msgs, target_url=ep, max_tokens=max_tokens
+                    )
+                    req = urllib.request.Request(url, data=body, method="POST", headers=headers)
+                    with urllib.request.urlopen(req, timeout=90) as resp:
+                        data = json.loads(resp.read().decode("utf-8"))
+                    msg = data["choices"][0]["message"]
+                    fr = data["choices"][0].get("finish_reason")
+                    if isinstance(msg, dict):
+                        msg["finish_reason"] = fr
+                    return msg
+                except Exception as e:
+                    last_err = e
+                    code = getattr(e, "code", None)
+                    if retry == 0 and code in (500, 502, 503, 504):
+                        import time
+                        time.sleep(1.5)
+                        continue
+                    break
+            # 若还有备用节点可供容灾，则继续静默 failover 重试
+            if i < len(endpoints) - 1:
+                continue
+            raise last_err
         if last_err:
             raise last_err
 
@@ -782,7 +869,7 @@ class AmiyaBrain:
             msgs.append(tool_msg)
             self.history.append(tool_msg)
 
-    def _post_stream(self, msgs, use_tools, on_delta):
+    def _post_stream(self, msgs, use_tools, on_delta, max_tokens=None):
         if self.has_custom_key:
             endpoints = [resolve_chat_endpoint(self.cfg.get("base_url", ""))]
         else:
@@ -798,21 +885,212 @@ class AmiyaBrain:
                 if on_delta:
                     on_delta(content)
 
-            try:
-                url, headers, body = self._target_endpoint_and_headers(
-                    stream=True, use_tools=use_tools, msgs=msgs, target_url=ep
-                )
-                req = urllib.request.Request(url, data=body, method="POST", headers=headers)
-                with urllib.request.urlopen(req, timeout=60) as resp:
-                    return _consume_stream(resp, wrapped_on_delta)
-            except Exception as e:
-                last_err = e
-                # 若已经吐出有效 token 或已经是最后一个候选节点，则不再静默 failover，抛出异常
-                if emitted or i == len(endpoints) - 1:
-                    raise last_err
-                continue
+            for retry in range(2):
+                try:
+                    url, headers, body = self._target_endpoint_and_headers(
+                        stream=True, use_tools=use_tools, msgs=msgs, target_url=ep, max_tokens=max_tokens
+                    )
+                    req = urllib.request.Request(url, data=body, method="POST", headers=headers)
+                    with urllib.request.urlopen(req, timeout=90) as resp:
+                        return _consume_stream(resp, wrapped_on_delta)
+                except Exception as e:
+                    last_err = e
+                    code = getattr(e, "code", None)
+                    # 尚未输出内容且遇到服务端 5xx 瞬时抖动时退避 1.5 秒重试一次
+                    if not emitted and retry == 0 and code in (500, 502, 503, 504):
+                        import time
+                        time.sleep(1.5)
+                        continue
+                    break
+            # 若已经吐出有效 token 或已经是最后一个候选节点，则不再静默 failover，抛出异常
+            if emitted or i == len(endpoints) - 1:
+                raise last_err
+            continue
         if last_err:
             raise last_err
+
+    def generate_courseware_digest(self, raw_text, filename="", course="", on_progress=None):
+        """调用大模型对课件全文/幻灯片内容进行深度解析，提炼出结构化的核心知识点与期末备考提纲。"""
+        if not raw_text or not raw_text.strip():
+            return "（课件内容为空，无法提取知识点）"
+
+        text_content = raw_text.strip()
+        # 智能截断超大长文本（保留头部主干、中间核心与尾部小结，适配现代大模型 128k 窗口）
+        if len(text_content) > 65000:
+            mid_start = max(30000, len(text_content) // 2 - 12500)
+            mid_end = mid_start + 25000
+            text_content = (
+                text_content[:30000]
+                + "\n\n[...课件前半部分详细内容略...]\n\n"
+                + text_content[mid_start:mid_end]
+                + "\n\n[...课件后半部分详细内容略...]\n\n"
+                + text_content[-10000:]
+            )
+
+        model_name = (self.cfg.get("model") or "").lower()
+        if "deepseek" in model_name:
+            digest_max_tokens = 8192
+        elif "glm" in model_name:
+            digest_max_tokens = 4095
+        elif "qwen" in model_name:
+            digest_max_tokens = 4096
+        else:
+            digest_max_tokens = 4095
+
+        system_content = (
+            "你是一名专业严谨的高校学业与学术辅导助教阿米娅。请对博士提供的大学课程课件/讲义文本进行深度的学术梳理与期末考纲提炼。\n"
+            "要求：\n"
+            "1. 【层级严整】：标题必须规范使用 Markdown 标题层级（# 课件总纲 -> ## 模块板块 -> ### 具体考点细分 -> - 核心解析），绝不混用层级。\n"
+            "2. 【高保真 LaTeX 公式规范】：凡涉及数学、物理、工科理论公式，必须严格采用标准 LaTeX 排版：行内公式用 $公式$（如 $\\vec{B} = \\frac{\\mu_0 I}{2\\pi r}$），独立推导大公式用 $$公式$$。严禁使用纯文本/ASCII 粗糙字符拼凑公式，确保矢量符号（\\vec）、微积分（\\frac{d}{dt}）、环路积分（\\oint）、分数、希腊字母均以优雅的标准 LaTeX 格式呈现。\n"
+            "3. 【重点突出】：核心考点用 ⭐ 标明重要程度（如 ⭐⭐⭐⭐⭐ 必考），易混淆考点用 ⚠️ 标出。\n"
+            "4. 【图表化总结】：对比概念与核心公式尽可能采用 Markdown 表格形式呈现，一目了然。\n"
+            "5. 【严谨客观】：完全忠实于课件文本，不捏造课件未提及的内容。\n"
+            "6. 【全局完整性】：必须按顺序完整输出全部五大板块（从【一、核心概念】一直到【五、期末高分冲刺自测 Q&A】），合理控制各板块篇幅，绝不允许中途截断或戛然而止。"
+        )
+        user_content = (
+            f"请帮我深度分析课程《{course or '未指定课程'}》的课件《{filename}》，提炼核心知识点并整理为结构清晰、层级分明的期末备考考纲。\n\n"
+            f"【课件文本内容】：\n{text_content}\n\n"
+            "【输出格式与五大层级板块规范】：\n"
+            f"# 📖 《{filename}》核心考纲与期末冲刺全景导图\n"
+            f"> **课程归属**：{course or '未指定课程'} ｜ **资料来源**：{filename} ｜ **提炼重点**：概念定义 · 核心公式 · 命题预测 · 避坑对比 · 考前自测\n\n"
+            "## 📌 一、 核心概念与关键术语精讲\n"
+            "（精选本课件中最核心、最常考的 5~8 个核心专业术语，逐条按以下格式展开，言简意赅）：\n"
+            "### 1.1 [术语/概念名称]\n"
+            "- **核心定义**：用 1~2 句话精准概括其学术定义与核心本质。\n"
+            "- **工作原理 / 运行机制**：它是如何工作/运作的，内部关键流程是什么。\n"
+            "- **考点重要度**：⭐⭐⭐⭐⭐（星级评定及期末考查频率）。\n\n"
+            "## 📐 二、 核心公式、定理推导与理论框架\n"
+            "（若涉及数学、物理、算法公式，必须采用表格与标准 LaTeX 公式呈现；文科/软工类课程则梳理核心理论模型）：\n"
+            "| 公式 / 定理名称 | 核心 LaTeX 表达式 | 计算意义 / 物理含义 | 关键边界条件与适用前提 |\n"
+            "| :--- | :--- | :--- | :--- |\n"
+            "| [定理名称] | $[标准 LaTeX 表达式]$ | [物理含义与参数说明] | [适用前提与约束条件] |\n\n"
+            "若有核心定理与关键推导（如安培环路定理、毕奥-萨伐尔定律推导），请在表格下方使用独立 LaTeX 块详细列出分步推导：\n"
+            "$$\n"
+            "\\oint_{L} \\vec{B} \\cdot d\\vec{l} = \\mu_0 \\sum_{i} I_i\n"
+            "$$\n\n"
+            "## 🎯 三、 期末高频必考点与题型预测\n"
+            "### 3.1 概念辨析与简答题预测\n"
+            "- **高频考点**：...\n"
+            "- **标准答题得分要点**：...\n\n"
+            "### 3.2 综合计算与案例分析大题预测\n"
+            "- **典型题型**：...\n"
+            "- **解题核心思路 (Step-by-Step)**：\n"
+            "  1. 步骤一：...\n"
+            "  2. 步骤二：...\n\n"
+            "## ⚖️ 四、 易混淆概念对比与避坑指南\n"
+            "（将课件中最容易混淆的两两概念进行表格对比，点出扣分陷阱）：\n"
+            "| 对比维度 | [概念 A] | [概念 B] | ⚠️ 常见扣分误区与辨析技巧 |\n"
+            "| :--- | :--- | :--- | :--- |\n"
+            "| [维度 1] | ... | ... | ... |\n\n"
+            "## 💡 五、 期末高分冲刺自测 Q&A\n"
+            "（精选 3~5 道期末高频简答/论述真题级别自测试题，附带标准采分点答案）：\n"
+            "> **Q1：[核心简答题题目]**\n"
+            ">\n"
+            "> **参考答案与采分要点**：\n"
+            "> 1. ...\n"
+            "> 2. ...\n"
+        )
+        msgs = [
+            {"role": "system", "content": system_content},
+            {"role": "user", "content": user_content}
+        ]
+
+        if on_progress:
+            on_progress(45, "已连接大模型，正在深度剖析课件考点...")
+
+        def _needs_continuation(text, finish_reason):
+            if finish_reason == "length":
+                return True
+            if not text or not text.strip():
+                return False
+            has_part5 = any(tag in text for tag in ["## 💡 五、", "## 五、", "## 5.", "五、 期末高分冲刺自测", "五、期末高分冲刺自测"])
+            if not has_part5:
+                return True
+            last_lines = [l.strip() for l in text.strip().splitlines() if l.strip()]
+            if last_lines and last_lines[-1].startswith("|") and not last_lines[-1].endswith("|"):
+                return True
+            return False
+
+        # 优先尝试流式生成以提供高精度实时进度反馈
+        last_accum = ""
+        def _stream_delta(accum_text):
+            nonlocal last_accum
+            last_accum = accum_text
+            if on_progress:
+                char_cnt = len(accum_text)
+                pct = min(95, 45 + int(char_cnt / 25))
+                on_progress(pct, f"正在梳理考纲与预测模拟题 ({char_cnt} 字)...")
+
+        try:
+            msg = self._post_stream(msgs, use_tools=False, on_delta=_stream_delta, max_tokens=digest_max_tokens)
+            if isinstance(msg, dict):
+                res = (msg.get("content") or "").strip()
+                finish_reason = msg.get("finish_reason")
+            else:
+                res = str(msg or last_accum).strip()
+                finish_reason = None
+
+            if _needs_continuation(res, finish_reason):
+                petlog.log("ai: 考纲内容触达模型单次输出上限或尚未完全输出全部板块，启动自动接力续写...")
+                if on_progress:
+                    on_progress(88, "考纲内容极丰富，正在接力续写剩余板块...")
+
+                continue_msgs = list(msgs)
+                continue_msgs.append({"role": "assistant", "content": res})
+                continue_msgs.append({
+                    "role": "user",
+                    "content": "请紧接着上一段末尾被截断处（不要重复已输出内容，直接无缝衔接后文）继续往下写，务必完整输出剩余的【四、易混淆概念对比与避坑指南】表格和【五、期末高分冲刺自测 Q&A】全套内容。"
+                })
+                cont_accum = ""
+                def _stream_cont_delta(delta_accum):
+                    nonlocal cont_accum
+                    cont_accum = delta_accum
+                    if on_progress:
+                        char_cnt = len(res) + len(delta_accum)
+                        pct = min(98, 88 + int(len(delta_accum) / 40))
+                        on_progress(pct, f"正在梳理考纲与预测模拟题 ({char_cnt} 字)...")
+                try:
+                    cont_msg = self._post_stream(continue_msgs, use_tools=False, on_delta=_stream_cont_delta, max_tokens=digest_max_tokens)
+                    cont_res = (cont_msg.get("content") if isinstance(cont_msg, dict) else str(cont_msg or cont_accum)) or ""
+                    if cont_res.strip():
+                        res = _stitch_continuation(res, cont_res.strip())
+                except Exception as ce:
+                    petlog.warn(f"ai: 接力续写异常: {ce}")
+
+            if res:
+                return res
+        except Exception as e:
+            petlog.warn(f"ai: 流式提炼考纲失败，回退非流式: {e}")
+            import time
+            time.sleep(1.0)
+
+        # 兜底非流式请求
+        if on_progress:
+            on_progress(70, "正在生成知识点考纲与考题预测...")
+        msg = self._post(msgs, use_tools=False, max_tokens=digest_max_tokens)
+        if isinstance(msg, dict):
+            res = (msg.get("content") or "").strip()
+            finish_reason = msg.get("finish_reason")
+        else:
+            res = str(msg or "").strip()
+            finish_reason = None
+
+        if _needs_continuation(res, finish_reason):
+            try:
+                continue_msgs = list(msgs)
+                continue_msgs.append({"role": "assistant", "content": res})
+                continue_msgs.append({
+                    "role": "user",
+                    "content": "请紧接着上一段末尾被截断处（不要重复已输出内容，直接无缝衔接后文）继续往下写，务必完整输出剩余的【四、易混淆概念对比与避坑指南】表格和【五、期末高分冲刺自测 Q&A】全套内容。"
+                })
+                cont_msg = self._post(continue_msgs, use_tools=False, max_tokens=digest_max_tokens)
+                cont_res = (cont_msg.get("content") if isinstance(cont_msg, dict) else str(cont_msg)) or ""
+                if cont_res.strip():
+                    res = _stitch_continuation(res, cont_res.strip())
+            except Exception as ce:
+                petlog.warn(f"ai: 非流式接力续写异常: {ce}")
+
+        return res
 
 
 def _trim_history(turns, max_turns):
@@ -888,6 +1166,7 @@ def _consume_stream(lines, on_delta):
     """
     content = ""
     tool_store = {}
+    finish_reason = None
     for raw in lines:
         line = raw.decode("utf-8") if isinstance(raw, bytes) else raw
         line = line.strip()
@@ -902,13 +1181,28 @@ def _consume_stream(lines, on_delta):
             continue
         choices = chunk.get("choices") or [{}]
         delta = choices[0].get("delta") or {}
+        fr = choices[0].get("finish_reason")
+        if fr:
+            finish_reason = fr
         if delta.get("content"):
             content += delta["content"]
             if on_delta:
                 on_delta(_clean_stream_display_text(content))
         for tc in delta.get("tool_calls") or []:
             _accum_tool_call(tool_store, tc)
-    msg = {"role": "assistant", "content": content}
+    msg = {"role": "assistant", "content": content, "finish_reason": finish_reason}
     if tool_store:
         msg["tool_calls"] = [tool_store[k] for k in sorted(tool_store)]
     return msg
+
+
+def _stitch_continuation(original, cont):
+    """无缝拼接截断续写内容，智能消除接缝处的字符重叠。"""
+    if not cont or not cont.strip():
+        return original
+    orig_clean = original.rstrip()
+    cont_clean = cont.lstrip()
+    for overlap_len in range(min(60, len(orig_clean), len(cont_clean)), 0, -1):
+        if orig_clean.endswith(cont_clean[:overlap_len]):
+            return orig_clean + cont_clean[overlap_len:]
+    return orig_clean + "\n" + cont_clean

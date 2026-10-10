@@ -13,18 +13,62 @@
 import base64
 import io
 import json
+import os
 import urllib.request
 
-# winsdk 是可选依赖：没有就降级到 AI 视觉 / 报错提示。
-try:
-    import winsdk.windows.graphics.imaging as _wimg
-    import winsdk.windows.media.ocr as _wocr
-    import winsdk.windows.storage.streams as _wstreams
-    import winsdk.windows.globalization as _wglob
-    _WINRT_OK = True
-except Exception:
-    _wimg = _wocr = _wstreams = _wglob = None
-    _WINRT_OK = False
+# RapidOCR 本地高精度 OCR 引擎（首选：零配置、跨平台、中文公式支持好）
+_RAPID_ENGINE = None
+
+def _get_rapid_ocr():
+    global _RAPID_ENGINE
+    if _RAPID_ENGINE is None:
+        try:
+            from rapidocr_onnxruntime import RapidOCR
+            _RAPID_ENGINE = RapidOCR()
+        except Exception as e:
+            try:
+                from . import logging as petlog
+                petlog.warn(f"ocr: 初始化 RapidOCR 失败: {e}")
+            except Exception:
+                pass
+            _RAPID_ENGINE = False
+    return _RAPID_ENGINE if _RAPID_ENGINE is not False else None
+
+
+def rapidocr_available():
+    """本地 RapidOCR 引擎是否可用。"""
+    try:
+        import rapidocr_onnxruntime
+        return True
+    except Exception:
+        return False
+
+
+# winsdk / winrt 为后备离线 OCR（延迟检测与导入，避免在导入期改变 Windows COM 运行时）
+_wimg = _wocr = _wstreams = _wglob = None
+_WINRT_CHECKED = False
+_WINRT_OK = False
+
+def _check_winrt():
+    global _wimg, _wocr, _wstreams, _wglob, _WINRT_CHECKED, _WINRT_OK
+    if not _WINRT_CHECKED:
+        _WINRT_CHECKED = True
+        try:
+            import winsdk.windows.graphics.imaging as _wimg
+            import winsdk.windows.media.ocr as _wocr
+            import winsdk.windows.storage.streams as _wstreams
+            import winsdk.windows.globalization as _wglob
+            _WINRT_OK = True
+        except Exception:
+            try:
+                import winrt.windows.graphics.imaging as _wimg
+                import winrt.windows.media.ocr as _wocr
+                import winrt.windows.storage.streams as _wstreams
+                import winrt.windows.globalization as _wglob
+                _WINRT_OK = True
+            except Exception:
+                _WINRT_OK = False
+    return _WINRT_OK
 
 
 class OcrError(Exception):
@@ -33,11 +77,11 @@ class OcrError(Exception):
 
 def winrt_available():
     """Windows 自带 OCR 是否可用（winsdk 已安装）。"""
-    return _WINRT_OK
+    return _check_winrt()
 
 
 def _ocr_winrt(image):
-    """PIL Image -> 文字（Windows 自带 OCR，需 winsdk）。"""
+    """PIL Image -> 文字（Windows 自带 OCR，需 winsdk / winrt）。"""
     import asyncio
 
     async def go():
@@ -50,8 +94,9 @@ def _ocr_winrt(image):
         stream.seek(0)
         decoder = await _wimg.BitmapDecoder.create_async(stream)
         bitmap = await decoder.get_software_bitmap_async()
-        engine = _wocr.OcrEngine.try_create_from_language(
-            _wglob.Language("zh-CN"))
+        engine = _wocr.OcrEngine.try_create_from_language(_wglob.Language("zh-Hans-CN"))
+        if engine is None:
+            engine = _wocr.OcrEngine.try_create_from_language(_wglob.Language("zh-CN"))
         if engine is None:
             engine = _wocr.OcrEngine.try_create_from_user_profile_languages()
         if engine is None:
@@ -59,7 +104,17 @@ def _ocr_winrt(image):
         result = await engine.recognize_async(bitmap)
         return "\n".join(line.text for line in result.lines)
 
-    return asyncio.run(go())
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+
+    if loop and loop.is_running():
+        import concurrent.futures
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+            return pool.submit(lambda: asyncio.run(go())).result(timeout=30)
+    else:
+        return asyncio.run(go())
 
 
 def _ocr_via_ai(image, cfg):
@@ -91,22 +146,76 @@ def _ocr_via_ai(image, cfg):
     return data["choices"][0]["message"].get("content", "").strip()
 
 
+def ocr_available():
+    """是否有离线或在线 OCR 能力可用。"""
+    return bool(rapidocr_available() or winrt_available())
+
+
+def recognize(target):
+    """通用 OCR 识别入口，支持文件路径 (str)、PIL Image、bytes。返回字符串结果。"""
+    if not target:
+        return ""
+    try:
+        from PIL import Image
+        if isinstance(target, str) and os.path.isfile(target):
+            img = Image.open(target)
+        elif isinstance(target, (bytes, bytearray)):
+            img = Image.open(io.BytesIO(target))
+        else:
+            img = target
+        text, _ = ocr_image(img)
+        return text
+    except Exception:
+        return ""
+
+
 def ocr_image(image, brain_cfg=None):
-    """识别 PIL Image 中的文字，返回 (text, backend)。backend ∈ {'winrt','ai'}。"""
-    if _WINRT_OK:
+    """识别 PIL Image 中的文字，返回 (text, backend)。backend ∈ {'rapidocr','winrt','ai'}。"""
+    # 尺寸优化：幻灯片超大图（如 1920x1440+）按比例缩放到最大宽 1280，提速 2~3 倍且不影响文字识别
+    if hasattr(image, "width") and hasattr(image, "height"):
+        max_dim = max(image.width, image.height)
+        if max_dim > 1440:
+            scale = 1280.0 / max_dim
+            new_w = max(1, int(image.width * scale))
+            new_h = max(1, int(image.height * scale))
+            try:
+                from PIL import Image
+                image = image.resize((new_w, new_h), Image.Resampling.BILINEAR)
+            except Exception:
+                pass
+
+    # 1. 优先使用本地高精度 RapidOCR (ONNXRuntime)
+    engine = _get_rapid_ocr()
+    if engine:
+        try:
+            buf = io.BytesIO()
+            image.save(buf, format="PNG")
+            res, _ = engine(buf.getvalue())
+            if res:
+                lines = [r[1] for r in res if len(r) > 1 and str(r[1]).strip()]
+                text = "\n".join(lines).strip()
+                if text:
+                    return text, "rapidocr"
+        except Exception:
+            pass
+
+    # 2. 次选 Windows 自带 OCR (winsdk)
+    if winrt_available():
         try:
             text = _ocr_winrt(image).strip()
             if text:
                 return text, "winrt"
         except Exception:
             pass  # 降级到 AI
+
+    # 3. 降级到 AI 视觉大模型
     if brain_cfg and brain_cfg.get("api_key"):
         try:
             return _ocr_via_ai(image, brain_cfg), "ai"
         except Exception as e:
             raise OcrError("AI 视觉识别失败：%s" % type(e).__name__)
     raise OcrError(
-        "OCR 不可用：请先 pip install winsdk 使用离线识别，"
+        "OCR 不可用或未能识别文字：请安装 winsdk (pip install winsdk) 使用离线识别，"
         "或在 ai_config.json 配置支持视觉的模型（如 moonshot-v1-8k-vision-preview）。")
 
 

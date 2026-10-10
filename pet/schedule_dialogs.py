@@ -291,6 +291,11 @@ class CourseDetailDialog(QtWidgets.QDialog):
 
     def _on_open_knowledge(self):
         self.accept()
+        from .web_launcher import open_notebook_lm
+        owner = getattr(self.parent(), "owner", None)
+        brain = getattr(owner, "brain", None)
+        kb = getattr(brain, "knowledge", None)
+        open_notebook_lm(course=self.course.name, brain=brain, kb=kb)
         self.sig_open_knowledge.emit(self.course.name)
 
 
@@ -492,7 +497,7 @@ class CoursewareImportDialog(QtWidgets.QDialog):
         self.default_course = default_course
         self.selected_course = ""
         self.setWindowTitle("导入课件资料")
-        self.setWindowFlags(QtCore.Qt.Dialog | QtCore.Qt.FramelessWindowHint)
+        self.setWindowFlags(QtCore.Qt.Dialog | QtCore.Qt.FramelessWindowHint | QtCore.Qt.WindowStaysOnTopHint)
         self.setAttribute(QtCore.Qt.WA_TranslucentBackground, True)
         self.setFixedWidth(440)
         self._build_ui()
@@ -623,3 +628,90 @@ class CoursewareImportDialog(QtWidgets.QDialog):
         else:
             self.selected_course = str(data or "")
         self.accept()
+
+
+class DigestGenerateThread(QtCore.QThread):
+    sig_progress = QtCore.pyqtSignal(int, str)
+    sig_done = QtCore.pyqtSignal(str)
+    sig_error = QtCore.pyqtSignal(str)
+
+    def __init__(self, brain, file_path, filename, course, parent=None):
+        super().__init__(parent)
+        self.brain = brain
+        self.file_path = file_path
+        self.filename = filename
+        self.course = course
+
+    def run(self):
+        try:
+            from . import knowledge
+            self.sig_progress.emit(10, "正在打开并提取课件幻灯片/文本...")
+            kb = getattr(self.brain, "knowledge", None)
+            raw_text = ""
+            if kb:
+                # 1. 优先直接复用知识库中已索引的切片，秒级响应，避免大文件/大课件重复 OCR
+                existing_chunks = [c["text"] for c in kb.chunks if c.get("source") == self.filename]
+                if existing_chunks:
+                    raw_text = "\n\n".join(existing_chunks)
+
+            if not raw_text:
+                target_path = self.file_path
+                if not target_path or not os.path.isfile(target_path):
+                    if kb:
+                        if self.course and str(self.course).strip():
+                            alt = os.path.join(kb.courses_dir, str(self.course).strip(), self.filename)
+                        else:
+                            alt = os.path.join(kb.folder, self.filename)
+                        if os.path.isfile(alt):
+                            target_path = alt
+
+                raw_text = knowledge.extract_text_from_file(target_path) if target_path else ""
+                if not raw_text or not raw_text.strip():
+                    if kb and os.path.isdir(kb.folder):
+                        for root, _, files in os.walk(kb.folder):
+                            if self.filename in files:
+                                cand = os.path.join(root, self.filename)
+                                if os.path.isfile(cand):
+                                    raw_text = knowledge.extract_text_from_file(cand)
+                                    if raw_text and raw_text.strip():
+                                        break
+
+            if not raw_text or not raw_text.strip():
+                self.sig_error.emit("未能从课件文件中提取到有效文本（可能为纯图片或格式异常）。")
+                return
+
+            self.sig_progress.emit(25, f"已解析 {len(raw_text)} 字符，正在进行 Slide-Aware 切分...")
+            if not self.brain:
+                self.sig_error.emit("AI 服务未初始化，无法生成知识点提炼。")
+                return
+
+            self.sig_progress.emit(40, "正在组织学术提纲与五维考点架构...")
+
+            def _on_llm_progress(pct, msg):
+                self.sig_progress.emit(pct, msg)
+
+            digest = self.brain.generate_courseware_digest(
+                raw_text,
+                filename=self.filename,
+                course=self.course,
+                on_progress=_on_llm_progress
+            )
+            self.sig_progress.emit(98, "正在持久化保存并建立高权重知识库索引...")
+            self.sig_done.emit(digest)
+        except Exception as e:
+            self.sig_error.emit(str(e))
+
+
+class CoursewareSummaryDialog(QtWidgets.QDialog):
+    """Google NotebookLM 网页版快速唤醒代理（全面替代旧版桌面弹窗）。"""
+
+    def __init__(self, filename="", course="", file_path="", kb=None, brain=None, owner=None, parent=None):
+        super().__init__(parent or owner)
+        self.filename = filename
+        self.course = course
+        self.file_path = file_path
+        self._current_text = kb.get_digest(filename, course) if (kb is not None and kb.has_digest(filename, course)) else ""
+        from .web_launcher import open_notebook_lm
+        open_notebook_lm(course=course, filename=filename, brain=brain, kb=kb)
+        QtCore.QTimer.singleShot(0, self.accept)
+

@@ -131,6 +131,9 @@ class PetWindow(QtWidgets.QWidget):
     remote_clipboard_received = QtCore.pyqtSignal(str, str)
     quick_clip_sent_signal = QtCore.pyqtSignal(str)
     quick_sync_done_signal = QtCore.pyqtSignal(str)
+    # 课件知识点提炼进度与完成信号
+    sig_digest_progress = QtCore.pyqtSignal(str, str, int, str)
+    sig_digest_finished = QtCore.pyqtSignal(str, str, bool, str)
 
     def __init__(self, character):
         super().__init__()
@@ -228,6 +231,8 @@ class PetWindow(QtWidgets.QWidget):
         self._ocr_worker = None
         self._info_panel_widget = None
         self.notes_window = None
+        self._digest_workers = []
+        self._active_digest_tasks = {}
 
         # 托盘模式与生命周期
         self._quitting = False
@@ -262,6 +267,9 @@ class PetWindow(QtWidgets.QWidget):
         self.play("start")
         self._setup_hotkey()
         self._attach_brain_services()
+
+        # 静默在后台确保 NotebookLM Web 服务就绪（延时 1 秒，不占用首屏启动时间）
+        QtCore.QTimer.singleShot(1000, lambda: self._ensure_web_service_bg())
 
         # 自动更新：启动数秒后静默检查
         if self.prefs.get("check_updates", True):
@@ -445,10 +453,43 @@ class PetWindow(QtWidgets.QWidget):
             self._handle_dropped_files(files)
 
     def show_knowledge_page(self, course=None):
-        """打开信息面板并切换至课程知识库页面。"""
-        p = self._info_panel()
-        p.present()
-        p.show_knowledge(course)
+        """直接在系统浏览器中打开 Google NotebookLM 课件研读空间。"""
+        from .web_launcher import open_notebook_lm
+        open_notebook_lm(course=course, brain=self.brain, kb=getattr(self.brain, "knowledge", None))
+        msg = "博士，已为您在浏览器中打开 NotebookLM 课件研读工作台！"
+        if course:
+            msg = f"博士，已为您在浏览器中打开【{course}】的 NotebookLM 课件研读工作台！"
+        self.bubble.say(msg, self._body_rect(), auto_ms=3500)
+
+    def stop_knowledge_web_service(self):
+        """停止 NotebookLM Web 服务并释放 5050 端口。"""
+        from .web_launcher import stop_server
+        stopped = stop_server()
+        if stopped:
+            self.bubble.say("博士，知识库 Web 研读服务已成功停止，端口 5050 已释放！", self._body_rect(), auto_ms=3500)
+            if hasattr(self, "tray_coord") and self.tray_coord:
+                self.tray_coord.show_message("NotebookLM 服务", "Web 研读后台服务已停止，5050 端口已释放。")
+        else:
+            self.bubble.say("博士，停止 Web 服务时遇到问题或端口未释放。", self._body_rect(), auto_ms=3000)
+
+    def start_knowledge_web_service(self):
+        """手动启动 NotebookLM Web 服务。"""
+        from .web_launcher import ensure_server_running
+        ok = ensure_server_running(brain=self.brain, kb=getattr(self.brain, "knowledge", None))
+        if ok:
+            self.bubble.say("博士，知识库 Web 服务已启动，可随时在浏览器中访问！", self._body_rect(), auto_ms=3500)
+            if hasattr(self, "tray_coord") and self.tray_coord:
+                self.tray_coord.show_message("NotebookLM 服务", "Web 服务已就绪 -> http://127.0.0.1:5050")
+        else:
+            self.bubble.say("博士，启动 Web 服务失败，请检查端口是否被占用。", self._body_rect(), auto_ms=3000)
+
+    def _ensure_web_service_bg(self):
+        """后台静默初始化 Web 研读服务，不弹提示。"""
+        try:
+            from .web_launcher import ensure_server_running
+            ensure_server_running(brain=self.brain, kb=getattr(self.brain, "knowledge", None))
+        except Exception:
+            pass
 
     # ------------------------------------------------------------------ #
     # Animation escalation & Rest config                                   #
@@ -1249,7 +1290,7 @@ class PetWindow(QtWidgets.QWidget):
                 return
         super().dropEvent(e)
 
-    def _handle_dropped_files(self, paths):
+    def _handle_dropped_files(self, paths, preferred_course=None):
         """处理外部拖拽至桌宠身上或快捷方式传入的讲义/课件文件（自动绑定课程并导入知识库）。"""
         from . import knowledge
         from .schedule_dialogs import CoursewareImportDialog
@@ -1271,12 +1312,19 @@ class PetWindow(QtWidgets.QWidget):
         active_c = getattr(self.schedule, "get_current_course", lambda: None)()
         active_name = active_c.name if active_c else None
 
+        dlg_parent = self._info_panel_widget if (self._info_panel_widget and self._info_panel_widget.isVisible()) else self
+
         for path in doc_paths:
             fn = os.path.basename(path)
             # 智能匹配推荐课程
-            matched = knowledge.match_course_for_file(fn, course_names, active_course=active_name)
+            if preferred_course == "__GLOBAL__":
+                matched = ""
+            elif preferred_course:
+                matched = preferred_course
+            else:
+                matched = knowledge.match_course_for_file(fn, course_names, active_course=active_name)
 
-            dlg = CoursewareImportDialog(path, courses=self.schedule.courses, default_course=matched, parent=self)
+            dlg = CoursewareImportDialog(path, courses=self.schedule.courses, default_course=matched, parent=dlg_parent)
             dlg.raise_()
             dlg.activateWindow()
             if dlg.exec_() == QtWidgets.QDialog.Accepted:
@@ -1284,10 +1332,59 @@ class PetWindow(QtWidgets.QWidget):
                 ok, chunk_count, c_name = self.brain.knowledge.import_file(path, course=selected_course)
                 if ok:
                     c_desc = f"课程【{c_name}】" if c_name else "通用知识库"
-                    self.bubble.say(f"好的博士！已将《{fn}》成功导入到{c_desc}啦！（提取了 {chunk_count} 个知识切片）\n随时可以问我这门课的重点哦～", self._body_rect())
+                    self.bubble.say(f"好的博士！已将《{fn}》成功导入到{c_desc}啦！\n阿米娅正在为您后台提炼重点考纲～", self._body_rect())
                     self.play(self.char.interaction("on_import") or "talk")
                     if self._info_panel_widget and self._info_panel_widget.isVisible():
-                        QtCore.QTimer.singleShot(0, self._info_panel_widget.refresh_knowledge_page)
+                        target_c = c_name if c_name else "__GLOBAL__"
+                        QtCore.QTimer.singleShot(0, lambda t=target_c: self._info_panel_widget.refresh_knowledge_page(select_course=t))
+                    # 异步后台提炼核心知识点
+                    self._start_async_digest_task(fn, c_name, path)
+
+    def _start_async_digest_task(self, filename, course, file_path):
+        """导入课件后，在后台异步提炼知识点与期末备考重点，并向全系统广播实时进度。"""
+        from .schedule_dialogs import DigestGenerateThread
+        task_key = (filename, course or "")
+        worker = DigestGenerateThread(self.brain, file_path, filename, course, parent=self)
+        self._active_digest_tasks[task_key] = {"progress": 0, "status": "准备启动...", "worker": worker}
+
+        def _on_progress(pct, status_msg):
+            self._active_digest_tasks[task_key] = {"progress": pct, "status": status_msg, "worker": worker}
+            self.sig_digest_progress.emit(filename, course or "", pct, status_msg)
+            # 关键节点气泡提示
+            if pct in (25, 50, 75):
+                self.bubble.say(f"正在深度分析《{filename}》考点...\n进度: {pct}% · {status_msg}", self._body_rect())
+
+        def _on_done(digest_text):
+            if getattr(self.brain, "knowledge", None):
+                self.brain.knowledge.save_digest(filename, course, digest_text)
+            self._active_digest_tasks.pop(task_key, None)
+            self.sig_digest_finished.emit(filename, course or "", True, "提炼完成")
+            c_tag = f"《{course}》" if course else ""
+            self.bubble.say(
+                f"博士，我已经提炼出{c_tag}课件《{filename}》的核心考点速览啦！\n已同步至 NotebookLM 网页版工作台，可随时查阅与提炼哦～",
+                self._body_rect()
+            )
+            if self._info_panel_widget and self._info_panel_widget.isVisible():
+                QtCore.QTimer.singleShot(0, self._info_panel_widget.refresh_knowledge_page)
+
+        def _on_error(err_msg):
+            self._active_digest_tasks.pop(task_key, None)
+            self.sig_digest_finished.emit(filename, course or "", False, err_msg)
+            self.bubble.say(f"《{filename}》考点提炼遇到了点问题：\n{err_msg}", self._body_rect())
+            if self._info_panel_widget and self._info_panel_widget.isVisible():
+                QtCore.QTimer.singleShot(0, self._info_panel_widget.refresh_knowledge_page)
+
+        def _cleanup():
+            if worker in self._digest_workers:
+                self._digest_workers.remove(worker)
+            self._active_digest_tasks.pop(task_key, None)
+
+        worker.sig_progress.connect(_on_progress)
+        worker.sig_done.connect(_on_done)
+        worker.sig_error.connect(_on_error)
+        worker.finished.connect(_cleanup)
+        self._digest_workers.append(worker)
+        worker.start()
 
     def _apply_ai_settings(self, cfg):
         old_history = self.brain.history
@@ -1296,6 +1393,11 @@ class PetWindow(QtWidgets.QWidget):
                                 fallback=self.char.cfg.get("fallback"))
         self.brain.history = old_history
         self._attach_brain_services()
+        try:
+            import web.server as ws
+            ws.set_app_context(self.brain, getattr(self.brain, "knowledge", None))
+        except Exception:
+            pass
         if cfg.get("api_key"):
             text = "模型配置已保存，%s会用新的大模型回答博士。" % self.char.display_name
         else:
@@ -1460,6 +1562,11 @@ class PetWindow(QtWidgets.QWidget):
             self.sync_service.stop()
         if hasattr(self, "sync_window") and self.sync_window is not None:
             self.sync_window.close()
+        try:
+            from .web_launcher import stop_server
+            stop_server(timeout=1.0)
+        except Exception:
+            pass
         QtWidgets.QApplication.quit()
 
     def open_sync_center(self):

@@ -177,8 +177,8 @@ QWidget#PanelRoot { background:%(bg)s; color:%(text)s; }
 QWidget#TitleBar { background:%(panel)s; }
 QLabel#TitleText { color:%(accent_bright)s; font-size:%(fs_xl)dpx; font-weight:700; }
 QLabel#TitleSub { color:%(dim)s; font-size:%(fs_sm)dpx; }
-QPushButton#CloseBtn { color:%(dim)s; border:none; font-size:%(fs_xl)dpx; }
-QPushButton#CloseBtn:hover { color:%(accent)s; }
+QPushButton#CloseBtn, QPushButton#MaxBtn { color:%(dim)s; border:none; font-size:%(fs_xl)dpx; }
+QPushButton#CloseBtn:hover, QPushButton#MaxBtn:hover { color:%(accent)s; }
 QListWidget#Nav {
     background:%(field)s; border:none; font-size:%(fs_lg)dpx; padding-top:10px;
 }
@@ -290,12 +290,16 @@ class InfoPanel(QtWidgets.QWidget):
             | QtCore.Qt.WindowStaysOnTopHint
             | QtCore.Qt.Tool
         )
-        self.setMinimumSize(780, 580)
-        self.resize(860, 680)
+        self.setMinimumSize(780, 520)
+        self.resize(860, 580)
         self.setAcceptDrops(True)
         self.setStyleSheet(_QSS)
         self.setObjectName("PanelRoot")
         self._build()
+        if hasattr(self.owner, "sig_digest_progress"):
+            self.owner.sig_digest_progress.connect(self._on_digest_progress)
+        if hasattr(self.owner, "sig_digest_finished"):
+            self.owner.sig_digest_finished.connect(self._on_digest_finished)
 
     # ── UI ─────────────────────────────────────────────────────────
 
@@ -314,15 +318,24 @@ class InfoPanel(QtWidgets.QWidget):
         title.setObjectName("TitleText")
         sub = QtWidgets.QLabel("RHODES ISLAND · DESKTOP", bar)
         sub.setObjectName("TitleSub")
+
+        self.btn_max = QtWidgets.QPushButton("🗖", bar)
+        self.btn_max.setObjectName("MaxBtn")
+        self.btn_max.setFixedSize(36, 36)
+        self.btn_max.setCursor(QtCore.Qt.PointingHandCursor)
+        self.btn_max.clicked.connect(self._toggle_maximize)
+
         close = QtWidgets.QPushButton("✕", bar)
         close.setObjectName("CloseBtn")
         close.setFixedSize(36, 36)
         close.setCursor(QtCore.Qt.PointingHandCursor)
         close.clicked.connect(self.hide)
+
         bar_layout.addWidget(title)
         bar_layout.addSpacing(10)
         bar_layout.addWidget(sub)
         bar_layout.addStretch(1)
+        bar_layout.addWidget(self.btn_max)
         bar_layout.addWidget(close)
         root.addWidget(bar)
 
@@ -351,6 +364,14 @@ class InfoPanel(QtWidgets.QWidget):
         body.addWidget(self.stack, 1)
 
         self.nav.setCurrentRow(0)
+
+    def _toggle_maximize(self):
+        if self.isMaximized():
+            self.showNormal()
+            self.btn_max.setText("🗖")
+        else:
+            self.showMaximized()
+            self.btn_max.setText("🗗")
 
     def _build_schedule_page(self):
         page = QtWidgets.QWidget(self)
@@ -510,90 +531,106 @@ class InfoPanel(QtWidgets.QWidget):
         page = QtWidgets.QWidget(self)
         page.setAcceptDrops(True)
         lay = QtWidgets.QVBoxLayout(page)
-        lay.setContentsMargins(0, 0, 0, 0)
-        lay.setSpacing(10)
+        lay.setContentsMargins(36, 40, 36, 40)
+        lay.setSpacing(14)
+        lay.setAlignment(QtCore.Qt.AlignCenter)
 
-        # 顶栏过滤与操作
-        top_bar = QtWidgets.QHBoxLayout()
-        top_bar.setSpacing(10)
+        # 头部图标与标题
+        icon_lbl = QtWidgets.QLabel("🎓", page)
+        icon_lbl.setAlignment(QtCore.Qt.AlignCenter)
+        icon_lbl.setStyleSheet("font-size: 46px; margin-bottom: 2px;")
+        lay.addWidget(icon_lbl)
 
-        lbl = QtWidgets.QLabel("目标课程：", page)
-        lbl.setStyleSheet(_S_DIM_LABEL)
-        top_bar.addWidget(lbl)
+        title = QtWidgets.QLabel("课件学研空间 · Google NotebookLM", page)
+        title.setAlignment(QtCore.Qt.AlignCenter)
+        title.setStyleSheet(f"font-size: 19px; font-weight: bold; color: {theme.TEXT};")
+        lay.addWidget(title)
 
-        self.kw_course_combo = QtWidgets.QComboBox(page)
-        self.kw_course_combo.setStyleSheet(
-            _S_COMBO
+        desc = QtWidgets.QLabel(
+            "为提供更沉浸自如的学术研读与考纲备考体验，知识库已全面迁移至专属 Web 网页端。\n"
+            "课件上传、科目分类、结构化考纲提炼与文件移除均可在网页端一站式完成。",
+            page
         )
-        self.kw_course_combo.currentIndexChanged.connect(self._on_kw_filter_changed)
-        top_bar.addWidget(self.kw_course_combo)
+        desc.setAlignment(QtCore.Qt.AlignCenter)
+        desc.setWordWrap(True)
+        desc.setStyleSheet(f"font-size: 13px; color: {theme.TEXT_DIM}; line-height: 1.6;")
+        lay.addWidget(desc)
 
-        self.kw_stat_label = QtWidgets.QLabel("📚 正在加载知识库...", page)
-        self.kw_stat_label.setStyleSheet("color: %s; font-size: %dpx; font-weight: 500;" % (theme.ACCENT, theme.FS_SM))
-        top_bar.addWidget(self.kw_stat_label, 1)
+        lay.addSpacing(6)
 
-        self.btn_upload_doc = QtWidgets.QPushButton("➕ 上传课件", page)
-        self.btn_upload_doc.setObjectName("PrimaryBtn")
-        self.btn_upload_doc.setStyleSheet(
-            _S_BTN_PRIMARY
-        )
-        self.btn_upload_doc.clicked.connect(self._upload_courseware)
-        top_bar.addWidget(self.btn_upload_doc)
+        # 核心主操作大按钮：一键进入网页版
+        self._btn_open_web = QtWidgets.QPushButton("🌐 打开 NotebookLM 课件研读空间 (网页版)", page)
+        btn_open_web = self._btn_open_web
+        btn_open_web.setCursor(QtCore.Qt.PointingHandCursor)
+        btn_open_web.setFixedHeight(48)
+        btn_open_web.setMinimumWidth(380)
+        btn_open_web.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {theme.ACCENT};
+                color: {theme.ON_ACCENT};
+                font-size: 15px;
+                font-weight: bold;
+                border-radius: 8px;
+                padding: 0 24px;
+                border: none;
+            }}
+            QPushButton:hover {{
+                background-color: {theme.ACCENT_BRIGHT};
+            }}
+        """)
+        btn_open_web.clicked.connect(lambda: self._launch_web_workspace())
 
-        self.btn_open_folder = QtWidgets.QPushButton("📁 打开目录", page)
-        self.btn_open_folder.setStyleSheet(
-            _S_BTN_SECONDARY
-        )
-        self.btn_open_folder.clicked.connect(self._open_knowledge_folder)
-        top_bar.addWidget(self.btn_open_folder)
+        btn_center = QtWidgets.QHBoxLayout()
+        btn_center.addStretch(1)
+        btn_center.addWidget(btn_open_web)
+        btn_center.addStretch(1)
+        lay.addLayout(btn_center)
 
-        lay.addLayout(top_bar)
+        lay.addSpacing(4)
 
-        # 快捷 AI 问答推荐横栏 (Prompt Suggestions)
-        ai_bar = QtWidgets.QHBoxLayout()
-        ai_bar.setSpacing(8)
-        ai_tip = QtWidgets.QLabel("✨ 快捷学业辅导：", page)
-        ai_tip.setStyleSheet(_S_DIM_LABEL)
-        ai_bar.addWidget(ai_tip)
+        # 知识库统计信息卡片
+        self.kw_stat_card = QtWidgets.QFrame(page)
+        self.kw_stat_card.setStyleSheet(f"""
+            QFrame {{
+                background: {theme.FIELD};
+                border: 1px solid {theme.GRID};
+                border-radius: 8px;
+                padding: 10px 20px;
+            }}
+        """)
+        card_lay = QtWidgets.QVBoxLayout(self.kw_stat_card)
+        self.kw_stat_lbl = QtWidgets.QLabel("正在同步本地知识库数据...", self.kw_stat_card)
+        self.kw_stat_lbl.setAlignment(QtCore.Qt.AlignCenter)
+        self.kw_stat_lbl.setStyleSheet(f"font-size: 13px; color: {theme.TEXT_DIM};")
+        card_lay.addWidget(self.kw_stat_lbl)
 
-        self.btn_q_keypoints = QtWidgets.QPushButton("🎯 划出期末重点", page)
-        self.btn_q_exam = QtWidgets.QPushButton("📝 生成5道期末模拟题", page)
-        self.btn_q_summary = QtWidgets.QPushButton("💡 核心考点与公式梳理", page)
+        card_center = QtWidgets.QHBoxLayout()
+        card_center.addStretch(1)
+        card_center.addWidget(self.kw_stat_card)
+        card_center.addStretch(1)
+        lay.addLayout(card_center)
 
-        for b in (self.btn_q_keypoints, self.btn_q_exam, self.btn_q_summary):
-            b.setStyleSheet(
-                _s_pill(theme.ACCENT_BRIGHT)
-            )
-        self.btn_q_keypoints.clicked.connect(lambda: self._quick_ask_ai("请根据你掌握的本课程所有课件与考纲内容，帮我划出期末考试的核心重点与必考考点。"))
-        self.btn_q_exam.clicked.connect(lambda: self._quick_ask_ai("请严格依据本课程的课件资料，为我出5道常考的期末模拟简答题或分析题，并附带参考解析答案。"))
-        self.btn_q_summary.clicked.connect(lambda: self._quick_ask_ai("请帮我梳理本课程课件中的核心概念、定律、公式及解题步骤框架。"))
+        lay.addSpacing(6)
 
-        ai_bar.addWidget(self.btn_q_keypoints)
-        ai_bar.addWidget(self.btn_q_exam)
-        ai_bar.addWidget(self.btn_q_summary)
-        ai_bar.addStretch(1)
-        lay.addLayout(ai_bar)
+        # 辅助快捷按钮
+        sub_btns = QtWidgets.QHBoxLayout()
+        sub_btns.setSpacing(12)
+        sub_btns.addStretch(1)
 
-        # 课件列表表格
-        self.kw_table = QtWidgets.QTableWidget(page)
-        self.kw_table.setColumnCount(6)
-        self.kw_table.setHorizontalHeaderLabels(["格式", "课件/讲义文件名", "关联课程", "大小", "知识切片", "操作"])
-        self.kw_table.horizontalHeader().setSectionResizeMode(1, QtWidgets.QHeaderView.Stretch)
-        self.kw_table.setColumnWidth(0, 65)
-        self.kw_table.setColumnWidth(2, 110)
-        self.kw_table.setColumnWidth(3, 85)
-        self.kw_table.setColumnWidth(4, 90)
-        self.kw_table.setColumnWidth(5, 150)
-        self.kw_table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
-        self.kw_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
-        self.kw_table.setStyleSheet("QTableWidget{%s}" % _S_SUNK)
-        lay.addWidget(self.kw_table, 1)
+        btn_folder = QtWidgets.QPushButton("📂 本地课件文件夹", page)
+        btn_folder.setStyleSheet("padding: 6px 14px; font-size: 12px;")
+        btn_folder.clicked.connect(self._open_knowledge_folder)
+        sub_btns.addWidget(btn_folder)
 
-        # 底部提示
-        bottom_tip = QtWidgets.QLabel("💡 提示：可直接将 PPT、PDF、Word 讲义从桌面拖拽到桌宠身上或此窗口，阿米娅会自动识别课程并建库！", page)
-        bottom_tip.setStyleSheet(_S_MUTE_TIP)
-        lay.addWidget(bottom_tip)
+        btn_refresh = QtWidgets.QPushButton("🔄 刷新统计", page)
+        btn_refresh.setStyleSheet("padding: 6px 14px; font-size: 12px;")
+        btn_refresh.clicked.connect(lambda: self.refresh_knowledge_page())
+        sub_btns.addWidget(btn_refresh)
 
+        sub_btns.addStretch(1)
+        lay.addLayout(sub_btns)
+
+        lay.addStretch(1)
         return page
 
     # ── 行为 ───────────────────────────────────────────────────────
@@ -831,107 +868,44 @@ class InfoPanel(QtWidgets.QWidget):
         self.ocr_source.setPlainText(text)
         self.ocr_result.setPlainText(result)
 
+    def _launch_web_workspace(self, course=None, filename=None):
+        """调起 NotebookLM 网页版工作台。"""
+        from .web_launcher import open_notebook_lm
+        brain = getattr(self.owner, "brain", None)
+        kb = getattr(brain, "knowledge", None)
+        open_notebook_lm(course=course, filename=filename, brain=brain, kb=kb)
+
     def show_knowledge(self, course=None):
-        """展示课程知识库管理页，可指定过滤课程。"""
+        """展示课程知识库管理页，并直接打开 NotebookLM 网页端。"""
         self.nav.setCurrentRow(3)
         self.stack.setCurrentIndex(3)
         self.refresh_knowledge_page(select_course=course)
+        self._launch_web_workspace(course=course)
 
     def refresh_knowledge_page(self, select_course=None):
         """刷新知识库页面列表与统计。"""
         kb = getattr(self.owner.brain, "knowledge", None)
-        if not kb:
-            return
+        if kb:
+            stats = kb.get_stats()
+            f_count = stats.get("file_count", 0)
+            c_count = stats.get("chunk_count", 0)
+            courses = stats.get("courses", [])
+            text = f"📊 本地知识库收录：共 {f_count} 份课件 · {c_count} 段切片 · 覆盖 {len(courses)} 门课程"
+            if hasattr(self, "kw_stat_lbl"):
+                self.kw_stat_lbl.setText(text)
 
-        stats = kb.get_stats()
-        self.kw_stat_label.setText(
-            f"📚 已收录 {stats['course_count']} 门课程 · {stats['file_count']} 份课件 · {stats['chunk_count']} 个知识切片"
-        )
+    def _on_digest_progress(self, filename, course, pct, status_msg):
+        """当课件知识点提炼进度更新时，更新知识库提示。"""
+        if hasattr(self, "kw_stat_lbl") and pct < 100:
+            self.kw_stat_lbl.setText(f"⏳ 正在后台提炼《{filename}》核心考纲 ({pct}% · {status_msg})")
 
-        # 刷新下拉框
-        cur_selection = select_course or self.kw_course_combo.currentData()
-        self.kw_course_combo.blockSignals(True)
-        self.kw_course_combo.clear()
-        self.kw_course_combo.addItem(f"全部课程 ({stats['file_count']} 份课件)", "__ALL__")
-
-        all_courses = list(stats['courses'])
-        if hasattr(self.owner, "schedule") and self.owner.schedule:
-            for c in self.owner.schedule.courses:
-                if c.name and c.name not in all_courses:
-                    all_courses.append(c.name)
-
-        for cname in sorted(all_courses):
-            cnt = len(kb.get_course_files(cname))
-            self.kw_course_combo.addItem(f"📖 {cname} ({cnt} 份)", cname)
-
-        if cur_selection:
-            idx = self.kw_course_combo.findData(cur_selection)
-            if idx >= 0:
-                self.kw_course_combo.setCurrentIndex(idx)
-        self.kw_course_combo.blockSignals(False)
-
-        # 刷新表格
-        target_course = self.kw_course_combo.currentData()
-        if target_course == "__ALL__":
-            files = kb.get_course_files(None)
-        else:
-            files = kb.get_course_files(target_course)
-
-        self.kw_table.setRowCount(len(files))
-        for row, f in enumerate(files):
-            import os
-            ext = os.path.splitext(f["filename"])[1].upper().replace(".", "")
-            c_tag = f["course"] if f.get("course") else "通用讲义"
-            size_kb = f["size"] / 1024
-            size_str = f"{size_kb/1024:.1f} MB" if size_kb >= 1024 else f"{size_kb:.0f} KB"
-
-            item_ext = QtWidgets.QTableWidgetItem(ext)
-            item_ext.setTextAlignment(QtCore.Qt.AlignCenter)
-            item_ext.setForeground(QtGui.QColor(theme.ACCENT))
-
-            item_name = QtWidgets.QTableWidgetItem(f["filename"])
-            item_name.setToolTip(f["path"])
-            item_name.setForeground(QtGui.QColor(theme.TEXT))
-
-            item_course = QtWidgets.QTableWidgetItem(c_tag)
-            item_course.setTextAlignment(QtCore.Qt.AlignCenter)
-            item_course.setForeground(QtGui.QColor(theme.ACCENT_BRIGHT))
-
-            item_size = QtWidgets.QTableWidgetItem(size_str)
-            item_size.setTextAlignment(QtCore.Qt.AlignCenter)
-            item_size.setForeground(QtGui.QColor(theme.TEXT_DIM))
-
-            item_chunks = QtWidgets.QTableWidgetItem(f"{f['chunks']} 切片")
-            item_chunks.setTextAlignment(QtCore.Qt.AlignCenter)
-            item_chunks.setForeground(QtGui.QColor(theme.GREEN))
-
-            self.kw_table.setItem(row, 0, item_ext)
-            self.kw_table.setItem(row, 1, item_name)
-            self.kw_table.setItem(row, 2, item_course)
-            self.kw_table.setItem(row, 3, item_size)
-            self.kw_table.setItem(row, 4, item_chunks)
-
-            # 操作按钮组
-            act_widget = QtWidgets.QWidget()
-            act_lay = QtWidgets.QHBoxLayout(act_widget)
-            act_lay.setContentsMargins(4, 2, 4, 2)
-            act_lay.setSpacing(6)
-
-            btn_ask = QtWidgets.QPushButton("🔍 提问", act_widget)
-            btn_ask.setStyleSheet(_s_pill(theme.ACCENT))
-            btn_ask.clicked.connect(lambda _, fn=f["filename"], cn=f["course"]: self._ask_file_ai(fn, cn))
-
-            btn_del = QtWidgets.QPushButton("🗑", act_widget)
-            btn_del.setToolTip("从知识库移除此文件")
-            btn_del.setStyleSheet(_s_pill(theme.RED))
-            btn_del.clicked.connect(lambda _, fn=f["filename"], cn=f["course"]: self._delete_kw_file(fn, cn))
-
-            act_lay.addWidget(btn_ask)
-            act_lay.addWidget(btn_del)
-            self.kw_table.setCellWidget(row, 5, act_widget)
-
-    def _on_kw_filter_changed(self):
+    def _on_digest_finished(self, filename, course, ok, msg):
+        """提炼完成或出错时，刷新知识库状态。"""
         self.refresh_knowledge_page()
+
+    def _show_courseware_digest(self, filename, course, file_path):
+        """在系统浏览器中打开 NotebookLM 网页版并聚焦该课件。"""
+        self._launch_web_workspace(course=course, filename=filename)
 
     def _upload_courseware(self):
         """弹出文件选择框上传课件文件。"""
@@ -941,6 +915,7 @@ class InfoPanel(QtWidgets.QWidget):
         )
         if files:
             self.owner._handle_dropped_files(files)
+            QtCore.QTimer.singleShot(800, self.refresh_knowledge_page)
 
     def _open_knowledge_folder(self):
         """在系统资源管理器中打开知识库目录。"""

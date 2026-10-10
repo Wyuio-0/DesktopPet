@@ -61,8 +61,15 @@ def acquire():
     if sys.platform != "win32":
         return True
     try:
-        _mutex = ctypes.windll.kernel32.CreateMutexW(None, False, _MUTEX_NAME)
-        if ctypes.windll.kernel32.GetLastError() == 183:   # ERROR_ALREADY_EXISTS
+        # bInitialOwner = True：本线程尝试直接持有互斥体所有权
+        _mutex = ctypes.windll.kernel32.CreateMutexW(None, True, _MUTEX_NAME)
+        err = ctypes.windll.kernel32.GetLastError()
+        if err == 183:   # ERROR_ALREADY_EXISTS
+            # 互斥体已存在，尝试等待 0 毫秒检测旧实例是否存活或已放弃所有权
+            # 0x00000000 = WAIT_OBJECT_0, 0x00000080 = WAIT_ABANDONED
+            res = ctypes.windll.kernel32.WaitForSingleObject(_mutex, 0)
+            if res in (0, 0x80):
+                return True
             return False
     except Exception:
         pass    # 互斥体失败就放行，别让守护本身挡住启动

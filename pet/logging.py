@@ -58,6 +58,16 @@ def log(message):
     _write("INFO", str(message))
 
 
+def warn(message):
+    """警告日志。"""
+    _write("WARN", str(message))
+
+
+def error(message):
+    """错误日志。"""
+    _write("ERROR", str(message))
+
+
 def _rotate_if_needed():
     path = log_path()
     try:

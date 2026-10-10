@@ -1,0 +1,3395 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Amiya NotebookLM - 课件研读与考纲工作台</title>
+  <!-- Google Fonts: Inter & JetBrains Mono -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Marked.js for Markdown Rendering -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <!-- KaTeX for LaTeX Math Formula Rendering -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+
+  <style>
+    :root {
+      --app-font-size: 18px;
+      --app-line-height: 1.75;
+      --col-left-width: 260px;
+      --col-right-width: 560px;
+    }
+
+    /* 1. Google Slate (NotebookLM 官方深黑护眼，纯粹极简零杂色) */
+    body.theme-slate {
+      --bg-app: #111213;
+      --bg-panel: #1b1c1d;
+      --bg-card: #242527;
+      --bg-card-hover: #2e3033;
+      --bg-input: #1b1c1d;
+      --border-subtle: #2d2f32;
+      --border-strong: #3e4146;
+      --text-primary: #f0f1f3;
+      --text-secondary: #9ea3aa;
+      --text-muted: #6a6f77;
+      --accent: #a8c7fa;
+      --accent-hover: #c2e7ff;
+      --accent-bg: rgba(168, 199, 250, 0.12);
+      --accent-border: rgba(168, 199, 250, 0.3);
+      --badge-success-bg: rgba(74, 222, 128, 0.12);
+      --badge-success-text: #4ade80;
+      --user-msg-bg: #2d333b;
+      --chip-bg: #242527;
+      --chip-hover: #33363b;
+    }
+
+    /* 2. Amiya Dark Violet (阿米娅罗德岛经典暗黑紫金) */
+    body.theme-violet {
+      --bg-app: #0e0d16;
+      --bg-panel: #171526;
+      --bg-card: #201d36;
+      --bg-card-hover: #2c274b;
+      --bg-input: #151324;
+      --border-subtle: #2b274c;
+      --border-strong: #3f396e;
+      --text-primary: #f3f0fc;
+      --text-secondary: #afa9cf;
+      --text-muted: #746d97;
+      --accent: #bda6ff;
+      --accent-hover: #d8ccff;
+      --accent-bg: rgba(189, 166, 255, 0.15);
+      --accent-border: rgba(189, 166, 255, 0.35);
+      --badge-success-bg: rgba(45, 212, 191, 0.15);
+      --badge-success-text: #2dd4bf;
+      --user-msg-bg: #2d2650;
+      --chip-bg: #211d38;
+      --chip-hover: #322b54;
+    }
+
+    /* 3. Paper Light (纸质明亮日间白，类似 Google Docs / Notion) */
+    body.theme-light {
+      --bg-app: #f7f9fc;
+      --bg-panel: #ffffff;
+      --bg-card: #f8f9fa;
+      --bg-card-hover: #edf2f7;
+      --bg-input: #f1f3f4;
+      --border-subtle: #e2e5e9;
+      --border-strong: #cbd2d9;
+      --text-primary: #191c20;
+      --text-secondary: #535962;
+      --text-muted: #858b94;
+      --accent: #1a73e8;
+      --accent-hover: #0b57d0;
+      --accent-bg: rgba(26, 115, 232, 0.1);
+      --accent-border: rgba(26, 115, 232, 0.3);
+      --badge-success-bg: rgba(22, 163, 74, 0.12);
+      --badge-success-text: #16a34a;
+      --user-msg-bg: #e8f0fe;
+      --chip-bg: #edf2f7;
+      --chip-hover: #e2e8f0;
+    }
+
+    body {
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+      background-color: var(--bg-app);
+      color: var(--text-primary);
+      transition: background-color 0.2s ease, color 0.2s ease;
+    }
+
+    /* 动态字号应用区 (考纲阅读与问答主内容) */
+    .dynamic-typography {
+      font-size: var(--app-font-size);
+      line-height: var(--app-line-height);
+    }
+
+    /* 基础 Markdown 排版美化 */
+    .prose-notebook {
+      color: var(--text-primary);
+      font-size: var(--app-font-size);
+      line-height: var(--app-line-height);
+    }
+
+    /* ── 核心考纲专属高对比、强层级排版 (.digest-preview) ── */
+    .digest-preview {
+      color: var(--text-primary);
+      font-size: var(--app-font-size);
+      line-height: var(--app-line-height);
+    }
+
+    /* 顶级标题 / 课件总纲卡片 (#) */
+    .digest-preview h1 {
+      font-size: 1.55em;
+      font-weight: 800;
+      letter-spacing: -0.01em;
+      margin-top: 0.2em;
+      margin-bottom: 0.85em;
+      padding: 0.8em 1.1em;
+      background: var(--bg-card);
+      border-left: 6px solid var(--accent);
+      border-top: 1px solid var(--border-subtle);
+      border-right: 1px solid var(--border-subtle);
+      border-bottom: 1px solid var(--border-subtle);
+      border-radius: 12px;
+      color: var(--text-primary);
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    /* 一级模块板块卡片 (## 一、核心概念与关键术语) */
+    .digest-preview h2 {
+      font-size: 1.3em;
+      font-weight: 700;
+      margin-top: 2.2em;
+      margin-bottom: 0.85em;
+      padding: 0.65em 1em;
+      background: var(--bg-card);
+      border-left: 5px solid var(--accent);
+      border-top: 1px solid var(--border-subtle);
+      border-right: 1px solid var(--border-subtle);
+      border-bottom: 1px solid var(--border-subtle);
+      border-radius: 10px;
+      color: var(--accent);
+      display: flex;
+      align-items: center;
+      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.05);
+      scroll-margin-top: 14px;
+    }
+
+    /* 二级具体考点细分药丸 (### 1.1 概念细项) */
+    .digest-preview h3 {
+      font-size: 1.12em;
+      font-weight: 600;
+      margin-top: 1.5em;
+      margin-bottom: 0.65em;
+      padding: 0.35em 0.85em;
+      background: var(--accent-bg);
+      border-left: 3px solid var(--accent);
+      border-radius: 6px;
+      color: var(--text-primary);
+      display: inline-block;
+      letter-spacing: 0.01em;
+    }
+
+    /* 三级要点说明 (####) */
+    .digest-preview h4 {
+      font-size: 1.05em;
+      font-weight: 600;
+      margin-top: 1.1em;
+      margin-bottom: 0.4em;
+      color: var(--text-secondary);
+    }
+
+    /* 段落间距 */
+    .digest-preview p {
+      margin-bottom: 0.85em;
+    }
+
+    /* 列表层级增强（定制圆点与数字） */
+    .digest-preview ul {
+      list-style: none;
+      padding-left: 0.3em;
+      margin-bottom: 1.1em;
+    }
+    .digest-preview ul > li {
+      position: relative;
+      padding-left: 1.6em;
+      margin-bottom: 0.55em;
+      line-height: var(--app-line-height);
+    }
+    .digest-preview ul > li::before {
+      content: "•";
+      position: absolute;
+      left: 0.4em;
+      color: var(--accent);
+      font-size: 1.25em;
+      line-height: 1;
+    }
+    .digest-preview ol {
+      padding-left: 1.6em;
+      margin-bottom: 1.1em;
+    }
+    .digest-preview ol > li {
+      margin-bottom: 0.5em;
+      line-height: var(--app-line-height);
+    }
+
+    /* 重点强调文字高亮 */
+    .digest-preview strong {
+      font-weight: 600;
+      color: var(--accent);
+    }
+
+    /* 引用块 / 考前自测 Callout 卡片 (>) */
+    .digest-preview blockquote {
+      margin: 1.3em 0;
+      padding: 0.9em 1.25em;
+      background: var(--accent-bg);
+      border-left: 4px solid var(--accent);
+      border-top: 1px solid var(--accent-border);
+      border-right: 1px solid var(--accent-border);
+      border-bottom: 1px solid var(--accent-border);
+      border-radius: 0 10px 10px 0;
+      color: var(--text-primary);
+      box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    }
+    .digest-preview blockquote p {
+      margin-bottom: 0.5em;
+    }
+    .digest-preview blockquote p:last-child {
+      margin-bottom: 0;
+    }
+
+    /* 代码与行内公式 */
+    .digest-preview code {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.88em;
+      background: var(--bg-card);
+      padding: 0.2em 0.5em;
+      border-radius: 5px;
+      border: 1px solid var(--border-subtle);
+      color: var(--accent);
+    }
+    .digest-preview pre {
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      padding: 1.1em;
+      border-radius: 10px;
+      overflow-x: auto;
+      margin: 1.2em 0;
+    }
+
+    /* 高清结构化对比表格 (支持水平安全滚动防破版) */
+    .table-container {
+      width: 100%;
+      overflow-x: auto;
+      margin: 1.4em 0;
+      border: 1px solid var(--border-strong);
+      border-radius: 10px;
+      background: var(--bg-panel);
+      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+    }
+    .digest-preview table {
+      width: 100%;
+      min-width: 100%;
+      border-collapse: separate;
+      border-spacing: 0;
+      margin: 0;
+      border: none;
+      box-shadow: none;
+    }
+    .digest-preview th {
+      background: var(--bg-card);
+      color: var(--accent);
+      font-weight: 600;
+      padding: 0.75em 1em;
+      border-bottom: 2px solid var(--border-strong);
+      border-right: 1px solid var(--border-subtle);
+      text-align: left;
+    }
+    .digest-preview td {
+      padding: 0.7em 1em;
+      border-bottom: 1px solid var(--border-subtle);
+      border-right: 1px solid var(--border-subtle);
+      background: var(--bg-panel);
+    }
+    .digest-preview tr:last-child td {
+      border-bottom: none;
+    }
+    .digest-preview tr td:last-child, .digest-preview tr th:last-child {
+      border-right: none;
+    }
+    .digest-preview tr:hover td {
+      background: var(--bg-card-hover);
+    }
+
+    /* 大板块分割线 */
+    .digest-preview hr {
+      border: none;
+      border-top: 1px dashed var(--border-strong);
+      margin: 2.2em 0;
+    }
+
+    /* KaTeX 高保真数学与物理公式排版 */
+    .katex {
+      font-size: 1.08em !important;
+      color: inherit;
+      line-height: 1.2;
+    }
+    .katex-display {
+      margin: 1.2em 0 !important;
+      overflow-x: auto;
+      overflow-y: hidden;
+      padding: 0.5em 0;
+    }
+    .katex-display-container {
+      margin: 1.25em 0;
+      padding: 0.85em 1.2em;
+      border-radius: 10px;
+      background: rgba(0, 0, 0, 0.18);
+      border: 1px solid var(--border-subtle);
+      overflow-x: auto;
+      text-align: center;
+      box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.1);
+    }
+    .katex-fallback {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.9em;
+      padding: 0.15em 0.45em;
+      border-radius: 6px;
+      background: var(--accent-bg);
+      color: var(--accent);
+      border: 1px solid var(--accent-border);
+    }
+
+    /* 滚动条美化 */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: var(--border-strong);
+      border-radius: 999px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: var(--text-muted);
+    }
+
+    /* 脉冲加载条 */
+    @keyframes progress-indeterminate {
+      0% { transform: translateX(-100%); }
+      50% { transform: translateX(20%); }
+      100% { transform: translateX(100%); }
+    }
+    .animate-progress {
+      animation: progress-indeterminate 1.5s infinite linear;
+    }
+
+    /* ── 3D 抽背闪卡样式 ── */
+    .flashcard-scene {
+      perspective: 1200px;
+    }
+    .flashcard-card {
+      transition: transform 0.45s cubic-bezier(0.25, 0.8, 0.25, 1);
+      transform-style: preserve-3d;
+      position: relative;
+    }
+    .flashcard-card.is-flipped {
+      transform: rotateY(180deg);
+    }
+    .flashcard-face {
+      backface-visibility: hidden;
+      -webkit-backface-visibility: hidden;
+      position: absolute;
+      inset: 0;
+      border-radius: 16px;
+      display: flex;
+      flex-direction: column;
+    }
+    .flashcard-back {
+      transform: rotateY(180deg);
+    }
+
+    /* ── A4 高保真打印与 PDF 导出优化样式 ── */
+    .print-only-header {
+      display: none;
+    }
+    @media print {
+      @page {
+        size: A4 portrait;
+        margin: 15mm 15mm 15mm 15mm;
+      }
+      *, *::before, *::after {
+        box-shadow: none !important;
+        text-shadow: none !important;
+      }
+
+      /* 0. 打印墨水对比度提升：覆盖暗色主题变量与文字颜色 */
+      :root, body, .digest-preview, .prose-notebook {
+        --text-primary: #0f172a !important;
+        --text-secondary: #334155 !important;
+        --text-muted: #64748b !important;
+        --accent: #1d4ed8 !important;
+        --accent-bg: #eff6ff !important;
+        --accent-border: #93c5fd !important;
+        --border-subtle: #cbd5e1 !important;
+        --border-strong: #94a3b8 !important;
+        --bg-panel: #ffffff !important;
+        --bg-card: #f8fafc !important;
+        --bg-app: #ffffff !important;
+        color: #0f172a !important;
+      }
+      .digest-preview,
+      .digest-preview p,
+      .digest-preview li,
+      .digest-preview span,
+      .digest-preview td {
+        color: #0f172a !important;
+      }
+      .digest-preview strong {
+        color: #1e3a8a !important;
+        font-weight: 700 !important;
+      }
+      .digest-preview h4 {
+        color: #334155 !important;
+      }
+      .digest-preview ul > li::before {
+        color: #2563eb !important;
+      }
+
+      /* 1. 彻底解除 HTML, BODY 与 MAIN 的视口锁定与溢出隐藏截断 */
+      html, body {
+        width: 100% !important;
+        height: auto !important;
+        min-height: auto !important;
+        max-height: none !important;
+        overflow: visible !important;
+        overflow-x: visible !important;
+        overflow-y: visible !important;
+        position: static !important;
+        display: block !important;
+        background: #ffffff !important;
+        color: #111827 !important;
+        font-size: 10.5pt !important;
+        line-height: 1.6 !important;
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+      }
+
+      main {
+        display: block !important;
+        width: 100% !important;
+        height: auto !important;
+        min-height: auto !important;
+        max-height: none !important;
+        overflow: visible !important;
+        overflow-x: visible !important;
+        overflow-y: visible !important;
+        position: static !important;
+        flex: none !important;
+        margin: 0 !important;
+        padding: 0 !important;
+      }
+
+      /* 2. 隐藏全部非打印界面元素（顶栏、侧边栏、对话栏、工具条、弹窗等） */
+      header, 
+      #leftCol, 
+      #centerCol, 
+      #rightColToolbar,
+      #rightColFooter,
+      #digestTocBar, 
+      #digestProgressBar, 
+      .no-print, 
+      button, 
+      input, 
+      textarea,
+      select,
+      #settingsModal, 
+      #createCourseModal,
+      #uploadModal,
+      #moveFileModal, 
+      #printExportModal,
+      #flashcardsView,
+      #digestRawView,
+      #digestEditorView {
+        display: none !important;
+      }
+
+      /* 3. 展开右栏与考纲滚动区域为自适应高度流式文档，允许天然分页 */
+      #rightCol {
+        display: block !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        height: auto !important;
+        min-height: auto !important;
+        max-height: none !important;
+        position: static !important;
+        overflow: visible !important;
+        overflow-x: visible !important;
+        overflow-y: visible !important;
+        flex: none !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        background: transparent !important;
+        border: none !important;
+      }
+
+      #digestScrollContainer {
+        display: block !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        height: auto !important;
+        min-height: auto !important;
+        max-height: none !important;
+        position: static !important;
+        overflow: visible !important;
+        overflow-x: visible !important;
+        overflow-y: visible !important;
+        flex: none !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        background: transparent !important;
+        border: none !important;
+      }
+
+      #digestMarkdownView {
+        display: block !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        height: auto !important;
+        min-height: auto !important;
+        max-height: none !important;
+        position: static !important;
+        overflow: visible !important;
+        padding: 0 !important;
+        margin: 0 !important;
+      }
+
+      /* 4. 打印专用抬头 (顶部科目、课件名、生成时间) */
+      .print-only-header {
+        display: block !important;
+        margin-bottom: 2em;
+        padding-bottom: 1em;
+        border-bottom: 2px solid #0f172a;
+        page-break-after: avoid;
+        break-after: avoid;
+      }
+
+      /* 5. 标题与卡片样式及分页防截断规则 */
+      .digest-preview h1 {
+        background: #f8fafc !important;
+        color: #0f172a !important;
+        border: 1px solid #cbd5e1 !important;
+        border-left: 6px solid #2563eb !important;
+        box-shadow: none !important;
+        page-break-after: avoid;
+        break-after: avoid;
+      }
+      .digest-preview h2 {
+        background: #f1f5f9 !important;
+        color: #1e293b !important;
+        border: 1px solid #e2e8f0 !important;
+        box-shadow: none !important;
+        page-break-after: avoid;
+        break-after: avoid;
+        page-break-before: auto;
+        break-before: auto;
+        margin-top: 2em !important;
+      }
+      .digest-preview h3 {
+        color: #0f172a !important;
+        page-break-after: avoid;
+        break-after: avoid;
+      }
+
+      /* 6. 表格防截断与自适应排版 */
+      .table-container {
+        display: block !important;
+        width: 100% !important;
+        overflow: visible !important;
+        border: none !important;
+        background: transparent !important;
+        margin: 1.2em 0 !important;
+        page-break-inside: auto !important;
+        break-inside: auto !important;
+      }
+      .digest-preview table {
+        width: 100% !important;
+        border: 1px solid #94a3b8 !important;
+        border-collapse: collapse !important;
+        box-shadow: none !important;
+        page-break-inside: auto !important;
+        break-inside: auto !important;
+      }
+      .digest-preview tr {
+        page-break-inside: avoid !important;
+        break-inside: avoid !important;
+      }
+      .digest-preview th {
+        background: #f1f5f9 !important;
+        color: #0f172a !important;
+        border: 1px solid #94a3b8 !important;
+        font-weight: 600 !important;
+      }
+      .digest-preview td {
+        background: #ffffff !important;
+        color: #1e293b !important;
+        border: 1px solid #cbd5e1 !important;
+      }
+
+      /* 7. 引用块与提示卡片 */
+      .digest-preview blockquote {
+        background: #f8fafc !important;
+        border-left: 4px solid #3b82f6 !important;
+        border-top: 1px solid #e2e8f0 !important;
+        border-right: 1px solid #e2e8f0 !important;
+        border-bottom: 1px solid #e2e8f0 !important;
+        color: #334155 !important;
+        page-break-inside: avoid;
+        break-inside: avoid;
+      }
+
+      /* 8. 数学公式与代码高亮 */
+      .katex {
+        color: #000000 !important;
+      }
+      .katex-display-container {
+        background: #f8fafc !important;
+        border: 1px solid #e2e8f0 !important;
+        color: #000000 !important;
+        page-break-inside: avoid;
+        break-inside: avoid;
+      }
+    }
+  </style>
+</head>
+<body class="theme-slate h-screen flex flex-col overflow-hidden select-none">
+
+  <!-- ======================= 顶栏导航与概览 ======================= -->
+  <header class="h-14 border-b flex items-center justify-between px-4 z-20 shrink-0"
+          style="background-color: var(--bg-panel); border-color: var(--border-subtle);">
+    <div class="flex items-center space-x-3">
+      <!-- NotebookLM Logo 图标 -->
+      <div class="w-8 h-8 rounded-lg flex items-center justify-center font-bold text-base shadow-sm"
+           style="background-color: var(--accent); color: var(--bg-app);">
+        NL
+      </div>
+      <div>
+        <div class="flex items-center space-x-2">
+          <h1 class="font-semibold text-sm tracking-tight" style="color: var(--text-primary);">Amiya NotebookLM</h1>
+          <span class="text-xs px-2 py-0.5 rounded-full font-medium"
+                style="background-color: var(--accent-bg); color: var(--accent); border: 1px solid var(--accent-border);">
+            Web 调优工作台
+          </span>
+        </div>
+      </div>
+      <div class="hidden md:flex items-center space-x-2 text-xs text-muted" style="color: var(--text-muted);">
+        <span>|</span>
+        <span id="statSummary">课件 0 份 · 切片 0 段</span>
+      </div>
+      <!-- 快捷三栏比例切换 -->
+      <div class="hidden lg:flex items-center space-x-1 p-0.5 rounded-lg border text-xs"
+           style="background-color: var(--bg-card); border-color: var(--border-subtle);">
+        <button class="layout-quick-btn px-2.5 py-1 rounded text-[11px] font-medium transition-colors"
+                data-layout="balance" title="均衡三栏布局">⚖️ 均衡</button>
+        <button class="layout-quick-btn px-2.5 py-1 rounded text-[11px] font-medium transition-colors"
+                data-layout="guide" title="考纲与抽背卡优先">📑 考纲优先</button>
+        <button class="layout-quick-btn px-2.5 py-1 rounded text-[11px] font-medium transition-colors"
+                data-layout="chat" title="研读问答优先">💬 问答优先</button>
+      </div>
+    </div>
+
+    <!-- 右侧工具按钮：精简为仅保留刷新与设置 -->
+    <div class="flex items-center space-x-2">
+      <button id="refreshBtn" title="刷新全部数据"
+              class="p-2 rounded-lg text-xs border transition-colors hover:opacity-80 flex items-center space-x-1"
+              style="background-color: var(--bg-card); border-color: var(--border-subtle); color: var(--text-secondary);">
+        <span>🔄 刷新</span>
+      </button>
+      <button id="openSettingsBtn" title="个性化与排版设置"
+              class="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors shadow-sm"
+              style="background-color: var(--accent-bg); color: var(--accent); border-color: var(--accent-border);">
+        <span>⚙️ 设置</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- ======================= 主体三栏工作台 ======================= -->
+  <main class="flex-1 flex overflow-hidden relative">
+
+    <!-- ----------------- 1. 左栏：来源资料库 (Sources) ----------------- -->
+    <aside id="leftCol" class="border-r flex flex-col shrink-0 transition-all duration-200"
+           style="width: var(--col-left-width); background-color: var(--bg-panel); border-color: var(--border-subtle);">
+      
+      <!-- 课程分类筛选与新建课程 -->
+      <div class="p-3 border-b" style="border-color: var(--border-subtle);">
+        <div class="flex items-center justify-between mb-1.5">
+          <label class="text-xs font-semibold" style="color: var(--text-secondary);">当前课程资料库</label>
+          <div class="flex items-center space-x-1.5">
+            <button id="deleteCourseBtn" title="删除当前选中的自定义课程分类"
+                    class="text-[11px] px-2 py-0.5 rounded border transition-colors hover:text-red-400 hover:bg-red-500/10 hidden"
+                    style="border-color: var(--border-subtle); color: var(--text-muted); background-color: var(--bg-card);">
+              <span>🗑️ 删除</span>
+            </button>
+            <button id="addCourseBtn" title="新建自定义课程分类"
+                    class="text-[11px] px-2 py-0.5 rounded border transition-colors hover:opacity-90 flex items-center space-x-1"
+                    style="border-color: var(--accent-border); color: var(--accent); background-color: var(--accent-bg);">
+              <span>➕ 新建课程</span>
+            </button>
+          </div>
+        </div>
+        <select id="courseSelect" class="w-full text-xs rounded-lg px-2.5 py-2 border outline-none cursor-pointer"
+                style="background-color: var(--bg-card); border-color: var(--border-subtle); color: var(--text-primary);">
+          <option value="__ALL__">📂 全部课程课件</option>
+          <option value="__GLOBAL__">🌐 全局公共资料库</option>
+        </select>
+      </div>
+
+      <!-- 上传课件区 (支持点击或拖拽) -->
+      <div class="p-3 border-b" style="border-color: var(--border-subtle);">
+        <div id="dropZone"
+             class="border-2 border-dashed rounded-xl p-3 text-center cursor-pointer transition-colors"
+             style="border-color: var(--border-strong); background-color: var(--bg-card);">
+          <input type="file" id="fileInput" class="hidden" accept=".pdf,.ppt,.pptx,.txt,.md,.doc,.docx" multiple>
+          <div class="text-lg mb-1">📄</div>
+          <div class="text-xs font-medium" style="color: var(--text-primary);">点击上传或拖拽课件</div>
+          <div class="text-[11px] mt-0.5" style="color: var(--text-muted);">支持 PPT、PDF、TXT、DOCX</div>
+        </div>
+      </div>
+
+      <!-- 课件列表标题与计数 -->
+      <div class="px-3 pt-2.5 pb-1 flex items-center justify-between text-xs" style="color: var(--text-secondary);">
+        <span class="font-semibold">来源课件 (<span id="fileCount">0</span>)</span>
+        <span class="text-[11px]" style="color: var(--text-muted);">点击选定进行研读</span>
+      </div>
+
+      <!-- 课件滚动列表 -->
+      <div id="fileList" class="flex-1 overflow-y-auto px-2 py-1 space-y-1.5">
+        <!-- 动态由 JS 填充 -->
+      </div>
+    </aside>
+
+    <!-- ----------------- 2. 中栏：研读对话 (Chat / Q&A) ----------------- -->
+    <section id="centerCol" class="flex-1 flex flex-col min-w-0 border-r relative"
+             style="background-color: var(--bg-app); border-color: var(--border-subtle);">
+      
+      <!-- 当前对话上下文提示条 -->
+      <div class="h-10 px-4 border-b flex items-center justify-between shrink-0 text-xs"
+           style="background-color: var(--bg-panel); border-color: var(--border-subtle); color: var(--text-secondary);">
+        <div class="flex items-center space-x-2 truncate">
+          <span class="w-2 h-2 rounded-full" style="background-color: var(--accent);"></span>
+          <span class="font-medium">研读上下文:</span>
+          <span id="activeContextText" class="truncate font-semibold" style="color: var(--text-primary);">全部课件</span>
+        </div>
+        <button id="clearChatBtn" class="text-xs hover:opacity-80" style="color: var(--text-muted);">
+          清屏
+        </button>
+      </div>
+
+      <!-- 聊天消息滚动流 -->
+      <div id="chatMessages" class="flex-1 overflow-y-auto p-4 space-y-4">
+        
+        <!-- 欢迎卡片 -->
+        <div class="rounded-xl p-4 border max-w-2xl mx-auto shadow-sm"
+             style="background-color: var(--bg-panel); border-color: var(--border-subtle);">
+          <div class="flex items-center space-x-3 mb-2.5">
+            <span class="text-2xl">🎓</span>
+            <div>
+              <h2 class="text-sm font-semibold" style="color: var(--text-primary);">欢迎来到 NotebookLM 课件研读空间</h2>
+              <p class="text-xs" style="color: var(--text-secondary);">点击左侧课件可聚焦单篇；在右侧可直接查阅与提炼结构化考纲。</p>
+            </div>
+          </div>
+          <div class="text-xs pt-2 border-t mt-2" style="border-color: var(--border-subtle); color: var(--text-muted);">
+            💡 提示：您可点击右上角「⚙️ 设置」自由调整 18px / 20px / 22px 超大阅读字号、切换护眼深色/浅色主题及调整工作台布局。
+          </div>
+        </div>
+
+      </div>
+
+      <!-- 快捷提炼 Prompt 胶囊群 (精简为 3 个聚焦核心胶囊) -->
+      <div class="px-4 py-2 border-t flex items-center gap-2 shrink-0 overflow-x-auto"
+           style="background-color: var(--bg-panel); border-color: var(--border-subtle);">
+        <button class="prompt-chip px-3 py-1.5 rounded-full text-xs transition-colors flex items-center space-x-1 shrink-0"
+                data-prompt="请深度提炼这门课的核心考点，并按重点星级分类整理成知识清单">
+          <span>💡</span><span>核心考点</span>
+        </button>
+        <button class="prompt-chip px-3 py-1.5 rounded-full text-xs transition-colors flex items-center space-x-1 shrink-0"
+                data-prompt="请为这份课件生成一份清晰的考前冲刺复习大纲，标明重要章节">
+          <span>📝</span><span>冲刺大纲</span>
+        </button>
+        <button class="prompt-chip px-3 py-1.5 rounded-full text-xs transition-colors flex items-center space-x-1 shrink-0"
+                data-prompt="请针对本课件出 5 道高频期末考试模拟题（含简答与案例分析），附标准答案">
+          <span>❓</span><span>模拟自测</span>
+        </button>
+      </div>
+
+      <!-- 底部输入框与发送 -->
+      <div class="p-3 border-t shrink-0"
+           style="background-color: var(--bg-panel); border-color: var(--border-subtle);">
+        <div class="flex items-end rounded-xl border p-2 shadow-sm focus-within:ring-1"
+             style="background-color: var(--bg-card); border-color: var(--border-strong);">
+          <textarea id="chatInput" rows="2"
+                    placeholder="向助教阿米娅提问课件内容，或探讨学术疑问... (Shift+Enter 换行，Enter 发送)"
+                    class="flex-1 bg-transparent border-0 outline-none text-xs resize-none p-1"
+                    style="color: var(--text-primary);"></textarea>
+          <button id="sendBtn"
+                  class="ml-2 px-3.5 py-2 rounded-lg text-xs font-semibold flex items-center space-x-1 shrink-0 transition-opacity hover:opacity-90 shadow-sm"
+                  style="background-color: var(--accent); color: var(--bg-app);">
+            <span>发送</span>
+            <span>➤</span>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ----------------- 3. 右栏：考纲工作台 (Studio / Study Guide) ----------------- -->
+    <aside id="rightCol" class="flex flex-col shrink-0 transition-all duration-200"
+           style="width: var(--col-right-width); background-color: var(--bg-panel);">
+      
+      <!-- 考纲工作台集成顶栏工具栏 (模式切换 + 状态指示 + 动作组) -->
+      <div id="rightColToolbar" class="h-12 border-b px-3 flex items-center justify-between shrink-0 gap-2"
+           style="background-color: var(--bg-panel); border-color: var(--border-subtle);">
+        
+        <!-- 左侧：研读 / 闪卡 模式切换分段控制器 -->
+        <div class="flex items-center space-x-1 p-0.5 rounded-lg border shrink-0"
+             style="background-color: var(--bg-card); border-color: var(--border-subtle);">
+          <button id="tabPreviewBtn" title="查阅完整结构化五维考纲"
+                  class="px-2.5 py-1 rounded-md text-xs font-medium transition-all flex items-center space-x-1 whitespace-nowrap shadow-sm"
+                  style="background-color: var(--accent-bg); color: var(--accent);">
+            <span>📖 考纲研读</span>
+          </button>
+          <button id="tabFlashcardsBtn" title="开启高频考点 3D 抽背自测卡"
+                  class="px-2.5 py-1 rounded-md text-xs font-medium transition-all flex items-center space-x-1 whitespace-nowrap"
+                  style="background-color: transparent; color: var(--text-secondary);">
+            <span>🃏 抽背闪卡</span>
+            <span id="flashcardCountBadge" class="ml-1 text-[10px] px-1.5 py-0.2 rounded-full font-bold hidden"
+                  style="background-color: var(--accent); color: var(--bg-app);">0</span>
+          </button>
+        </div>
+
+        <!-- 中间：状态指示 -->
+        <div class="hidden xl:flex items-center space-x-1.5 truncate text-[11px] min-w-0" style="color: var(--text-muted);">
+          <span class="w-1.5 h-1.5 rounded-full shrink-0" id="digestStatusDot" style="background-color: var(--border-strong);"></span>
+          <span id="digestStatusBadge" class="truncate font-medium">未选定课件</span>
+        </div>
+
+        <!-- 右侧：动作操作组 -->
+        <div class="flex items-center space-x-1.5 shrink-0">
+          <button id="generateDigestBtn" title="基于 AI 深度提炼本课件核心知识考纲"
+                  class="px-2.5 py-1.5 rounded-lg text-xs font-semibold flex items-center space-x-1 whitespace-nowrap transition-opacity hover:opacity-90 shadow-sm shrink-0"
+                  style="background-color: var(--accent); color: var(--bg-app);">
+            <span>⚡ 提炼考纲</span>
+          </button>
+          <button id="printExportBtn" title="导出高保真 PDF 打印版 / 离线报告 / Anki 卡包"
+                  class="px-2.5 py-1.5 rounded-lg text-xs font-medium border flex items-center space-x-1 whitespace-nowrap transition-colors hover:opacity-80 shadow-sm shrink-0"
+                  style="background-color: var(--bg-card); border-color: var(--border-subtle); color: var(--text-secondary);">
+            <span>🖨️ 导出/打印</span>
+          </button>
+          <button id="toggleEditBtn" title="编辑考纲 Markdown 源码"
+                  class="p-1.5 w-7 h-7 rounded-lg text-xs border flex items-center justify-center transition-colors hover:opacity-80 shrink-0"
+                  style="background-color: var(--bg-card); border-color: var(--border-subtle); color: var(--text-secondary);">
+            ✏️
+          </button>
+          <button id="copyDigestBtn" title="复制 Markdown 内容到剪贴板"
+                  class="p-1.5 w-7 h-7 rounded-lg text-xs border flex items-center justify-center transition-colors hover:opacity-80 shrink-0"
+                  style="background-color: var(--bg-card); border-color: var(--border-subtle); color: var(--text-secondary);">
+            📋
+          </button>
+          <button id="deleteActiveFileBtn" title="从知识库移除当前课件"
+                  class="p-1.5 w-7 h-7 rounded-lg text-xs border flex items-center justify-center transition-colors hover:text-red-400 hover:bg-red-500/10 hidden shrink-0"
+                  style="background-color: var(--bg-card); border-color: var(--border-subtle); color: var(--text-muted);">
+            🗑️
+          </button>
+        </div>
+      </div>
+
+      <!-- 提炼中动态加载进度条 -->
+      <div id="digestProgressBar" class="h-1 w-full overflow-hidden hidden" style="background-color: var(--border-subtle);">
+        <div class="h-full w-1/3 animate-progress" style="background-color: var(--accent);"></div>
+      </div>
+
+      <!-- 考纲大纲快速跳转导航栏 (TOC) -->
+      <div id="digestTocBar" class="px-3 py-1.5 border-b flex items-center space-x-1.5 overflow-x-auto text-xs shrink-0 hidden"
+           style="background-color: var(--bg-card); border-color: var(--border-subtle);">
+        <span class="text-[11px] font-semibold shrink-0" style="color: var(--text-muted);">📑 大纲直达:</span>
+        <div id="digestTocPills" class="flex items-center space-x-1.5 shrink-0"></div>
+      </div>
+
+      <!-- 考纲内容展示区 -->
+      <div id="digestScrollContainer" class="flex-1 overflow-y-auto p-5 relative">
+
+        <!-- 打印专用抬头 (普通屏幕下自动隐藏，纸质打印/PDF 导出时呈现) -->
+        <div id="printHeader" class="print-only-header">
+          <div style="font-size: 20pt; font-weight: 800; color: #0f172a; margin-bottom: 6px;" id="printTitleText">
+            期末核心考纲与复习全景导图
+          </div>
+          <div style="font-size: 10pt; color: #475569; display: flex; gap: 16px;">
+            <span>科目：<strong id="printCourseSpan" style="color: #0f172a;">未指定</strong></span>
+            <span>课件：<strong id="printFileSpan" style="color: #0f172a;">未选择</strong></span>
+            <span>生成时间：<strong id="printDateSpan" style="color: #0f172a;"></strong></span>
+          </div>
+        </div>
+        
+        <!-- 1. 结构化 Markdown 预览容器 (增强层级样式) -->
+        <div id="digestMarkdownView" class="digest-preview dynamic-typography pb-8">
+          <div class="text-center py-16" style="color: var(--text-muted);">
+            <div class="text-3xl mb-2">📑</div>
+            <div class="text-sm font-semibold" style="color: var(--text-primary);">请从左侧选择一份课件</div>
+            <div class="text-xs mt-1">选定后将在此呈现清晰分层、排版严整的五维期末备考提纲</div>
+          </div>
+        </div>
+
+        <!-- 2. Markdown 纯源码视图容器 (默认隐藏) -->
+        <div id="digestRawView" class="hidden p-4 rounded-xl font-mono text-xs overflow-x-auto whitespace-pre-wrap select-text border"
+             style="background-color: var(--bg-card); border-color: var(--border-subtle); color: var(--text-primary); line-height: 1.6;">
+        </div>
+
+        <!-- 3. 编辑器视图 (默认隐藏) -->
+        <div id="digestEditorView" class="hidden h-full flex flex-col">
+          <textarea id="digestEditTextarea"
+                    class="w-full flex-1 p-3 rounded-lg border outline-none font-mono text-xs resize-none"
+                    style="background-color: var(--bg-card); border-color: var(--border-strong); color: var(--text-primary);"></textarea>
+          <div class="mt-2 flex justify-end space-x-2">
+            <button id="cancelEditBtn" class="px-3 py-1.5 rounded text-xs border"
+                    style="border-color: var(--border-subtle); color: var(--text-secondary);">取消</button>
+            <button id="saveEditBtn" class="px-3 py-1.5 rounded text-xs font-semibold"
+                    style="background-color: var(--accent); color: var(--bg-app);">保存修改</button>
+          </div>
+        </div>
+
+        <!-- 4. 交互式自测抽背闪卡视图容器 (默认隐藏) -->
+        <div id="flashcardsView" class="hidden flex flex-col max-w-2xl mx-auto w-full py-1 space-y-3.5">
+          <!-- 闪卡顶部统计与筛选栏 -->
+          <div class="flex items-center justify-between mb-3 text-xs shrink-0">
+            <div class="flex items-center space-x-2">
+              <select id="flashcardFilterSelect" class="text-xs px-2.5 py-1 rounded-lg border outline-none cursor-pointer"
+                      style="background-color: var(--bg-card); border-color: var(--border-subtle); color: var(--text-primary);">
+                <option value="all">全部卡片 (全部)</option>
+                <option value="concept">📌 核心概念</option>
+                <option value="formula">📐 核心公式</option>
+                <option value="exam">🎯 考点预测</option>
+                <option value="contrast">⚖️ 易混对比</option>
+                <option value="quiz">❓ 期末自测</option>
+              </select>
+              <span id="flashcardIndexDisplay" class="font-mono text-xs font-semibold px-2 py-0.5 rounded"
+                    style="background-color: var(--accent-bg); color: var(--accent);">
+                1 / 1
+              </span>
+            </div>
+
+            <!-- 掌握进度统计 -->
+            <div class="flex items-center space-x-2">
+              <span class="text-[11px]" style="color: var(--text-muted);">
+                已掌握: <strong id="flashcardMasteredCount" class="text-emerald-400 font-semibold">0</strong> / 
+                待复习: <strong id="flashcardReviewCount" class="text-amber-400 font-semibold">0</strong>
+              </span>
+              <button id="resetFlashcardProgressBtn" title="重置本套卡片背诵进度"
+                      class="text-[11px] px-2 py-0.5 rounded border hover:opacity-80 transition-opacity"
+                      style="border-color: var(--border-subtle); color: var(--text-muted); background-color: var(--bg-card);">
+                ↺ 重置
+              </button>
+            </div>
+          </div>
+
+          <!-- 进度条 -->
+          <div class="w-full h-1.5 rounded-full overflow-hidden mb-4 shrink-0" style="background-color: var(--border-subtle);">
+            <div id="flashcardProgressBar" class="h-full transition-all duration-300" style="width: 0%; background-color: var(--accent);"></div>
+          </div>
+
+          <!-- 3D 翻转卡片容器 -->
+          <div class="flashcard-scene flex-1 min-h-[360px] flex items-center justify-center cursor-pointer select-none" id="flashcardScene">
+            <div id="flashcardInner" class="flashcard-card w-full h-[360px] md:h-[400px]">
+              
+              <!-- 正面 (问题 / 术语 / 定理名称) -->
+              <div class="flashcard-face p-6 border rounded-2xl shadow-lg flex flex-col justify-between"
+                   style="background-color: var(--bg-card); border-color: var(--border-strong);">
+                <div>
+                  <div class="flex items-center justify-between mb-4">
+                    <span id="cardCategoryBadge" class="text-[11px] px-2.5 py-0.5 rounded-full font-semibold"
+                          style="background-color: var(--accent-bg); color: var(--accent); border: 1px solid var(--accent-border);">
+                      📌 核心概念
+                    </span>
+                    <span class="text-[11px] flex items-center space-x-1" style="color: var(--text-muted);">
+                      <span>💡 点击卡片或按空格翻面查看解析</span>
+                    </span>
+                  </div>
+                  <div id="cardFrontContent" class="digest-preview mt-4 text-center text-lg md:text-xl font-medium leading-relaxed"
+                       style="color: var(--text-primary);">
+                    卡片正面内容
+                  </div>
+                </div>
+                <div class="text-center text-[11px] pb-1" style="color: var(--text-muted);">
+                  [ 正面 · 题目 / 概念 / 公式考查 ]
+                </div>
+              </div>
+
+              <!-- 背面 (解析 / 公式推导 / 避坑要点 / 答案) -->
+              <div class="flashcard-face flashcard-back p-6 border rounded-2xl shadow-lg flex flex-col justify-between overflow-y-auto"
+                   style="background-color: var(--bg-card); border-color: var(--accent-border);">
+                <div>
+                  <div class="flex items-center justify-between mb-3">
+                    <span class="text-[11px] px-2.5 py-0.5 rounded-full font-semibold"
+                          style="background-color: var(--accent-bg); color: var(--accent); border: 1px solid var(--accent-border);">
+                      📖 答案与精讲要点
+                    </span>
+                    <span class="text-[11px]" style="color: var(--text-muted);">
+                      再次点击或空格可翻回
+                    </span>
+                  </div>
+                  <div id="cardBackContent" class="digest-preview mt-2 text-sm md:text-base leading-relaxed"
+                       style="color: var(--text-primary);">
+                    卡片背面解析
+                  </div>
+                </div>
+                <div class="text-center text-[11px] pt-3 shrink-0" style="color: var(--text-muted);">
+                  [ 背面 · 标准解析与避坑提示 ]
+                </div>
+              </div>
+
+            </div>
+          </div>
+
+          <!-- 卡片底部交互控制栏 -->
+          <div class="mt-4 pt-3 border-t flex flex-col space-y-3 shrink-0" style="border-color: var(--border-subtle);">
+            <!-- 自评按钮 (按 1, 2, 3 快捷键) -->
+            <div class="flex items-center justify-center space-x-3">
+              <button id="cardRateHardBtn" class="flex-1 py-2 px-3 rounded-xl border font-medium text-xs flex items-center justify-center space-x-1.5 transition-all hover:scale-[1.02] active:scale-[0.98]"
+                      style="border-color: #ef4444; color: #ef4444; background-color: rgba(239, 68, 68, 0.08);">
+                <span>❌ 毫无印象 (1)</span>
+              </button>
+              <button id="cardRateGoodBtn" class="flex-1 py-2 px-3 rounded-xl border font-medium text-xs flex items-center justify-center space-x-1.5 transition-all hover:scale-[1.02] active:scale-[0.98]"
+                      style="border-color: #f59e0b; color: #f59e0b; background-color: rgba(245, 158, 11, 0.08);">
+                <span>💡 略有模糊 (2)</span>
+              </button>
+              <button id="cardRateEasyBtn" class="flex-1 py-2 px-3 rounded-xl border font-medium text-xs flex items-center justify-center space-x-1.5 transition-all hover:scale-[1.02] active:scale-[0.98]"
+                      style="border-color: #10b981; color: #10b981; background-color: rgba(16, 185, 129, 0.08);">
+                <span>✅ 熟练掌握 (3)</span>
+              </button>
+            </div>
+
+            <!-- 上一张 / 下一张 / 翻转导航 -->
+            <div class="flex items-center justify-between text-xs px-1">
+              <button id="prevCardBtn" class="px-3 py-1.5 rounded-lg border hover:opacity-80 transition-opacity flex items-center space-x-1"
+                      style="border-color: var(--border-subtle); color: var(--text-secondary); background-color: var(--bg-card);">
+                <span>← 上一张</span>
+              </button>
+              <button id="flipCardBtn" class="px-4 py-1.5 rounded-lg border font-medium hover:opacity-80 transition-opacity flex items-center space-x-1"
+                      style="border-color: var(--accent-border); color: var(--accent); background-color: var(--accent-bg);">
+                <span>🔄 翻转卡片 (Space)</span>
+              </button>
+              <button id="nextCardBtn" class="px-3 py-1.5 rounded-lg border hover:opacity-80 transition-opacity flex items-center space-x-1"
+                      style="border-color: var(--border-subtle); color: var(--text-secondary); background-color: var(--bg-card);">
+                <span>下一张 →</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- 空状态卡片提示 (当没有提炼考纲时) -->
+          <div id="flashcardEmptyState" class="hidden text-center py-16" style="color: var(--text-muted);">
+            <div class="text-3xl mb-2">🃏</div>
+            <div class="text-sm font-semibold" style="color: var(--text-primary);">暂无可抽背卡片</div>
+            <div class="text-xs mt-1">请先在左侧选择课件并点击「⚡ 提炼考纲」，系统将自动切分高频考点闪卡</div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- 底部字数与更新信息栏 -->
+      <div id="rightColFooter" class="h-8 border-t px-4 flex items-center justify-between text-[11px] shrink-0"
+           style="border-color: var(--border-subtle); color: var(--text-muted);">
+        <span id="activeFileNameFooter">未选择文件</span>
+        <span id="charCountFooter">0 字</span>
+      </div>
+    </aside>
+
+  </main>
+
+  <!-- ======================= 个性化设置浮层模态框 (Settings Modal) ======================= -->
+  <div id="settingsModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm hidden">
+    <div class="rounded-2xl border shadow-2xl max-w-md w-full overflow-hidden flex flex-col transition-all"
+         style="background-color: var(--bg-panel); border-color: var(--border-strong);">
+      
+      <!-- 模态框标题栏 -->
+      <div class="px-5 py-4 border-b flex items-center justify-between"
+           style="border-color: var(--border-subtle); background-color: var(--bg-card);">
+        <div class="flex items-center space-x-2">
+          <span class="text-base">⚙️</span>
+          <div>
+            <h3 class="text-sm font-semibold" style="color: var(--text-primary);">偏好与排版设置</h3>
+            <p class="text-[11px]" style="color: var(--text-muted);">自定义主题配色、考纲字号与工作台栏宽</p>
+          </div>
+        </div>
+        <button id="closeSettingsBtn" class="w-7 h-7 rounded-lg flex items-center justify-center text-sm hover:opacity-80 transition-opacity"
+                style="color: var(--text-secondary); background-color: var(--bg-panel);">
+          ✕
+        </button>
+      </div>
+
+      <!-- 设置内容滚动区 -->
+      <div class="p-5 space-y-5 overflow-y-auto max-h-[75vh]">
+        
+        <!-- 1. 主题配色 -->
+        <div>
+          <label class="block text-xs font-semibold mb-2" style="color: var(--text-secondary);">🎨 主题配色</label>
+          <div class="grid grid-cols-3 gap-2">
+            <button class="theme-btn px-3 py-2.5 rounded-xl text-xs border font-medium flex flex-col items-center justify-center space-y-1 transition-all"
+                    data-theme="theme-slate"
+                    style="border-color: var(--border-subtle); background-color: var(--bg-card);">
+              <span class="text-base">🌙</span>
+              <span>Google 深黑</span>
+            </button>
+            <button class="theme-btn px-3 py-2.5 rounded-xl text-xs border font-medium flex flex-col items-center justify-center space-y-1 transition-all"
+                    data-theme="theme-violet"
+                    style="border-color: var(--border-subtle); background-color: var(--bg-card);">
+              <span class="text-base">🔮</span>
+              <span>罗德岛紫</span>
+            </button>
+            <button class="theme-btn px-3 py-2.5 rounded-xl text-xs border font-medium flex flex-col items-center justify-center space-y-1 transition-all"
+                    data-theme="theme-light"
+                    style="border-color: var(--border-subtle); background-color: var(--bg-card);">
+              <span class="text-base">☀️</span>
+              <span>纸质日白</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- 2. 阅读字号 -->
+        <div>
+          <div class="flex items-center justify-between mb-2">
+            <label class="text-xs font-semibold" style="color: var(--text-secondary);">🔠 正文阅读字号</label>
+            <span id="fontSizeDisplay" class="text-xs font-mono font-semibold px-2 py-0.5 rounded"
+                  style="background-color: var(--accent-bg); color: var(--accent);">18px</span>
+          </div>
+          
+          <!-- 快捷档位 -->
+          <div class="grid grid-cols-4 gap-2 mb-3">
+            <button class="size-btn py-1.5 rounded-lg text-xs border font-medium transition-all"
+                    data-size="16" style="border-color: var(--border-subtle); background-color: var(--bg-card);">
+              16px 紧凑
+            </button>
+            <button class="size-btn py-1.5 rounded-lg text-xs border font-medium transition-all"
+                    data-size="18" style="border-color: var(--border-subtle); background-color: var(--bg-card);">
+              18px 推荐
+            </button>
+            <button class="size-btn py-1.5 rounded-lg text-xs border font-medium transition-all"
+                    data-size="20" style="border-color: var(--border-subtle); background-color: var(--bg-card);">
+              20px 清晰
+            </button>
+            <button class="size-btn py-1.5 rounded-lg text-xs border font-medium transition-all"
+                    data-size="22" style="border-color: var(--border-subtle); background-color: var(--bg-card);">
+              22px 特大
+            </button>
+          </div>
+
+          <!-- 精细微调滑块 -->
+          <div class="flex items-center space-x-3 px-1">
+            <span class="text-[11px]" style="color: var(--text-muted);">14px</span>
+            <input type="range" id="fontSizeSlider" min="14" max="26" step="1" value="18"
+                   class="flex-1 accent-[#a8c7fa] cursor-pointer">
+            <span class="text-[11px]" style="color: var(--text-muted);">26px</span>
+          </div>
+        </div>
+
+        <!-- 3. 段落行高 -->
+        <div>
+          <label class="block text-xs font-semibold mb-2" style="color: var(--text-secondary);">📏 段落行距</label>
+          <div class="grid grid-cols-3 gap-2">
+            <button class="lh-btn py-2 rounded-lg text-xs border font-medium transition-all"
+                    data-lh="1.6" style="border-color: var(--border-subtle); background-color: var(--bg-card);">
+              1.6 紧凑
+            </button>
+            <button class="lh-btn py-2 rounded-lg text-xs border font-medium transition-all"
+                    data-lh="1.75" style="border-color: var(--border-subtle); background-color: var(--bg-card);">
+              1.75 舒适
+            </button>
+            <button class="lh-btn py-2 rounded-lg text-xs border font-medium transition-all"
+                    data-lh="1.9" style="border-color: var(--border-subtle); background-color: var(--bg-card);">
+              1.9 开阔
+            </button>
+          </div>
+        </div>
+
+        <!-- 4. 工作台三栏布局 -->
+        <div>
+          <label class="block text-xs font-semibold mb-2" style="color: var(--text-secondary);">📐 三栏布局比例</label>
+          <div class="grid grid-cols-3 gap-2">
+            <button class="layout-btn py-2 rounded-lg text-xs border font-medium transition-all"
+                    data-layout="balance" style="border-color: var(--border-subtle); background-color: var(--bg-card);">
+              ⚖️ 均衡三栏
+            </button>
+            <button class="layout-btn py-2 rounded-lg text-xs border font-medium transition-all"
+                    data-layout="guide" style="border-color: var(--border-subtle); background-color: var(--bg-card);">
+              📑 考纲优先
+            </button>
+            <button class="layout-btn py-2 rounded-lg text-xs border font-medium transition-all"
+                    data-layout="chat" style="border-color: var(--border-subtle); background-color: var(--bg-card);">
+              💬 问答优先
+            </button>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- 模态框底部按钮 -->
+      <div class="px-5 py-3 border-t flex items-center justify-between"
+           style="border-color: var(--border-subtle); background-color: var(--bg-card);">
+        <button id="resetSettingsBtn" class="text-xs transition-colors hover:opacity-80"
+                style="color: var(--text-muted);">
+          🔄 恢复默认
+        </button>
+        <button id="doneSettingsBtn" class="px-4 py-1.5 rounded-lg text-xs font-semibold transition-opacity hover:opacity-90 shadow-sm"
+                style="background-color: var(--accent); color: var(--bg-app);">
+          确定
+        </button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ======================= 新建课程分类弹窗 (Create Course Modal) ======================= -->
+  <div id="createCourseModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm hidden">
+    <div class="rounded-2xl border shadow-2xl max-w-sm w-full overflow-hidden flex flex-col transition-all"
+         style="background-color: var(--bg-panel); border-color: var(--border-strong);">
+      <div class="px-5 py-4 border-b flex items-center justify-between"
+           style="border-color: var(--border-subtle); background-color: var(--bg-card);">
+        <div class="flex items-center space-x-2">
+          <span class="text-base">📚</span>
+          <h3 class="text-sm font-semibold" style="color: var(--text-primary);">新建课程分类</h3>
+        </div>
+        <button id="closeCreateCourseBtn" class="w-7 h-7 rounded-lg flex items-center justify-center text-sm hover:opacity-80 transition-opacity"
+                style="color: var(--text-secondary); background-color: var(--bg-panel);">✕</button>
+      </div>
+      <div class="p-5 space-y-4">
+        <div>
+          <label class="block text-xs font-semibold mb-1.5" style="color: var(--text-secondary);">课程名称</label>
+          <input type="text" id="newCourseInput" placeholder="例如：操作系统、算法设计与分析..."
+                 class="w-full text-xs rounded-lg px-3 py-2 border outline-none"
+                 style="background-color: var(--bg-card); border-color: var(--border-strong); color: var(--text-primary);">
+        </div>
+      </div>
+      <div class="px-5 py-3 border-t flex items-center justify-end space-x-2"
+           style="border-color: var(--border-subtle); background-color: var(--bg-card);">
+        <button id="cancelCreateCourseBtn" class="px-3 py-1.5 rounded-lg text-xs border"
+                style="border-color: var(--border-subtle); color: var(--text-secondary);">取消</button>
+        <button id="confirmCreateCourseBtn" class="px-4 py-1.5 rounded-lg text-xs font-semibold shadow-sm hover:opacity-90"
+                style="background-color: var(--accent); color: var(--bg-app);">确定创建</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ======================= 导入课件与课程选择确认弹窗 (Upload Modal) ======================= -->
+  <div id="uploadModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm hidden">
+    <div class="rounded-2xl border shadow-2xl max-w-md w-full overflow-hidden flex flex-col transition-all"
+         style="background-color: var(--bg-panel); border-color: var(--border-strong);">
+      <div class="px-5 py-4 border-b flex items-center justify-between"
+           style="border-color: var(--border-subtle); background-color: var(--bg-card);">
+        <div class="flex items-center space-x-2">
+          <span class="text-base">📥</span>
+          <div>
+            <h3 class="text-sm font-semibold" style="color: var(--text-primary);">导入课件至指定课程</h3>
+            <p class="text-[11px]" style="color: var(--text-muted);">为待上传的课件选择或新建归属科目</p>
+          </div>
+        </div>
+        <button id="closeUploadModalBtn" class="w-7 h-7 rounded-lg flex items-center justify-center text-sm hover:opacity-80 transition-opacity"
+                style="color: var(--text-secondary); background-color: var(--bg-panel);">✕</button>
+      </div>
+      <div class="p-5 space-y-4">
+        <!-- 待上传文件清单 -->
+        <div>
+          <label class="block text-xs font-semibold mb-1.5" style="color: var(--text-secondary);">待导入文件 (<span id="uploadPendingCount">0</span> 份)</label>
+          <div id="uploadPendingList" class="max-h-28 overflow-y-auto space-y-1 p-2 rounded-lg border text-xs"
+               style="background-color: var(--bg-card); border-color: var(--border-subtle); color: var(--text-primary);">
+          </div>
+        </div>
+
+        <!-- 选择归属课程 -->
+        <div>
+          <label class="block text-xs font-semibold mb-1.5" style="color: var(--text-secondary);">目标归属课程</label>
+          <select id="uploadCourseSelect" class="w-full text-xs rounded-lg px-3 py-2 border outline-none cursor-pointer"
+                  style="background-color: var(--bg-card); border-color: var(--border-strong); color: var(--text-primary);">
+            <!-- 由 JS 填充 -->
+          </select>
+        </div>
+
+        <!-- 快速新建课程输入框 (可选) -->
+        <div id="uploadNewCourseBox" class="hidden">
+          <label class="block text-xs font-semibold mb-1.5" style="color: var(--accent);">输入新课程名称</label>
+          <input type="text" id="uploadNewCourseInput" placeholder="例如：编译原理、计算机网络..."
+                 class="w-full text-xs rounded-lg px-3 py-2 border outline-none"
+                 style="background-color: var(--bg-card); border-color: var(--accent); color: var(--text-primary);">
+        </div>
+      </div>
+      <div class="px-5 py-3 border-t flex items-center justify-end space-x-2"
+           style="border-color: var(--border-subtle); background-color: var(--bg-card);">
+        <button id="cancelUploadModalBtn" class="px-3 py-1.5 rounded-lg text-xs border"
+                style="border-color: var(--border-subtle); color: var(--text-secondary);">取消</button>
+        <button id="confirmUploadModalBtn" class="px-4 py-1.5 rounded-lg text-xs font-semibold shadow-sm hover:opacity-90 flex items-center space-x-1"
+                style="background-color: var(--accent); color: var(--bg-app);">
+          <span>🚀 确认导入</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ======================= 转移课件所属课程弹窗 (Move File Modal) ======================= -->
+  <div id="moveFileModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm hidden">
+    <div class="rounded-2xl border shadow-2xl max-w-sm w-full overflow-hidden flex flex-col transition-all"
+         style="background-color: var(--bg-panel); border-color: var(--border-strong);">
+      <div class="px-5 py-4 border-b flex items-center justify-between"
+           style="border-color: var(--border-subtle); background-color: var(--bg-card);">
+        <div class="flex items-center space-x-2">
+          <span class="text-base">🏷️</span>
+          <h3 class="text-sm font-semibold" style="color: var(--text-primary);">调整课件所属课程</h3>
+        </div>
+        <button id="closeMoveFileBtn" class="w-7 h-7 rounded-lg flex items-center justify-center text-sm hover:opacity-80 transition-opacity"
+                style="color: var(--text-secondary); background-color: var(--bg-panel);">✕</button>
+      </div>
+      <div class="p-5 space-y-4">
+        <div>
+          <label class="block text-xs font-semibold mb-1" style="color: var(--text-secondary);">当前课件</label>
+          <div id="moveFileNameDisplay" class="text-xs font-medium truncate py-1" style="color: var(--text-primary);"></div>
+        </div>
+        <div>
+          <label class="block text-xs font-semibold mb-1.5" style="color: var(--text-secondary);">调整归属至新课程</label>
+          <select id="moveCourseSelect" class="w-full text-xs rounded-lg px-3 py-2 border outline-none cursor-pointer"
+                  style="background-color: var(--bg-card); border-color: var(--border-strong); color: var(--text-primary);">
+          </select>
+        </div>
+      </div>
+      <div class="px-5 py-3 border-t flex items-center justify-end space-x-2"
+           style="border-color: var(--border-subtle); background-color: var(--bg-card);">
+        <button id="cancelMoveFileBtn" class="px-3 py-1.5 rounded-lg text-xs border"
+                style="border-color: var(--border-subtle); color: var(--text-secondary);">取消</button>
+        <button id="confirmMoveFileBtn" class="px-4 py-1.5 rounded-lg text-xs font-semibold shadow-sm hover:opacity-90"
+                style="background-color: var(--accent); color: var(--bg-app);">确定转移</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ======================= 高保真导出与打印中心弹窗 (Export Modal) ======================= -->
+  <div id="printExportModal" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm hidden">
+    <div class="rounded-2xl border shadow-2xl max-w-lg w-full overflow-hidden flex flex-col transition-all"
+         style="background-color: var(--bg-panel); border-color: var(--border-strong);">
+      
+      <!-- 弹窗标题栏 -->
+      <div class="px-5 py-4 border-b flex items-center justify-between"
+           style="border-color: var(--border-subtle); background-color: var(--bg-card);">
+        <div class="flex items-center space-x-2">
+          <span class="text-lg">🖨️</span>
+          <div>
+            <h3 class="text-sm font-semibold" style="color: var(--text-primary);">考纲导出与打印中心</h3>
+            <p class="text-[11px]" style="color: var(--text-muted);">期末冲刺全渠道高保真导出方案</p>
+          </div>
+        </div>
+        <button id="closePrintExportBtn" class="w-7 h-7 rounded-lg flex items-center justify-center text-sm hover:opacity-80 transition-opacity"
+                style="color: var(--text-secondary); background-color: var(--bg-panel);">✕</button>
+      </div>
+
+      <!-- 导出选项卡片列表 -->
+      <div class="p-5 space-y-3 overflow-y-auto max-h-[75vh]">
+        
+        <!-- 选项 1: A4 高保真打印 / 另存为 PDF -->
+        <div id="optPrintPdf" class="p-3.5 rounded-xl border cursor-pointer transition-all hover:scale-[1.01] hover:border-blue-500/50 flex items-start space-x-3 group"
+             style="background-color: var(--bg-card); border-color: var(--border-subtle);">
+          <div class="w-10 h-10 rounded-xl flex items-center justify-center text-xl shrink-0"
+               style="background-color: var(--accent-bg); color: var(--accent);">
+            📄
+          </div>
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center justify-between">
+              <h4 class="text-xs font-semibold" style="color: var(--text-primary);">A4 高保真打印 / 另存为 PDF</h4>
+              <span class="text-[10px] px-2 py-0.5 rounded font-medium text-emerald-400 bg-emerald-500/10 border border-emerald-500/20">推荐打印</span>
+            </div>
+            <p class="text-[11px] mt-1 leading-relaxed" style="color: var(--text-secondary);">
+              自动隐去界面侧边栏，保留清晰矢量 KaTeX 数学公式、规整对比表格与考前自测，适配标准 A4 纸张排版。
+            </p>
+          </div>
+        </div>
+
+        <!-- 选项 2: 单文件离线 HTML 考纲 -->
+        <div id="optExportHtml" class="p-3.5 rounded-xl border cursor-pointer transition-all hover:scale-[1.01] hover:border-blue-500/50 flex items-start space-x-3 group"
+             style="background-color: var(--bg-card); border-color: var(--border-subtle);">
+          <div class="w-10 h-10 rounded-xl flex items-center justify-center text-xl shrink-0"
+               style="background-color: var(--accent-bg); color: var(--accent);">
+            🌐
+          </div>
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center justify-between">
+              <h4 class="text-xs font-semibold" style="color: var(--text-primary);">导出离线独立 HTML 考纲</h4>
+              <span class="text-[10px] px-2 py-0.5 rounded font-medium text-blue-400 bg-blue-500/10 border border-blue-500/20">便携查阅</span>
+            </div>
+            <p class="text-[11px] mt-1 leading-relaxed" style="color: var(--text-secondary);">
+              将排版样式与 KaTeX 公式内嵌为单个 .html 文件，无需本地服务器，在手机、iPad 或发给同学即可直接浏览。
+            </p>
+          </div>
+        </div>
+
+        <!-- 选项 3: Anki 闪卡包 (.txt) -->
+        <div id="optExportAnki" class="p-3.5 rounded-xl border cursor-pointer transition-all hover:scale-[1.01] hover:border-blue-500/50 flex items-start space-x-3 group"
+             style="background-color: var(--bg-card); border-color: var(--border-subtle);">
+          <div class="w-10 h-10 rounded-xl flex items-center justify-center text-xl shrink-0"
+               style="background-color: var(--accent-bg); color: var(--accent);">
+            🃏
+          </div>
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center justify-between">
+              <h4 class="text-xs font-semibold" style="color: var(--text-primary);">导出 Anki 抽背卡包 (.txt)</h4>
+              <span class="text-[10px] px-2 py-0.5 rounded font-medium text-purple-400 bg-purple-500/10 border border-purple-500/20">艾宾浩斯复习</span>
+            </div>
+            <p class="text-[11px] mt-1 leading-relaxed" style="color: var(--text-secondary);">
+              制表符分隔格式，包含核心概念、公式、辨析与题型，一键导入 Anki 进行科学遗忘曲线记忆。
+            </p>
+          </div>
+        </div>
+
+        <!-- 选项 4: Markdown 纯文本源码 (.md) -->
+        <div id="optExportMarkdown" class="p-3.5 rounded-xl border cursor-pointer transition-all hover:scale-[1.01] hover:border-blue-500/50 flex items-start space-x-3 group"
+             style="background-color: var(--bg-card); border-color: var(--border-subtle);">
+          <div class="w-10 h-10 rounded-xl flex items-center justify-center text-xl shrink-0"
+               style="background-color: var(--accent-bg); color: var(--accent);">
+            📝
+          </div>
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center justify-between">
+              <h4 class="text-xs font-semibold" style="color: var(--text-primary);">导出 Markdown 纯文本 (.md)</h4>
+              <span class="text-[10px] px-2 py-0.5 rounded font-medium text-slate-400 bg-slate-500/10 border border-slate-500/20">笔记归档</span>
+            </div>
+            <p class="text-[11px] mt-1 leading-relaxed" style="color: var(--text-secondary);">
+              导出标准 Markdown 语法考纲，兼容 Notion、Obsidian、Typora 及各类个人知识库。
+            </p>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- 弹窗底部说明与关闭 -->
+      <div class="px-5 py-3 border-t flex items-center justify-between"
+           style="border-color: var(--border-subtle); background-color: var(--bg-card);">
+        <span class="text-[11px]" style="color: var(--text-muted);">
+          快捷键: 在工作台内随时按 Ctrl+P 亦可直接调起打印
+        </span>
+        <button id="cancelPrintExportBtn" class="px-3.5 py-1.5 rounded-lg text-xs font-medium border"
+                style="border-color: var(--border-subtle); color: var(--text-secondary);">关闭</button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ======================= 业务逻辑与 UI 交互脚本 ======================= -->
+  <script>
+    // --- 状态定义 ---
+    const state = {
+      files: [],
+      courses: [],
+      currentCourse: "__ALL__",
+      activeFile: null,
+      activeDigest: "",
+      fontSize: 18,
+      lineHeight: 1.75,
+      theme: "theme-slate",
+      layout: "balance",
+      isGeneratingDigest: false,
+      isChatStreaming: false,
+      studioMode: "preview", // "preview" | "flashcards" | "edit"
+      flashcards: [],
+      currentCardIndex: 0,
+      cardFilter: "all",
+      isFlipped: false
+    };
+
+    // --- DOM 节点 ---
+    const fileListEl = document.getElementById("fileList");
+    const fileCountEl = document.getElementById("fileCount");
+    const courseSelectEl = document.getElementById("courseSelect");
+    const statSummaryEl = document.getElementById("statSummary");
+    const activeContextTextEl = document.getElementById("activeContextText");
+    const chatMessagesEl = document.getElementById("chatMessages");
+    const chatInputEl = document.getElementById("chatInput");
+    const sendBtn = document.getElementById("sendBtn");
+    const clearChatBtn = document.getElementById("clearChatBtn");
+    const digestMarkdownViewEl = document.getElementById("digestMarkdownView");
+    const digestRawViewEl = document.getElementById("digestRawView");
+    const digestEditorViewEl = document.getElementById("digestEditorView");
+    const digestEditTextareaEl = document.getElementById("digestEditTextarea");
+    const digestTocBarEl = document.getElementById("digestTocBar");
+    const digestTocPillsEl = document.getElementById("digestTocPills");
+    const digestScrollContainerEl = document.getElementById("digestScrollContainer");
+    const digestStatusBadgeEl = document.getElementById("digestStatusBadge");
+    const generateDigestBtn = document.getElementById("generateDigestBtn");
+    const toggleEditBtn = document.getElementById("toggleEditBtn");
+    const copyDigestBtn = document.getElementById("copyDigestBtn");
+    const cancelEditBtn = document.getElementById("cancelEditBtn");
+    const saveEditBtn = document.getElementById("saveEditBtn");
+    const activeFileNameFooterEl = document.getElementById("activeFileNameFooter");
+    const charCountFooterEl = document.getElementById("charCountFooter");
+    const digestProgressBarEl = document.getElementById("digestProgressBar");
+    const dropZone = document.getElementById("dropZone");
+    const fileInput = document.getElementById("fileInput");
+    const openSettingsBtn = document.getElementById("openSettingsBtn");
+    const closeSettingsBtn = document.getElementById("closeSettingsBtn");
+    const doneSettingsBtn = document.getElementById("doneSettingsBtn");
+    const resetSettingsBtn = document.getElementById("resetSettingsBtn");
+    const settingsModal = document.getElementById("settingsModal");
+    const fontSizeSlider = document.getElementById("fontSizeSlider");
+    const fontSizeDisplay = document.getElementById("fontSizeDisplay");
+    const refreshBtn = document.getElementById("refreshBtn");
+    const leftCol = document.getElementById("leftCol");
+    const rightCol = document.getElementById("rightCol");
+
+    // 导出/打印中心与选项卡 DOM 节点
+    const printExportBtn = document.getElementById("printExportBtn");
+    const printExportModal = document.getElementById("printExportModal");
+    const closePrintExportBtn = document.getElementById("closePrintExportBtn");
+    const cancelPrintExportBtn = document.getElementById("cancelPrintExportBtn");
+    const optPrintPdf = document.getElementById("optPrintPdf");
+    const optExportHtml = document.getElementById("optExportHtml");
+    const optExportAnki = document.getElementById("optExportAnki");
+    const optExportMarkdown = document.getElementById("optExportMarkdown");
+    const printCourseSpan = document.getElementById("printCourseSpan");
+    const printFileSpan = document.getElementById("printFileSpan");
+    const printDateSpan = document.getElementById("printDateSpan");
+
+    // 考纲研读 / 抽背闪卡选项卡与闪卡视图 DOM 节点
+    const tabPreviewBtn = document.getElementById("tabPreviewBtn");
+    const tabFlashcardsBtn = document.getElementById("tabFlashcardsBtn");
+    const flashcardCountBadge = document.getElementById("flashcardCountBadge");
+    const flashcardsViewEl = document.getElementById("flashcardsView");
+    const flashcardEmptyState = document.getElementById("flashcardEmptyState");
+    const flashcardFilterSelect = document.getElementById("flashcardFilterSelect");
+    const flashcardIndexDisplay = document.getElementById("flashcardIndexDisplay");
+    const flashcardMasteredCount = document.getElementById("flashcardMasteredCount");
+    const flashcardReviewCount = document.getElementById("flashcardReviewCount");
+    const resetFlashcardProgressBtn = document.getElementById("resetFlashcardProgressBtn");
+    const flashcardProgressBar = document.getElementById("flashcardProgressBar");
+    const flashcardScene = document.getElementById("flashcardScene");
+    const flashcardInner = document.getElementById("flashcardInner");
+    const cardCategoryBadge = document.getElementById("cardCategoryBadge");
+    const cardFrontContent = document.getElementById("cardFrontContent");
+    const cardBackContent = document.getElementById("cardBackContent");
+    const cardRateHardBtn = document.getElementById("cardRateHardBtn");
+    const cardRateGoodBtn = document.getElementById("cardRateGoodBtn");
+    const cardRateEasyBtn = document.getElementById("cardRateEasyBtn");
+    const prevCardBtn = document.getElementById("prevCardBtn");
+    const nextCardBtn = document.getElementById("nextCardBtn");
+    const flipCardBtn = document.getElementById("flipCardBtn");
+
+    // 课程分类与导入/移动/删除 DOM 节点
+    const addCourseBtn = document.getElementById("addCourseBtn");
+    const deleteCourseBtn = document.getElementById("deleteCourseBtn");
+    const deleteActiveFileBtn = document.getElementById("deleteActiveFileBtn");
+    const createCourseModal = document.getElementById("createCourseModal");
+    const closeCreateCourseBtn = document.getElementById("closeCreateCourseBtn");
+    const cancelCreateCourseBtn = document.getElementById("cancelCreateCourseBtn");
+    const confirmCreateCourseBtn = document.getElementById("confirmCreateCourseBtn");
+    const newCourseInput = document.getElementById("newCourseInput");
+
+    const uploadModal = document.getElementById("uploadModal");
+    const closeUploadModalBtn = document.getElementById("closeUploadModalBtn");
+    const cancelUploadModalBtn = document.getElementById("cancelUploadModalBtn");
+    const confirmUploadModalBtn = document.getElementById("confirmUploadModalBtn");
+    const uploadPendingCount = document.getElementById("uploadPendingCount");
+    const uploadPendingList = document.getElementById("uploadPendingList");
+    const uploadCourseSelect = document.getElementById("uploadCourseSelect");
+    const uploadNewCourseBox = document.getElementById("uploadNewCourseBox");
+    const uploadNewCourseInput = document.getElementById("uploadNewCourseInput");
+
+    const moveFileModal = document.getElementById("moveFileModal");
+    const closeMoveFileBtn = document.getElementById("closeMoveFileBtn");
+    const cancelMoveFileBtn = document.getElementById("cancelMoveFileBtn");
+    const confirmMoveFileBtn = document.getElementById("confirmMoveFileBtn");
+    const moveFileNameDisplay = document.getElementById("moveFileNameDisplay");
+    const moveCourseSelect = document.getElementById("moveCourseSelect");
+
+    // --- 初始化偏好与排版设置 (恢复 localStorage) ---
+    function initSettings() {
+      const savedTheme = localStorage.getItem("nl_theme") || "theme-slate";
+      const savedFontSize = parseInt(localStorage.getItem("nl_font_size")) || 18;
+      const savedLineHeight = parseFloat(localStorage.getItem("nl_line_height")) || 1.75;
+      const savedLayout = localStorage.getItem("nl_layout") || "balance";
+
+      applyTheme(savedTheme);
+      applyFontSize(savedFontSize);
+      applyLineHeight(savedLineHeight);
+      applyLayout(savedLayout);
+
+      // 设置模态框开关
+      if (openSettingsBtn && settingsModal) {
+        openSettingsBtn.addEventListener("click", () => {
+          settingsModal.classList.remove("hidden");
+        });
+      }
+
+      const closeSettings = () => {
+        if (settingsModal) settingsModal.classList.add("hidden");
+      };
+
+      if (closeSettingsBtn) closeSettingsBtn.addEventListener("click", closeSettings);
+      if (doneSettingsBtn) doneSettingsBtn.addEventListener("click", closeSettings);
+
+      // 点击背景遮罩关闭所有弹窗
+      [settingsModal, createCourseModal, uploadModal, moveFileModal].forEach(modal => {
+        if (modal) {
+          modal.addEventListener("click", (e) => {
+            if (e.target === modal) {
+              modal.classList.add("hidden");
+            }
+          });
+        }
+      });
+
+      // 全局快捷键与弹窗关闭监听
+      window.addEventListener("keydown", (e) => {
+        const activeTag = document.activeElement ? document.activeElement.tagName.toLowerCase() : "";
+        const isEditing = activeTag === "input" || activeTag === "textarea";
+
+        if (e.key === "Escape") {
+          if (settingsModal && !settingsModal.classList.contains("hidden")) settingsModal.classList.add("hidden");
+          if (createCourseModal && !createCourseModal.classList.contains("hidden")) createCourseModal.classList.add("hidden");
+          if (uploadModal && !uploadModal.classList.contains("hidden")) uploadModal.classList.add("hidden");
+          if (moveFileModal && !moveFileModal.classList.contains("hidden")) moveFileModal.classList.add("hidden");
+          if (printExportModal && !printExportModal.classList.contains("hidden")) printExportModal.classList.add("hidden");
+          return;
+        }
+
+        if (isEditing) return;
+
+        // Ctrl+P / Cmd+P 直接调起高保真打印
+        if ((e.ctrlKey || e.metaKey) && (e.key === "p" || e.key === "P")) {
+          e.preventDefault();
+          triggerPrint();
+          return;
+        }
+
+        // 闪卡背诵模式下的键盘操作
+        if (state.studioMode === "flashcards") {
+          if (e.code === "Space") {
+            e.preventDefault();
+            flipCard();
+          } else if (e.key === "ArrowLeft" || e.key === "h" || e.key === "H") {
+            e.preventDefault();
+            prevCard();
+          } else if (e.key === "ArrowRight" || e.key === "l" || e.key === "L") {
+            e.preventDefault();
+            nextCard();
+          } else if (e.key === "1") {
+            e.preventDefault();
+            rateCurrentCard("hard");
+          } else if (e.key === "2") {
+            e.preventDefault();
+            rateCurrentCard("good");
+          } else if (e.key === "3") {
+            e.preventDefault();
+            rateCurrentCard("easy");
+          }
+        }
+      });
+
+      // 恢复默认设置
+      if (resetSettingsBtn) {
+        resetSettingsBtn.addEventListener("click", () => {
+          applyTheme("theme-slate");
+          applyFontSize(18);
+          applyLineHeight(1.75);
+          applyLayout("balance");
+        });
+      }
+
+      // 字号按钮
+      document.querySelectorAll(".size-btn").forEach(btn => {
+        btn.addEventListener("click", () => {
+          applyFontSize(parseInt(btn.getAttribute("data-size")));
+        });
+      });
+
+      // 字号滑块
+      if (fontSizeSlider) {
+        fontSizeSlider.addEventListener("input", (e) => {
+          applyFontSize(parseInt(e.target.value));
+        });
+      }
+
+      // 行高按钮
+      document.querySelectorAll(".lh-btn").forEach(btn => {
+        btn.addEventListener("click", () => {
+          applyLineHeight(parseFloat(btn.getAttribute("data-lh")));
+        });
+      });
+
+      // 主题按钮
+      document.querySelectorAll(".theme-btn").forEach(btn => {
+        btn.addEventListener("click", () => {
+          applyTheme(btn.getAttribute("data-theme"));
+        });
+      });
+
+      // 布局按钮 (包括设置弹窗与顶栏快捷按钮)
+      document.querySelectorAll(".layout-btn, .layout-quick-btn").forEach(btn => {
+        btn.addEventListener("click", () => {
+          applyLayout(btn.getAttribute("data-layout"));
+        });
+      });
+    }
+
+    function applyTheme(themeName) {
+      state.theme = themeName;
+      document.body.className = `${themeName} h-screen flex flex-col overflow-hidden select-none`;
+      localStorage.setItem("nl_theme", themeName);
+      document.querySelectorAll(".theme-btn").forEach(btn => {
+        const active = btn.getAttribute("data-theme") === themeName;
+        btn.style.borderColor = active ? "var(--accent)" : "var(--border-subtle)";
+        btn.style.backgroundColor = active ? "var(--accent-bg)" : "var(--bg-card)";
+        btn.style.color = active ? "var(--accent)" : "var(--text-secondary)";
+        btn.style.fontWeight = active ? "600" : "normal";
+      });
+    }
+
+    function applyFontSize(size) {
+      state.fontSize = size;
+      document.documentElement.style.setProperty("--app-font-size", `${size}px`);
+      if (fontSizeSlider) fontSizeSlider.value = size;
+      if (fontSizeDisplay) fontSizeDisplay.textContent = `${size}px`;
+      localStorage.setItem("nl_font_size", size);
+      document.querySelectorAll(".size-btn").forEach(btn => {
+        const active = parseInt(btn.getAttribute("data-size")) === size;
+        btn.style.borderColor = active ? "var(--accent)" : "var(--border-subtle)";
+        btn.style.backgroundColor = active ? "var(--accent-bg)" : "var(--bg-card)";
+        btn.style.color = active ? "var(--accent)" : "var(--text-secondary)";
+        btn.style.fontWeight = active ? "600" : "normal";
+      });
+    }
+
+    function applyLineHeight(lh) {
+      state.lineHeight = lh;
+      document.documentElement.style.setProperty("--app-line-height", `${lh}`);
+      localStorage.setItem("nl_line_height", lh);
+      document.querySelectorAll(".lh-btn").forEach(btn => {
+        const active = parseFloat(btn.getAttribute("data-lh")) === lh;
+        btn.style.borderColor = active ? "var(--accent)" : "var(--border-subtle)";
+        btn.style.backgroundColor = active ? "var(--accent-bg)" : "var(--bg-card)";
+        btn.style.color = active ? "var(--accent)" : "var(--text-secondary)";
+        btn.style.fontWeight = active ? "600" : "normal";
+      });
+    }
+
+    function applyLayout(layout) {
+      state.layout = layout;
+      localStorage.setItem("nl_layout", layout);
+      if (layout === "guide") {
+        document.documentElement.style.setProperty("--col-left-width", "240px");
+        document.documentElement.style.setProperty("--col-right-width", "640px");
+      } else if (layout === "chat") {
+        document.documentElement.style.setProperty("--col-left-width", "250px");
+        document.documentElement.style.setProperty("--col-right-width", "420px");
+      } else {
+        // balance 均衡 (给右栏 560px 充裕空间展示公式表格与动作按钮)
+        document.documentElement.style.setProperty("--col-left-width", "260px");
+        document.documentElement.style.setProperty("--col-right-width", "560px");
+      }
+      document.querySelectorAll(".layout-btn").forEach(btn => {
+        const active = btn.getAttribute("data-layout") === layout;
+        btn.style.borderColor = active ? "var(--accent)" : "var(--border-subtle)";
+        btn.style.backgroundColor = active ? "var(--accent-bg)" : "var(--bg-card)";
+        btn.style.color = active ? "var(--accent)" : "var(--text-secondary)";
+        btn.style.fontWeight = active ? "600" : "normal";
+      });
+      document.querySelectorAll(".layout-quick-btn").forEach(btn => {
+        const active = btn.getAttribute("data-layout") === layout;
+        btn.style.backgroundColor = active ? "var(--accent-bg)" : "transparent";
+        btn.style.color = active ? "var(--accent)" : "var(--text-secondary)";
+        btn.style.fontWeight = active ? "600" : "500";
+      });
+    }
+
+    // --- 数据加载与渲染 ---
+    async function loadStats() {
+      try {
+        const res = await fetch("/api/stats");
+        const data = await res.json();
+        const fCount = data.file_count ?? data.files_count ?? 0;
+        const cChunk = data.chunk_count ?? data.chunks_count ?? 0;
+        const cList = data.courses || [];
+        state.courses = cList;
+        statSummaryEl.textContent = `课件 ${fCount} 份 · 切片 ${cChunk} 段 · 课程 ${cList.length} 门`;
+        
+        renderCourseSelects();
+      } catch (err) {
+        console.error("加载统计数据失败:", err);
+      }
+    }
+
+    function renderCourseSelects() {
+      const cList = state.courses || [];
+      const currentVal = state.currentCourse || courseSelectEl.value || "__ALL__";
+
+      // 1. 侧边栏课程筛选下拉框
+      courseSelectEl.innerHTML = `
+        <option value="__ALL__">📂 全部课程课件</option>
+        <option value="__GLOBAL__">🌐 全局公共资料库</option>
+      `;
+      cList.forEach(c => {
+        const courseName = typeof c === "string" ? c : (c.name || "");
+        const countStr = typeof c === "object" && c.files_count !== undefined ? ` (${c.files_count}份)` : "";
+        const opt = document.createElement("option");
+        opt.value = courseName;
+        opt.textContent = `📚 ${courseName}${countStr}`;
+        courseSelectEl.appendChild(opt);
+      });
+      const exists = Array.from(courseSelectEl.options).some(o => o.value === currentVal);
+      courseSelectEl.value = exists ? currentVal : "__ALL__";
+      state.currentCourse = courseSelectEl.value;
+      updateDeleteCourseBtnVisibility();
+
+      // 2. 上传弹窗归属课程选择框
+      if (uploadCourseSelect) {
+        uploadCourseSelect.innerHTML = `
+          <option value="__GLOBAL__">🌐 全局公共资料库</option>
+        `;
+        cList.forEach(c => {
+          const courseName = typeof c === "string" ? c : (c.name || "");
+          const opt = document.createElement("option");
+          opt.value = courseName;
+          opt.textContent = `📚 ${courseName}`;
+          uploadCourseSelect.appendChild(opt);
+        });
+        const optNew = document.createElement("option");
+        optNew.value = "__NEW__";
+        optNew.textContent = "➕ 新建自定义课程...";
+        uploadCourseSelect.appendChild(optNew);
+      }
+
+      // 3. 移动归属课程选择框
+      if (moveCourseSelect) {
+        moveCourseSelect.innerHTML = `
+          <option value="__GLOBAL__">🌐 全局公共资料库</option>
+        `;
+        cList.forEach(c => {
+          const courseName = typeof c === "string" ? c : (c.name || "");
+          const opt = document.createElement("option");
+          opt.value = courseName;
+          opt.textContent = `📚 ${courseName}`;
+          moveCourseSelect.appendChild(opt);
+        });
+      }
+    }
+
+    async function loadFiles() {
+      try {
+        const url = `/api/files?course=${encodeURIComponent(state.currentCourse)}`;
+        const res = await fetch(url);
+        state.files = await res.json();
+        renderFileList();
+
+        // 检查是否有指定选中的文件参数
+        if (state.targetFileParam) {
+          const target = state.files.find(f => f.filename === state.targetFileParam);
+          if (target) {
+            await selectFile(target);
+            if (state.targetTabParam === "flashcards") {
+              switchStudioMode("flashcards");
+            }
+          }
+          state.targetFileParam = null;
+          state.targetTabParam = null;
+        }
+      } catch (err) {
+        console.error("加载课件列表失败:", err);
+      }
+    }
+
+    function renderFileList() {
+      fileCountEl.textContent = state.files.length;
+      fileListEl.innerHTML = "";
+
+      if (state.files.length === 0) {
+        fileListEl.innerHTML = `
+          <div class="text-center py-8 text-xs" style="color: var(--text-muted);">
+            暂无此课程的课件文件<br>请在上方点击或拖拽上传
+          </div>
+        `;
+        return;
+      }
+
+      state.files.forEach(f => {
+        const isSelected = state.activeFile && state.activeFile.filename === f.filename;
+        const card = document.createElement("div");
+        card.className = "p-2.5 rounded-xl border cursor-pointer transition-all duration-150 flex flex-col space-y-1 relative group";
+        
+        card.style.backgroundColor = isSelected ? "var(--accent-bg)" : "var(--bg-card)";
+        card.style.borderColor = isSelected ? "var(--accent-border)" : "var(--border-subtle)";
+
+        // 图标推断
+        const ext = f.filename.split('.').pop().toUpperCase();
+        let icon = "📄";
+        if (["PPT", "PPTX"].includes(ext)) icon = "📊";
+        else if (ext === "PDF") icon = "📕";
+        else if (["DOC", "DOCX"].includes(ext)) icon = "📘";
+
+        card.innerHTML = `
+          <div class="flex items-start justify-between">
+            <div class="flex items-center space-x-2 truncate">
+              <span class="text-sm shrink-0">${icon}</span>
+              <span class="text-xs font-medium truncate" style="color: var(--text-primary);">${f.filename}</span>
+            </div>
+            <button class="delete-btn opacity-60 hover:opacity-100 text-xs px-1.5 py-0.5 rounded hover:bg-red-500/20 hover:text-red-400 transition-all shrink-0" title="从知识库移除此课件">
+              🗑️
+            </button>
+          </div>
+          <div class="flex items-center justify-between text-[11px] pt-1" style="color: var(--text-muted);">
+            <div class="flex items-center space-x-1.5 truncate">
+              <button class="course-badge text-[10px] px-1.5 py-0.5 rounded border transition-colors hover:opacity-80 flex items-center space-x-0.5 truncate"
+                      style="background-color: var(--accent-bg); color: var(--accent); border-color: var(--accent-border);"
+                      title="点击调整归属课程">
+                <span>🏷️</span>
+                <span class="truncate max-w-[85px]">${f.course || '全局公共'}</span>
+                <span class="text-[9px]">▾</span>
+              </button>
+              <span>${f.size_str || ""}</span>
+            </div>
+            ${f.has_digest ? 
+              `<span class="px-1.5 py-0.5 rounded text-[10px] font-semibold shrink-0" style="background-color: var(--badge-success-bg); color: var(--badge-success-text);">⚡考纲已提炼</span>` : 
+              `<span class="text-[10px] shrink-0" style="color: var(--text-muted);">待提炼</span>`
+            }
+          </div>
+        `;
+
+        // 点击修改所属课程标签
+        const cBadge = card.querySelector(".course-badge");
+        if (cBadge) {
+          cBadge.addEventListener("click", (e) => {
+            e.stopPropagation();
+            openMoveFileModal(f);
+          });
+        }
+
+        // 点击选择此文件
+        card.addEventListener("click", (e) => {
+          if (e.target.classList.contains("delete-btn") || e.target.closest(".course-badge")) return;
+          selectFile(f);
+        });
+
+        // 删除按钮
+        card.querySelector(".delete-btn").addEventListener("click", async (e) => {
+          e.stopPropagation();
+          if (confirm(`确定要从知识库中移除课件《${f.filename}》吗？`)) {
+            await deleteFile(f);
+          }
+        });
+
+        fileListEl.appendChild(card);
+      });
+    }
+
+    async function selectFile(file) {
+      state.activeFile = file;
+      renderFileList();
+      activeContextTextEl.textContent = `《${file.filename}》` + (file.course ? ` (${file.course})` : "");
+      activeFileNameFooterEl.textContent = file.filename;
+      digestStatusBadgeEl.textContent = file.has_digest ? "⚡ 考纲已就绪" : "待提炼";
+      digestStatusBadgeEl.style.color = file.has_digest ? "var(--badge-success-text)" : "var(--text-muted)";
+      if (deleteActiveFileBtn) deleteActiveFileBtn.classList.remove("hidden");
+      updatePrintHeader();
+
+      // 加载考纲
+      await loadDigest(file.filename, file.course);
+    }
+
+    async function loadDigest(filename, course) {
+      digestMarkdownViewEl.innerHTML = `<div class="text-center py-12 text-xs" style="color: var(--text-secondary);">正在载入核心考纲...</div>`;
+      try {
+        const res = await fetch(`/api/digest?filename=${encodeURIComponent(filename)}&course=${encodeURIComponent(course || "")}`);
+        const data = await res.json();
+        state.activeDigest = data.content || "";
+        renderDigestContent();
+      } catch (err) {
+        digestMarkdownViewEl.innerHTML = `<div class="text-red-400 text-xs">载入考纲失败: ${err}</div>`;
+      }
+    }
+
+    function renderMarkdownWithMath(rawText) {
+      if (!rawText) return "";
+
+      // 1. 优先提取并保护 LaTeX 数学公式块与行内公式（防止 marked.js 误将 _ 解析为斜体或吞掉转义符）
+      const mathTokens = [];
+      let tokenCounter = 0;
+
+      // 匹配 $$...$$ 独立行/块级大公式
+      let processed = rawText.replace(/\$\$([\s\S]+?)\$\$/g, (match, math) => {
+        const id = `@@MATH_BLOCK_${tokenCounter++}@@`;
+        mathTokens.push({ id, math: math.trim(), display: true });
+        return id;
+      });
+
+      // 匹配 \[...\] 块级公式
+      processed = processed.replace(/\\\[([\s\S]+?)\\\]/g, (match, math) => {
+        const id = `@@MATH_BLOCK_${tokenCounter++}@@`;
+        mathTokens.push({ id, math: math.trim(), display: true });
+        return id;
+      });
+
+      // 匹配 \(...\) 行内公式
+      processed = processed.replace(/\\\(([\s\S]+?)\\\)/g, (match, math) => {
+        const id = `@@MATH_INLINE_${tokenCounter++}@@`;
+        mathTokens.push({ id, math: math.trim(), display: false });
+        return id;
+      });
+
+      // 匹配 $...$ 行内公式（排除转义 \$ 以及纯数字/价格如 $100）
+      processed = processed.replace(/(?<!\\)\$([^\$\n]+?)(?<!\\)\$/g, (match, math) => {
+        if (/^\s*\d+([.,]\d+)?\s*$/.test(math)) {
+          return match;
+        }
+        const id = `@@MATH_INLINE_${tokenCounter++}@@`;
+        mathTokens.push({ id, math: math.trim(), display: false });
+        return id;
+      });
+
+      // 2. 执行 Markdown 核心解析（代码块、列表、表格、标题等）
+      let html = "";
+      if (window.marked) {
+        if (typeof window.marked.setOptions === "function") {
+          window.marked.setOptions({ gfm: true, breaks: true });
+        }
+        html = typeof window.marked.parse === "function" ? window.marked.parse(processed) : window.marked(processed);
+      } else {
+        html = processed.replace(/\n/g, "<br>");
+      }
+
+      // 3. 将公式占位符渲染替换为 KaTeX 高清矢量公式
+      mathTokens.forEach(({ id, math, display }) => {
+        let renderedMath = "";
+        if (window.katex && typeof window.katex.renderToString === "function") {
+          try {
+            renderedMath = window.katex.renderToString(math, {
+              displayMode: display,
+              throwOnError: false
+            });
+          } catch (e) {
+            renderedMath = `<code class="katex-fallback">${display ? '$$ ' + math + ' $$' : '$' + math + '$'}</code>`;
+          }
+        } else {
+          renderedMath = `<code class="katex-fallback">${display ? '$$ ' + math + ' $$' : '$' + math + '$'}</code>`;
+        }
+
+        if (display) {
+          renderedMath = `<div class="katex-display-container my-3 overflow-x-auto text-center">${renderedMath}</div>`;
+        }
+        html = html.replace(new RegExp(id, "g"), renderedMath);
+      });
+
+      // 4. 为表格自动包裹横向滚动容器，防止大表格撑破三栏布局
+      html = html.replace(/<table>/g, '<div class="table-container"><table>').replace(/<\/table>/g, '</table></div>');
+
+      return html;
+    }
+    window.renderMarkdownWithMath = renderMarkdownWithMath;
+
+    function renderDigestContent() {
+      const content = state.activeDigest ? state.activeDigest.trim() : "";
+      charCountFooterEl.textContent = `${content.length} 字`;
+      
+      if (!content) {
+        state.flashcards = [];
+        state.currentCardIndex = 0;
+        if (flashcardCountBadge) {
+          flashcardCountBadge.textContent = "0";
+          flashcardCountBadge.classList.add("hidden");
+        }
+        digestTocBarEl.classList.add("hidden");
+        digestMarkdownViewEl.innerHTML = `
+          <div class="text-center py-16" style="color: var(--text-muted);">
+            <div class="text-3xl mb-2">⚡</div>
+            <div class="text-sm font-semibold mb-1" style="color: var(--text-primary);">该课件尚未提炼核心考纲</div>
+            <div class="text-xs mb-4">点击上方「⚡ 提炼考纲」按钮，由 AI 深度提炼结构化重点与期末考题预测</div>
+            <button id="quickGenBtn" class="px-4 py-2 rounded-lg text-xs font-semibold shadow-sm transition-opacity hover:opacity-90"
+                    style="background-color: var(--accent); color: var(--bg-app);">
+              ⚡ 立即提炼核心考纲
+            </button>
+          </div>
+        `;
+        const qBtn = document.getElementById("quickGenBtn");
+        if (qBtn) qBtn.addEventListener("click", generateDigest);
+        renderFlashcardUI();
+        return;
+      }
+
+      // 提取抽背闪卡
+      state.flashcards = extractFlashcardsFromMarkdown(content);
+      state.currentCardIndex = 0;
+      if (flashcardCountBadge) {
+        flashcardCountBadge.textContent = state.flashcards.length;
+        flashcardCountBadge.classList.toggle("hidden", state.flashcards.length === 0);
+      }
+
+      // 1. Markdown 解析与高保真 LaTeX 公式渲染
+      digestMarkdownViewEl.innerHTML = renderMarkdownWithMath(content);
+
+      // 2. 动态扫描 H2 标签生成大纲直达导航 (TOC)
+      const h2Elements = digestMarkdownViewEl.querySelectorAll("h2");
+      if (h2Elements.length > 0) {
+        digestTocPillsEl.innerHTML = "";
+        h2Elements.forEach((h2, idx) => {
+          const id = `digest-sec-${idx}`;
+          h2.id = id;
+          const titleText = h2.textContent.trim();
+
+          const pill = document.createElement("button");
+          pill.className = "px-2.5 py-1 rounded-full text-[11px] font-medium transition-colors border hover:opacity-90 shrink-0";
+          pill.style.backgroundColor = "var(--bg-card)";
+          pill.style.borderColor = "var(--border-subtle)";
+          pill.style.color = "var(--text-secondary)";
+          pill.textContent = titleText;
+
+          pill.addEventListener("click", () => {
+            h2.scrollIntoView({ behavior: "smooth", block: "start" });
+            document.querySelectorAll("#digestTocPills button").forEach(b => {
+              b.style.backgroundColor = "var(--bg-card)";
+              b.style.color = "var(--text-secondary)";
+            });
+            pill.style.backgroundColor = "var(--accent-bg)";
+            pill.style.color = "var(--accent)";
+          });
+
+          digestTocPillsEl.appendChild(pill);
+        });
+        digestTocBarEl.classList.remove("hidden");
+      } else {
+        digestTocBarEl.classList.add("hidden");
+      }
+
+      // 3. 同步源码视图与编辑视图内容
+      digestRawViewEl.textContent = content;
+      digestEditTextareaEl.value = content;
+
+      // 4. 同步抽背闪卡
+      renderFlashcardUI();
+
+      // 保持当前选中的视图模式
+      switchStudioMode(state.studioMode || "preview");
+    }
+
+    // --- 考纲视图模式切换 (预览 / 闪卡 / 编辑) ---
+    function switchStudioMode(mode) {
+      state.studioMode = mode;
+      const isPreview = mode === "preview";
+      const isFlashcards = mode === "flashcards";
+      const isEdit = mode === "edit";
+
+      digestMarkdownViewEl.classList.toggle("hidden", !isPreview);
+      digestTocBarEl.classList.toggle("hidden", !isPreview || !state.activeDigest);
+      digestEditorViewEl.classList.toggle("hidden", !isEdit);
+      if (flashcardsViewEl) flashcardsViewEl.classList.toggle("hidden", !isFlashcards);
+
+      if (tabPreviewBtn) {
+        if (isPreview) {
+          tabPreviewBtn.style.backgroundColor = "var(--accent-bg)";
+          tabPreviewBtn.style.color = "var(--accent)";
+          tabPreviewBtn.style.borderColor = "var(--accent-border)";
+        } else {
+          tabPreviewBtn.style.backgroundColor = "transparent";
+          tabPreviewBtn.style.color = "var(--text-secondary)";
+          tabPreviewBtn.style.borderColor = "transparent";
+        }
+      }
+
+      if (tabFlashcardsBtn) {
+        if (isFlashcards) {
+          tabFlashcardsBtn.style.backgroundColor = "var(--accent-bg)";
+          tabFlashcardsBtn.style.color = "var(--accent)";
+          tabFlashcardsBtn.style.borderColor = "var(--accent-border)";
+          renderFlashcardUI();
+        } else {
+          tabFlashcardsBtn.style.backgroundColor = "transparent";
+          tabFlashcardsBtn.style.color = "var(--text-secondary)";
+          tabFlashcardsBtn.style.borderColor = "transparent";
+        }
+      }
+
+      if (toggleEditBtn) {
+        if (isEdit) {
+          toggleEditBtn.textContent = "👁️";
+          toggleEditBtn.title = "切换回排版预览视图";
+          toggleEditBtn.style.backgroundColor = "var(--accent-bg)";
+          toggleEditBtn.style.borderColor = "var(--accent-border)";
+          toggleEditBtn.style.color = "var(--accent)";
+        } else {
+          toggleEditBtn.textContent = "✏️";
+          toggleEditBtn.title = "编辑考纲 Markdown 源码";
+          toggleEditBtn.style.backgroundColor = "var(--bg-card)";
+          toggleEditBtn.style.borderColor = "var(--border-subtle)";
+          toggleEditBtn.style.color = "var(--text-secondary)";
+        }
+      }
+
+      if (isEdit) {
+        digestEditTextareaEl.value = state.activeDigest || "";
+        digestEditTextareaEl.focus();
+      }
+    }
+
+    if (tabPreviewBtn) {
+      tabPreviewBtn.addEventListener("click", () => {
+        switchStudioMode("preview");
+      });
+    }
+
+    if (tabFlashcardsBtn) {
+      tabFlashcardsBtn.addEventListener("click", () => {
+        if (!state.activeDigest) {
+          alert("请先选定课件并提炼考纲后，方可开启抽背闪卡复习！");
+          return;
+        }
+        switchStudioMode("flashcards");
+      });
+    }
+
+    // --- 抽背闪卡抽取与交互逻辑 ---
+    function extractFlashcardsFromMarkdown(md) {
+      if (!md) return [];
+      const cards = [];
+
+      // 按 ## 顶级大纲板块切分
+      const sections = md.split(/\n(?=##\s+)/);
+
+      for (const sec of sections) {
+        const trimmed = sec.trim();
+        if (!trimmed.startsWith("##")) continue;
+        const firstLine = trimmed.split("\n")[0];
+
+        // 4. 对比避坑板块 (优先匹配，避免被"概念"关键字抢占)
+        if (/[四4][、\.\s]|易混|对比|避坑/.test(firstLine)) {
+          const tableLines = trimmed.split("\n").filter(l => l.trim().startsWith("|"));
+          if (tableLines.length >= 3) {
+            for (let i = 2; i < tableLines.length; i++) {
+              const cols = tableLines[i].split("|").map(c => c.trim()).filter((c, idx, arr) => idx > 0 && idx < arr.length - 1);
+              if (cols.length >= 3) {
+                const dim = cols[0] || "对比维度";
+                const a = cols[1] || "概念A";
+                const b = cols[2] || "概念B";
+                const pitfalls = cols[3] || "";
+                cards.push({
+                  id: `card-ct-${cards.length}`,
+                  category: "contrast",
+                  categoryName: "⚖️ 易混对比",
+                  front: `### 易混辨析：${a} VS ${b}\n\n两者在「${dim}」上的本质差异是什么？考试中容易出现哪些扣分误区？`,
+                  back: `### ${a} VS ${b}（维度：${dim}）\n\n- **${a}**：${cols[1]}\n- **${b}**：${cols[2]}\n- **⚠️ 避坑技巧**：${pitfalls}`,
+                  status: "unseen"
+                });
+              }
+            }
+          } else {
+            const subParts = trimmed.split(/\n(?=###\s+)/).slice(1);
+            for (const part of subParts) {
+              const lines = part.trim().split("\n");
+              const titleLine = lines[0].replace(/^###\s+/, "").replace(/^\d+(\.\d+)*\s*/, "").trim();
+              const body = lines.slice(1).join("\n").trim();
+              if (titleLine && body) {
+                cards.push({
+                  id: `card-ct-${cards.length}`,
+                  category: "contrast",
+                  categoryName: "⚖️ 易混对比",
+                  front: `### ${titleLine}\n\n请说明两者的本质差异与常见误区？`,
+                  back: `### ${titleLine}\n\n${body}`,
+                  status: "unseen"
+                });
+              }
+            }
+          }
+        }
+        // 1. 核心概念与关键术语板块
+        else if (/[一1][、\.\s]|概念|术语/.test(firstLine)) {
+          const subParts = trimmed.split(/\n(?=###\s+)/).slice(1);
+          for (const part of subParts) {
+            const lines = part.trim().split("\n");
+            const titleLine = lines[0].replace(/^###\s+/, "").replace(/^\d+(\.\d+)*\s*/, "").trim();
+            const body = lines.slice(1).join("\n").trim();
+            if (titleLine && body) {
+              cards.push({
+                id: `card-c-${cards.length}`,
+                category: "concept",
+                categoryName: "📌 核心概念",
+                front: `### ${titleLine}\n\n请阐明该核心概念的严格定义、核心机制与考查重点？`,
+                back: `### ${titleLine}\n\n${body}`,
+                status: "unseen"
+              });
+            }
+          }
+        }
+        // 2. 核心公式与理论推导板块
+        else if (/[二2][、\.\s]|公式|定理|推导/.test(firstLine)) {
+          const tableLines = trimmed.split("\n").filter(l => l.trim().startsWith("|"));
+          if (tableLines.length >= 3) {
+            for (let i = 2; i < tableLines.length; i++) {
+              const cols = tableLines[i].split("|").map(c => c.trim()).filter((c, idx, arr) => idx > 0 && idx < arr.length - 1);
+              if (cols.length >= 2) {
+                const name = cols[0] || "核心公式";
+                const formula = cols[1] || "";
+                const meaning = cols[2] || "";
+                const conditions = cols[3] || "";
+                let back = `### ${name}\n\n`;
+                if (formula) {
+                  const formatted = (formula.startsWith("$") && formula.endsWith("$")) ? formula : `$$ ${formula} $$`;
+                  back += `${formatted}\n\n`;
+                }
+                if (meaning) back += `- **计算意义/物理含义**：${meaning}\n`;
+                if (conditions) back += `- **边界条件与适用前提**：${conditions}\n`;
+
+                cards.push({
+                  id: `card-f-${cards.length}`,
+                  category: "formula",
+                  categoryName: "📐 核心公式",
+                  front: `### ${name}\n\n请默写该定理/公式的 LaTeX 表达式，并阐述其计算含义与适用边界条件？`,
+                  back: back.trim(),
+                  status: "unseen"
+                });
+              }
+            }
+          } else {
+            const subParts = trimmed.split(/\n(?=###\s+)/).slice(1);
+            for (const part of subParts) {
+              const lines = part.trim().split("\n");
+              const titleLine = lines[0].replace(/^###\s+/, "").replace(/^\d+(\.\d+)*\s*/, "").trim();
+              const body = lines.slice(1).join("\n").trim();
+              if (titleLine && body) {
+                cards.push({
+                  id: `card-f-${cards.length}`,
+                  category: "formula",
+                  categoryName: "📐 核心公式",
+                  front: `### ${titleLine}\n\n请写出该核心公式的表达式、推导要点与适用前提？`,
+                  back: `### ${titleLine}\n\n${body}`,
+                  status: "unseen"
+                });
+              }
+            }
+          }
+        }
+        // 3. 命题预测与高频考点板块
+        else if (/[三3][、\.\s]|考点|预测|题型/.test(firstLine)) {
+          const subParts = trimmed.split(/\n(?=###\s+)/).slice(1);
+          for (const part of subParts) {
+            const lines = part.trim().split("\n");
+            const titleLine = lines[0].replace(/^###\s+/, "").replace(/^\d+(\.\d+)*\s*/, "").trim();
+            const body = lines.slice(1).join("\n").trim();
+            if (titleLine && body) {
+              cards.push({
+                id: `card-e-${cards.length}`,
+                category: "exam",
+                categoryName: "🎯 考点预测",
+                front: `### ${titleLine}\n\n针对该高频题型/考点，期末解题核心思路 (Step-by-Step) 与标准得分要点是什么？`,
+                back: `### ${titleLine}\n\n${body}`,
+                status: "unseen"
+              });
+            }
+          }
+        }
+        // 5. 考前自测板块
+        else if (/[五5][、\.\s]|自测|真题|冲刺/.test(firstLine)) {
+          const subParts = trimmed.split(/\n(?=###\s+)/).slice(1);
+          for (const part of subParts) {
+            const lines = part.trim().split("\n");
+            const titleLine = lines[0].replace(/^###\s+/, "").replace(/^\d+(\.\d+)*\s*/, "").trim();
+            const body = lines.slice(1).join("\n").trim();
+            if (titleLine && body) {
+              let frontContent = `### ${titleLine}\n\n`;
+              let backContent = `### ${titleLine} [标准答案]\n\n`;
+              const qMatch = body.match(/-\s*\*\*题干\*\*[:：]\s*([\s\S]*?)(?=(?:-\s*\*\*标准答案\*\*)|$)/);
+              const aMatch = body.match(/-\s*\*\*标准答案\*\*[:：]\s*([\s\S]*?)(?=(?:-\s*\*\*名师避坑技巧\*\*)|$)/);
+              const tipMatch = body.match(/-\s*\*\*名师避坑技巧\*\*[:：]\s*([\s\S]*?)$/);
+
+              if (qMatch) {
+                frontContent += qMatch[1].trim();
+                if (aMatch) backContent += `**标准解答**：\n${aMatch[1].trim()}\n\n`;
+                if (tipMatch) backContent += `**名师避坑技巧**：\n${tipMatch[1].trim()}`;
+              } else {
+                frontContent += `请独立思考并作答本道自测试题，检验综合掌握程度。`;
+                backContent = body;
+              }
+
+              cards.push({
+                id: `card-q-${cards.length}`,
+                category: "quiz",
+                categoryName: "❓ 期末自测",
+                front: frontContent,
+                back: backContent,
+                status: "unseen"
+              });
+            }
+          }
+        }
+      }
+
+      // 兜底机制：若未按规范分块，提取所有 ###
+      if (cards.length === 0) {
+        const subParts = md.split(/\n(?=###\s+)/).slice(1);
+        for (const part of subParts) {
+          const lines = part.trim().split("\n");
+          const titleLine = lines[0].replace(/^###\s+/, "").trim();
+          const body = lines.slice(1).join("\n").trim();
+          if (titleLine && body) {
+            cards.push({
+              id: `card-g-${cards.length}`,
+              category: "concept",
+              categoryName: "📌 核心考点",
+              front: `### ${titleLine}\n\n请阐明该考点的核心内容与应对方法？`,
+              back: `### ${titleLine}\n\n${body}`,
+              status: "unseen"
+            });
+          }
+        }
+      }
+
+      return cards;
+    }
+
+    function getFilteredCards() {
+      if (state.cardFilter === "all") return state.flashcards;
+      return state.flashcards.filter(c => c.category === state.cardFilter);
+    }
+
+    function renderFlashcardUI() {
+      const filtered = getFilteredCards();
+      const total = filtered.length;
+
+      if (total === 0) {
+        if (flashcardEmptyState) flashcardEmptyState.classList.remove("hidden");
+        if (flashcardScene) flashcardScene.classList.add("hidden");
+        if (flashcardIndexDisplay) flashcardIndexDisplay.textContent = "0 / 0";
+        if (flashcardProgressBar) flashcardProgressBar.style.width = "0%";
+        return;
+      }
+
+      if (flashcardEmptyState) flashcardEmptyState.classList.add("hidden");
+      if (flashcardScene) flashcardScene.classList.remove("hidden");
+
+      if (state.currentCardIndex >= total) state.currentCardIndex = 0;
+      if (state.currentCardIndex < 0) state.currentCardIndex = total - 1;
+
+      const card = filtered[state.currentCardIndex];
+      state.isFlipped = false;
+      if (flashcardInner) flashcardInner.classList.remove("is-flipped");
+
+      // 分类徽章
+      if (cardCategoryBadge) cardCategoryBadge.textContent = card.categoryName || "📌 核心考点";
+
+      // 序号与进度条
+      if (flashcardIndexDisplay) flashcardIndexDisplay.textContent = `${state.currentCardIndex + 1} / ${total}`;
+      const progressPercent = Math.round(((state.currentCardIndex + 1) / total) * 100);
+      if (flashcardProgressBar) flashcardProgressBar.style.width = `${progressPercent}%`;
+
+      // 正面与背面渲染（含 LaTeX 数学公式）
+      if (cardFrontContent) cardFrontContent.innerHTML = renderMarkdownWithMath(card.front);
+      if (cardBackContent) cardBackContent.innerHTML = renderMarkdownWithMath(card.back);
+
+      // 掌握度统计
+      const masteredCount = state.flashcards.filter(c => c.status === "mastered").length;
+      const reviewCount = state.flashcards.filter(c => c.status === "review").length;
+      if (flashcardMasteredCount) flashcardMasteredCount.textContent = masteredCount;
+      if (flashcardReviewCount) flashcardReviewCount.textContent = reviewCount;
+    }
+
+    function flipCard() {
+      state.isFlipped = !state.isFlipped;
+      if (flashcardInner) {
+        flashcardInner.classList.toggle("is-flipped", state.isFlipped);
+      }
+    }
+
+    function nextCard() {
+      const filtered = getFilteredCards();
+      if (filtered.length === 0) return;
+      state.currentCardIndex = (state.currentCardIndex + 1) % filtered.length;
+      renderFlashcardUI();
+    }
+
+    function prevCard() {
+      const filtered = getFilteredCards();
+      if (filtered.length === 0) return;
+      state.currentCardIndex = (state.currentCardIndex - 1 + filtered.length) % filtered.length;
+      renderFlashcardUI();
+    }
+
+    function rateCurrentCard(rating) {
+      const filtered = getFilteredCards();
+      if (filtered.length === 0) return;
+      const card = filtered[state.currentCardIndex];
+      if (!card) return;
+
+      if (rating === "easy") {
+        card.status = "mastered";
+      } else if (rating === "hard") {
+        card.status = "review";
+      } else {
+        card.status = "review";
+      }
+
+      nextCard();
+    }
+
+    // 绑定闪卡交互事件
+    if (flashcardScene) {
+      flashcardScene.addEventListener("click", flipCard);
+    }
+    if (flipCardBtn) {
+      flipCardBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        flipCard();
+      });
+    }
+    if (prevCardBtn) {
+      prevCardBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        prevCard();
+      });
+    }
+    if (nextCardBtn) {
+      nextCardBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        nextCard();
+      });
+    }
+    if (cardRateHardBtn) {
+      cardRateHardBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        rateCurrentCard("hard");
+      });
+    }
+    if (cardRateGoodBtn) {
+      cardRateGoodBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        rateCurrentCard("good");
+      });
+    }
+    if (cardRateEasyBtn) {
+      cardRateEasyBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        rateCurrentCard("easy");
+      });
+    }
+    if (flashcardFilterSelect) {
+      flashcardFilterSelect.addEventListener("change", (e) => {
+        state.cardFilter = e.target.value;
+        state.currentCardIndex = 0;
+        renderFlashcardUI();
+      });
+    }
+    if (resetFlashcardProgressBtn) {
+      resetFlashcardProgressBtn.addEventListener("click", () => {
+        state.flashcards.forEach(c => c.status = "unseen");
+        state.currentCardIndex = 0;
+        renderFlashcardUI();
+      });
+    }
+
+    // --- 导出与打印中心逻辑 ---
+    function openPrintExportModal() {
+      if (!state.activeDigest) {
+        alert("请先选定课件并提炼考纲后，再进行导出或打印！");
+        return;
+      }
+      if (printExportModal) printExportModal.classList.remove("hidden");
+    }
+
+    function closePrintExportModal() {
+      if (printExportModal) printExportModal.classList.add("hidden");
+    }
+
+    function updatePrintHeader() {
+      const courseText = (state.activeFile && state.activeFile.course) ? state.activeFile.course : (state.currentCourse !== "__ALL__" ? state.currentCourse : "全局公共资料库");
+      const fileText = state.activeFile ? state.activeFile.filename : "未命名课件";
+      const dateText = new Date().toLocaleDateString("zh-CN", { year: "numeric", month: "2-digit", day: "2-digit" });
+
+      if (printCourseSpan) printCourseSpan.textContent = courseText;
+      if (printFileSpan) printFileSpan.textContent = fileText;
+      if (printDateSpan) printDateSpan.textContent = dateText;
+    }
+    window.addEventListener("beforeprint", updatePrintHeader);
+
+    function triggerPrint() {
+      if (!state.activeDigest) {
+        alert("当前暂无可打印的考纲内容！");
+        return;
+      }
+      closePrintExportModal();
+      switchStudioMode("preview");
+      updatePrintHeader();
+
+      setTimeout(() => {
+        window.print();
+      }, 150);
+    }
+
+    function exportOfflineHtml() {
+      if (!state.activeDigest) return;
+      closePrintExportModal();
+
+      const courseText = (state.activeFile && state.activeFile.course) ? state.activeFile.course : (state.currentCourse !== "__ALL__" ? state.currentCourse : "全局公共资料库");
+      const fileText = state.activeFile ? state.activeFile.filename : "课件考纲";
+      const baseName = fileText.replace(/\.[^/.]+$/, "");
+      const dateText = new Date().toLocaleDateString("zh-CN", { year: "numeric", month: "2-digit", day: "2-digit" });
+      const renderedHtml = renderMarkdownWithMath(state.activeDigest);
+
+      const fullHtml = `<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>《${fileText}》核心考纲与期末冲刺全景导图</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
+      line-height: 1.75;
+      color: #1e293b;
+      max-width: 920px;
+      margin: 0 auto;
+      padding: 40px 24px;
+      background: #ffffff;
+    }
+    .header-box {
+      border-bottom: 2px solid #0f172a;
+      padding-bottom: 18px;
+      margin-bottom: 28px;
+    }
+    .header-box h1 {
+      font-size: 24px;
+      font-weight: 800;
+      color: #0f172a;
+      margin: 0 0 8px 0;
+    }
+    .meta-row {
+      font-size: 13px;
+      color: #64748b;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+    h2 {
+      font-size: 18px;
+      font-weight: 700;
+      color: #1e293b;
+      background: #f8fafc;
+      padding: 10px 14px;
+      border-left: 5px solid #2563eb;
+      border-radius: 6px;
+      margin-top: 36px;
+      margin-bottom: 16px;
+    }
+    h3 {
+      font-size: 15px;
+      font-weight: 600;
+      color: #2563eb;
+      margin-top: 22px;
+      margin-bottom: 10px;
+    }
+    p { margin-bottom: 12px; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 22px 0;
+      font-size: 13.5px;
+      page-break-inside: avoid;
+    }
+    th {
+      background: #f1f5f9;
+      text-align: left;
+      padding: 10px 12px;
+      border: 1px solid #94a3b8;
+      font-weight: 600;
+      color: #0f172a;
+    }
+    td {
+      padding: 9px 12px;
+      border: 1px solid #cbd5e1;
+    }
+    tr:nth-child(even) td { background: #f8fafc; }
+    blockquote {
+      border-left: 4px solid #3b82f6;
+      background: #eff6ff;
+      padding: 12px 16px;
+      margin: 18px 0;
+      border-radius: 0 8px 8px 0;
+      color: #1e3a8a;
+      page-break-inside: avoid;
+    }
+    code {
+      font-family: 'JetBrains Mono', Consolas, monospace;
+      background: #f1f5f9;
+      padding: 2px 6px;
+      border-radius: 4px;
+      color: #2563eb;
+      font-size: 0.9em;
+    }
+    .katex-display-container {
+      margin: 16px 0;
+      padding: 12px;
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      text-align: center;
+      overflow-x: auto;
+      page-break-inside: avoid;
+    }
+    @media print {
+      body { max-width: 100%; padding: 0; }
+      .header-box { margin-bottom: 20px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="header-box">
+    <h1>《${fileText}》核心考纲与期末冲刺全景导图</h1>
+    <div class="meta-row">
+      <span>科目：<strong style="color: #0f172a;">${courseText}</strong></span>
+      <span>课件：<strong style="color: #0f172a;">${fileText}</strong></span>
+      <span>生成时间：<strong style="color: #0f172a;">${dateText}</strong></span>
+    </div>
+  </div>
+  ${renderedHtml}
+</body>
+</html>`;
+
+      const blob = new Blob([fullHtml], { type: "text/html;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `《${baseName}》期末核心考纲.html`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+
+    function exportAnkiDeck() {
+      if (!state.activeDigest) return;
+      closePrintExportModal();
+
+      const cards = extractFlashcardsFromMarkdown(state.activeDigest);
+      if (cards.length === 0) {
+        alert("未从考纲中提取到有效闪卡！");
+        return;
+      }
+
+      const courseText = (state.activeFile && state.activeFile.course) ? state.activeFile.course : "期末冲刺";
+      const fileText = state.activeFile ? state.activeFile.filename : "考纲";
+      const baseName = fileText.replace(/\.[^/.]+$/, "");
+
+      // Anki 制表符分隔格式
+      const ankiLines = ["#separator:tab", "#html:true", `#tags column:3`];
+      cards.forEach(c => {
+        let frontHtml = renderMarkdownWithMath(c.front).replace(/\r?\n/g, "").replace(/\t/g, " ");
+        let backHtml = renderMarkdownWithMath(c.back).replace(/\r?\n/g, "").replace(/\t/g, " ");
+        const tag = `期末考纲::${courseText.replace(/\s+/g, "_")} ${c.category}`;
+        ankiLines.push(`${frontHtml}\t${backHtml}\t${tag}`);
+      });
+
+      const blob = new Blob([ankiLines.join("\n")], { type: "text/plain;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `《${baseName}》Anki闪卡包.txt`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+
+    function exportMarkdownSource() {
+      if (!state.activeDigest) return;
+      closePrintExportModal();
+
+      const fileText = state.activeFile ? state.activeFile.filename : "考纲";
+      const baseName = fileText.replace(/\.[^/.]+$/, "");
+      const blob = new Blob([state.activeDigest], { type: "text/markdown;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `《${baseName}》核心考纲.md`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }
+
+    // 绑定导出中心事件
+    if (printExportBtn) printExportBtn.addEventListener("click", openPrintExportModal);
+    if (closePrintExportBtn) closePrintExportBtn.addEventListener("click", closePrintExportModal);
+    if (cancelPrintExportBtn) cancelPrintExportBtn.addEventListener("click", closePrintExportModal);
+    if (optPrintPdf) optPrintPdf.addEventListener("click", triggerPrint);
+    if (optExportHtml) optExportHtml.addEventListener("click", exportOfflineHtml);
+    if (optExportAnki) optExportAnki.addEventListener("click", exportAnkiDeck);
+    if (optExportMarkdown) optExportMarkdown.addEventListener("click", exportMarkdownSource);
+
+    if (toggleEditBtn) {
+      toggleEditBtn.addEventListener("click", () => {
+        if (!state.activeDigest && state.studioMode !== "edit") {
+          alert("当前暂无可编辑的考纲，请先选定课件并提炼考纲。");
+          return;
+        }
+        switchStudioMode(state.studioMode === "edit" ? "preview" : "edit");
+      });
+    }
+
+    // --- 考纲生成与编辑 ---
+    async function generateDigest() {
+      if (!state.activeFile) {
+        alert("请先在左侧选择一份需要提炼考纲的课件！");
+        return;
+      }
+      if (state.isGeneratingDigest) return;
+
+      state.isGeneratingDigest = true;
+      digestProgressBarEl.classList.remove("hidden");
+      generateDigestBtn.disabled = true;
+      generateDigestBtn.innerHTML = `<span>⏳ 提炼中...</span>`;
+      digestMarkdownViewEl.innerHTML = `
+        <div class="text-center py-16" style="color: var(--text-secondary);">
+          <div class="text-3xl mb-3 animate-bounce">🤖</div>
+          <div class="text-sm font-semibold mb-1" style="color: var(--text-primary);">助教阿米娅正在深度剖析课件考纲与题型...</div>
+          <div class="text-xs" style="color: var(--text-muted);">提炼五大维度：核心概念 · 公式框架 · 命题预测 · 避坑对比 · 考前真题 Q&A</div>
+        </div>
+      `;
+
+      try {
+        const res = await fetch("/api/digest/generate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            filename: state.activeFile.filename,
+            course: state.activeFile.course || ""
+          })
+        });
+        const data = await res.json();
+        if (data.success) {
+          state.activeDigest = data.digest;
+          state.activeFile.has_digest = true;
+          digestStatusBadgeEl.textContent = "⚡ 考纲已就绪";
+          digestStatusBadgeEl.style.color = "var(--badge-success-text)";
+          switchStudioMode("preview");
+          renderDigestContent();
+          renderFileList();
+        } else {
+          alert(`提炼考纲失败: ${data.error || "未知原因"}`);
+          renderDigestContent();
+        }
+      } catch (err) {
+        alert(`网络或服务异常: ${err}`);
+        renderDigestContent();
+      } finally {
+        state.isGeneratingDigest = false;
+        digestProgressBarEl.classList.add("hidden");
+        generateDigestBtn.disabled = false;
+        generateDigestBtn.innerHTML = `<span>⚡ 提炼考纲</span>`;
+      }
+    }
+
+    cancelEditBtn.addEventListener("click", () => {
+      switchStudioMode("preview");
+    });
+
+    saveEditBtn.addEventListener("click", async () => {
+      if (!state.activeFile) return;
+      const newContent = digestEditTextareaEl.value;
+      try {
+        await fetch("/api/digest/save", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            filename: state.activeFile.filename,
+            course: state.activeFile.course || "",
+            content: newContent
+          })
+        });
+        state.activeDigest = newContent;
+        switchStudioMode("preview");
+        renderDigestContent();
+      } catch (err) {
+        alert(`保存考纲失败: ${err}`);
+      }
+    });
+
+    // 复制 Markdown 全文
+    copyDigestBtn.addEventListener("click", () => {
+      if (!state.activeDigest) {
+        alert("当前暂无考纲内容可复制！");
+        return;
+      }
+      navigator.clipboard.writeText(state.activeDigest).then(() => {
+        copyDigestBtn.textContent = "✅ 已复制";
+        setTimeout(() => copyDigestBtn.textContent = "📋 复制", 1500);
+      });
+    });
+
+    generateDigestBtn.addEventListener("click", generateDigest);
+
+    // --- 研读对话 (Chat Q&A) ---
+    async function sendChatMessage(promptText) {
+      const q = promptText || chatInputEl.value.trim();
+      if (!q || state.isChatStreaming) return;
+
+      chatInputEl.value = "";
+      state.isChatStreaming = true;
+      sendBtn.disabled = true;
+
+      // 渲染用户提问气泡
+      appendMessageBubble("user", q);
+
+      // 创建助手回答占位气泡
+      const botBubble = appendMessageBubble("assistant", "");
+      const contentEl = botBubble.querySelector(".bubble-content");
+
+      try {
+        const res = await fetch("/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            question: q,
+            filename: state.activeFile ? state.activeFile.filename : "",
+            course: state.activeFile ? state.activeFile.course : (state.currentCourse !== "__ALL__" ? state.currentCourse : "")
+          })
+        });
+
+        if (!res.ok) {
+          const errText = await res.text();
+          throw new Error(`服务响应异常 (HTTP ${res.status}): ${errText || res.statusText}`);
+        }
+
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder("utf-8");
+        let fullText = "";
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          const chunk = decoder.decode(value, { stream: true });
+          fullText += chunk;
+          
+          // 实时 Markdown 与高保真 LaTeX 流式解析
+          if (typeof renderMarkdownWithMath === "function") {
+            contentEl.innerHTML = renderMarkdownWithMath(fullText);
+          } else if (typeof window.renderMarkdownWithMath === "function") {
+            contentEl.innerHTML = window.renderMarkdownWithMath(fullText);
+          } else {
+            contentEl.innerHTML = fullText.replace(/\n/g, "<br>");
+          }
+          chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
+        }
+
+      } catch (err) {
+        let msg = String(err && err.message ? err.message : err);
+        if (msg.includes("Failed to fetch") || msg.includes("NetworkError")) {
+          msg = "无法连接至桌宠后台服务（桌宠刚经历重启或服务正在载入，请刷新网页即可正常交互）";
+        }
+        contentEl.innerHTML = `<div class="text-red-400 text-xs mt-2">⚠️ 解答传输失败: ${msg}</div>`;
+      } finally {
+        state.isChatStreaming = false;
+        sendBtn.disabled = false;
+      }
+    }
+
+    function appendMessageBubble(role, text) {
+      const wrapper = document.createElement("div");
+      wrapper.className = role === "user" ? "flex justify-end" : "flex justify-start";
+
+      const bubble = document.createElement("div");
+      bubble.className = "max-w-3xl rounded-2xl p-4 shadow-sm border text-xs prose-notebook";
+      
+      if (role === "user") {
+        bubble.style.backgroundColor = "var(--user-msg-bg)";
+        bubble.style.borderColor = "var(--border-subtle)";
+        bubble.innerHTML = `<div class="font-medium whitespace-pre-wrap">${text}</div>`;
+      } else {
+        bubble.style.backgroundColor = "var(--bg-panel)";
+        bubble.style.borderColor = "var(--border-subtle)";
+        const renderFn = typeof renderMarkdownWithMath === "function" ? renderMarkdownWithMath : (typeof window.renderMarkdownWithMath === "function" ? window.renderMarkdownWithMath : (t) => t.replace(/\n/g, "<br>"));
+        bubble.innerHTML = `
+          <div class="flex items-center space-x-2 mb-2 pb-1.5 border-b" style="border-color: var(--border-subtle);">
+            <span class="w-5 h-5 rounded-full flex items-center justify-center font-bold text-[10px]" style="background-color: var(--accent); color: var(--bg-app);">A</span>
+            <span class="font-semibold text-xs" style="color: var(--text-primary);">助教阿米娅 (NotebookLM RAG)</span>
+          </div>
+          <div class="bubble-content dynamic-typography">${text ? renderFn(text) : '<span class="animate-pulse" style="color: var(--text-muted);">正在研读课件解答中...</span>'}</div>
+        `;
+      }
+
+      wrapper.appendChild(bubble);
+      chatMessagesEl.appendChild(wrapper);
+      chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
+      return bubble;
+    }
+
+    // 回车发送与换行
+    chatInputEl.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        sendChatMessage();
+      }
+    });
+    sendBtn.addEventListener("click", () => sendChatMessage());
+
+    // 快捷 Prompt 胶囊点击
+    document.querySelectorAll(".prompt-chip").forEach(chip => {
+      chip.addEventListener("click", () => {
+        const prompt = chip.getAttribute("data-prompt");
+        sendChatMessage(prompt);
+      });
+    });
+
+    clearChatBtn.addEventListener("click", () => {
+      chatMessagesEl.innerHTML = `
+        <div class="rounded-xl p-4 border max-w-2xl mx-auto shadow-sm"
+             style="background-color: var(--bg-panel); border-color: var(--border-subtle);">
+          <div class="text-xs" style="color: var(--text-secondary);">💬 对话记录已清屏，可重新提问或点击下方预设考点胶囊。</div>
+        </div>
+      `;
+    });
+
+    // --- 课程分类与导入/移动弹窗交互逻辑 ---
+    function initCourseModals() {
+      // 1. 新建课程分类弹窗
+      if (addCourseBtn) {
+        addCourseBtn.addEventListener("click", () => {
+          if (newCourseInput) newCourseInput.value = "";
+          if (createCourseModal) {
+            createCourseModal.classList.remove("hidden");
+            if (newCourseInput) newCourseInput.focus();
+          }
+        });
+      }
+
+      const closeCreateCourse = () => {
+        if (createCourseModal) createCourseModal.classList.add("hidden");
+      };
+      if (closeCreateCourseBtn) closeCreateCourseBtn.addEventListener("click", closeCreateCourse);
+      if (cancelCreateCourseBtn) cancelCreateCourseBtn.addEventListener("click", closeCreateCourse);
+
+      if (confirmCreateCourseBtn) {
+        confirmCreateCourseBtn.addEventListener("click", async () => {
+          const name = newCourseInput ? newCourseInput.value.trim() : "";
+          if (!name) {
+            alert("请输入课程名称！");
+            return;
+          }
+          try {
+            const res = await fetch("/api/courses/create", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ name })
+            });
+            const data = await res.json();
+            if (data.success) {
+              closeCreateCourse();
+              state.currentCourse = name;
+              await loadStats();
+              await loadFiles();
+            } else {
+              alert(`创建课程失败: ${data.error || "未知原因"}`);
+            }
+          } catch (err) {
+            alert(`创建课程网络异常: ${err}`);
+          }
+        });
+      }
+
+      if (newCourseInput) {
+        newCourseInput.addEventListener("keydown", (e) => {
+          if (e.key === "Enter") confirmCreateCourseBtn.click();
+        });
+      }
+
+      // 2. 导入课件确认弹窗
+      if (uploadCourseSelect) {
+        uploadCourseSelect.addEventListener("change", (e) => {
+          if (e.target.value === "__NEW__") {
+            uploadNewCourseBox.classList.remove("hidden");
+            if (uploadNewCourseInput) uploadNewCourseInput.focus();
+          } else {
+            uploadNewCourseBox.classList.add("hidden");
+          }
+        });
+      }
+
+      const closeUploadModal = () => {
+        if (uploadModal) uploadModal.classList.add("hidden");
+        state.pendingUploadFiles = [];
+      };
+      if (closeUploadModalBtn) closeUploadModalBtn.addEventListener("click", closeUploadModal);
+      if (cancelUploadModalBtn) cancelUploadModalBtn.addEventListener("click", closeUploadModal);
+
+      if (confirmUploadModalBtn) {
+        confirmUploadModalBtn.addEventListener("click", async () => {
+          let targetCourse = uploadCourseSelect ? uploadCourseSelect.value : "__GLOBAL__";
+          if (targetCourse === "__NEW__") {
+            const newName = uploadNewCourseInput ? uploadNewCourseInput.value.trim() : "";
+            if (!newName) {
+              alert("请输入新课程名称！");
+              if (uploadNewCourseInput) uploadNewCourseInput.focus();
+              return;
+            }
+            try {
+              const cRes = await fetch("/api/courses/create", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ name: newName })
+              });
+              const cData = await cRes.json();
+              if (!cData.success) {
+                alert(`创建新课程失败: ${cData.error}`);
+                return;
+              }
+              targetCourse = newName;
+            } catch (err) {
+              alert(`创建课程异常: ${err}`);
+              return;
+            }
+          }
+
+          if (uploadModal) uploadModal.classList.add("hidden");
+          const files = state.pendingUploadFiles || [];
+          state.pendingUploadFiles = [];
+          await executeUpload(files, targetCourse);
+        });
+      }
+
+      // 3. 转移课件所属课程弹窗
+      const closeMoveFileModal = () => {
+        if (moveFileModal) moveFileModal.classList.add("hidden");
+        state.fileToMove = null;
+      };
+      if (closeMoveFileBtn) closeMoveFileBtn.addEventListener("click", closeMoveFileModal);
+      if (cancelMoveFileBtn) cancelMoveFileBtn.addEventListener("click", closeMoveFileModal);
+
+      if (confirmMoveFileBtn) {
+        confirmMoveFileBtn.addEventListener("click", async () => {
+          if (!state.fileToMove) return;
+          let targetCourse = moveCourseSelect ? moveCourseSelect.value : "";
+          if (targetCourse === "__GLOBAL__") targetCourse = "";
+
+          try {
+            const res = await fetch("/api/files/move", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                filename: state.fileToMove.filename,
+                source_course: state.fileToMove.course || "",
+                target_course: targetCourse
+              })
+            });
+            const data = await res.json();
+            if (data.success) {
+              if (state.activeFile && state.activeFile.filename === state.fileToMove.filename) {
+                state.activeFile.course = targetCourse;
+                activeContextTextEl.textContent = `《${state.activeFile.filename}》` + (targetCourse ? ` (${targetCourse})` : "");
+              }
+              closeMoveFileModal();
+              await loadStats();
+              await loadFiles();
+            } else {
+              alert(`转移课件失败: ${data.error || "未知原因"}`);
+            }
+          } catch (err) {
+            alert(`转移课件网络异常: ${err}`);
+          }
+        });
+      }
+    }
+
+    function openMoveFileModal(file) {
+      state.fileToMove = file;
+      if (moveFileNameDisplay) {
+        moveFileNameDisplay.textContent = `《${file.filename}》 (当前: ${file.course || '全局公共资料库'})`;
+      }
+      if (moveCourseSelect) {
+        moveCourseSelect.value = file.course || "__GLOBAL__";
+      }
+      if (moveFileModal) {
+        moveFileModal.classList.remove("hidden");
+      }
+    }
+
+    // --- 上传与拖拽处理 (打开课程确认弹窗) ---
+    function promptUpload(files) {
+      if (!files || files.length === 0) return;
+      state.pendingUploadFiles = Array.from(files);
+      if (uploadPendingCount) uploadPendingCount.textContent = state.pendingUploadFiles.length;
+      if (uploadPendingList) {
+        uploadPendingList.innerHTML = state.pendingUploadFiles.map(f => `
+          <div class="truncate py-0.5">📄 ${f.name} <span style="color:var(--text-muted)">(${(f.size/1024).toFixed(0)} KB)</span></div>
+        `).join("");
+      }
+
+      if (uploadCourseSelect) {
+        if (state.currentCourse && !["__ALL__", "__GLOBAL__"].includes(state.currentCourse)) {
+          uploadCourseSelect.value = state.currentCourse;
+        } else {
+          uploadCourseSelect.value = "__GLOBAL__";
+        }
+      }
+      if (uploadNewCourseBox) uploadNewCourseBox.classList.add("hidden");
+      if (uploadNewCourseInput) uploadNewCourseInput.value = "";
+      if (uploadModal) uploadModal.classList.remove("hidden");
+    }
+
+    dropZone.addEventListener("click", () => fileInput.click());
+    fileInput.addEventListener("change", (e) => {
+      if (e.target.files.length > 0) {
+        promptUpload(e.target.files);
+        fileInput.value = "";
+      }
+    });
+
+    dropZone.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      dropZone.style.borderColor = "var(--accent)";
+      dropZone.style.backgroundColor = "var(--accent-bg)";
+    });
+    dropZone.addEventListener("dragleave", () => {
+      dropZone.style.borderColor = "var(--border-strong)";
+      dropZone.style.backgroundColor = "var(--bg-card)";
+    });
+    dropZone.addEventListener("drop", (e) => {
+      e.preventDefault();
+      dropZone.style.borderColor = "var(--border-strong)";
+      dropZone.style.backgroundColor = "var(--bg-card)";
+      if (e.dataTransfer.files.length > 0) {
+        promptUpload(e.dataTransfer.files);
+      }
+    });
+
+    async function executeUpload(files, targetCourse) {
+      if (!files || files.length === 0) return;
+      const courseVal = targetCourse || "__GLOBAL__";
+
+      // 提示正在上传与解析超大文件
+      const originalStatHtml = statSummaryEl ? statSummaryEl.innerHTML : "";
+      if (statSummaryEl) {
+        statSummaryEl.innerHTML = `<span class="animate-pulse" style="color: var(--accent);">⏳ 正在导入并深度解析 ${files.length} 份课件（超大文件可能需数秒），请稍候...</span>`;
+      }
+
+      try {
+        for (let i = 0; i < files.length; i++) {
+          const file = files[i];
+          const formData = new FormData();
+          formData.append("course", courseVal);
+          formData.append("file", file);
+
+          try {
+            const res = await fetch("/api/upload", {
+              method: "POST",
+              body: formData
+            });
+            if (!res.ok) {
+              const errText = await res.text();
+              alert(`上传《${file.name}》失败 (HTTP ${res.status}): ${errText}`);
+              continue;
+            }
+            const data = await res.json();
+            if (!data.success) {
+              alert(`上传《${file.name}》失败: ${data.error || "未知原因"}`);
+            }
+          } catch (err) {
+            alert(`上传请求出错: ${err}`);
+          }
+        }
+      } finally {
+        if (courseVal !== "__GLOBAL__") {
+          state.currentCourse = courseVal;
+        }
+        await loadStats();
+        await loadFiles();
+      }
+    }
+
+    async function deleteFile(file) {
+      try {
+        await fetch("/api/files/delete", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            filename: file.filename,
+            course: file.course || ""
+          })
+        });
+        if (state.activeFile && state.activeFile.filename === file.filename) {
+          state.activeFile = null;
+          state.activeDigest = "";
+          renderDigestContent();
+          activeContextTextEl.textContent = state.currentCourse === "__ALL__" ? "全部课件" : (state.currentCourse === "__GLOBAL__" ? "全局公共资料库" : state.currentCourse);
+          activeFileNameFooterEl.textContent = "未选择文件";
+          if (deleteActiveFileBtn) deleteActiveFileBtn.classList.add("hidden");
+        }
+        await loadFiles();
+        await loadStats();
+      } catch (err) {
+        alert(`删除失败: ${err}`);
+      }
+    }
+
+    function updateDeleteCourseBtnVisibility() {
+      if (!deleteCourseBtn) return;
+      const c = state.currentCourse;
+      if (c && !["__ALL__", "__GLOBAL__"].includes(c)) {
+        deleteCourseBtn.classList.remove("hidden");
+        deleteCourseBtn.title = `从知识库中移除课程分类《${c}》`;
+      } else {
+        deleteCourseBtn.classList.add("hidden");
+      }
+    }
+
+    if (deleteCourseBtn) {
+      deleteCourseBtn.addEventListener("click", async () => {
+        const c = state.currentCourse;
+        if (!c || ["__ALL__", "__GLOBAL__"].includes(c)) return;
+        if (confirm(`确定要从知识库中删除课程分类《${c}》及其包含的所有课件与考纲吗？此操作无法撤销！`)) {
+          try {
+            const res = await fetch("/api/courses/delete", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ name: c })
+            });
+            const data = await res.json();
+            if (data.success) {
+              state.currentCourse = "__ALL__";
+              courseSelectEl.value = "__ALL__";
+              updateDeleteCourseBtnVisibility();
+              await loadStats();
+              await loadFiles();
+            } else {
+              alert(`删除课程分类失败: ${data.error || "未知原因"}`);
+            }
+          } catch (err) {
+            alert(`删除课程网络异常: ${err}`);
+          }
+        }
+      });
+    }
+
+    if (deleteActiveFileBtn) {
+      deleteActiveFileBtn.addEventListener("click", async () => {
+        if (!state.activeFile) return;
+        if (confirm(`确定要从知识库中移除课件《${state.activeFile.filename}》吗？`)) {
+          await deleteFile(state.activeFile);
+        }
+      });
+    }
+
+    // 课程选择事件
+    courseSelectEl.addEventListener("change", (e) => {
+      state.currentCourse = e.target.value;
+      state.activeFile = null;
+      state.activeDigest = "";
+      renderDigestContent();
+      activeContextTextEl.textContent = state.currentCourse === "__ALL__" ? "全部课件" : (state.currentCourse === "__GLOBAL__" ? "全局公共资料库" : state.currentCourse);
+      if (deleteActiveFileBtn) deleteActiveFileBtn.classList.add("hidden");
+      updateDeleteCourseBtnVisibility();
+      loadFiles();
+    });
+
+    refreshBtn.addEventListener("click", async () => {
+      await loadStats();
+      await loadFiles();
+    });
+
+    // 启动初始化
+    window.addEventListener("DOMContentLoaded", () => {
+      initSettings();
+      initCourseModals();
+      const params = new URLSearchParams(window.location.search);
+      const c = params.get("course");
+      if (c) state.currentCourse = c;
+      const f = params.get("file");
+      if (f) state.targetFileParam = f;
+      const tab = params.get("tab");
+      if (tab) state.targetTabParam = tab;
+
+      loadStats();
+      loadFiles();
+    });
+  </script>
+</body>
+</html>

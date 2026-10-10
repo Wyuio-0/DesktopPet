@@ -83,8 +83,10 @@ class PetContextMenuBuilder(QtCore.QObject):
 
         # ── 2. 学业与效率工具 ────────────────────────────────────────
         self.add_schedule_menu(m)
-        m.addAction("导入课件/讲义…", w.upload_courseware_dialog)
-        m.addAction("课程知识库…", w.show_knowledge_page)
+        m.addAction("课程知识库 (NotebookLM 网页版)…", w.show_knowledge_page)
+        from . import web_launcher
+        if web_launcher.is_server_listening():
+            m.addAction("🛑 停止知识库 Web 服务 (释放端口)", w.stop_knowledge_web_service)
         self.add_tasks_menu(m)
         self.add_focus_menu(m)
         self.add_trans_ocr_menu(m)
@@ -212,8 +214,7 @@ class PetContextMenuBuilder(QtCore.QObject):
             sub.addSeparator()
             sub.addAction("导入课表…", self.window._import_schedule)
         sub.addSeparator()
-        sub.addAction("导入课件/讲义…", self.window.upload_courseware_dialog)
-        sub.addAction("课程知识库…", self.window.show_knowledge_page)
+        sub.addAction("课程知识库 (NotebookLM 网页版)…", self.window.show_knowledge_page)
 
     def add_tasks_menu(self, parent):
         """待办与考试子菜单。"""

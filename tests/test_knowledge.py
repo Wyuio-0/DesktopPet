@@ -223,10 +223,254 @@ class TestMenuIntegration:
         mock_window.prefs = {}
         builder = PetContextMenuBuilder(mock_window)
 
-        # 构建课程表子菜单
+        # 构建课程表子菜单：仅保留网页版统一入口，已移除桌面独立上传入口
         menu = QtWidgets.QMenu()
         builder.add_schedule_menu(menu)
         sub_actions = [a.text() for a in menu.actions()[0].menu().actions()]
-        assert any("导入课件" in t for t in sub_actions)
+        assert not any("导入课件" in t for t in sub_actions)
         assert any("课程知识库" in t for t in sub_actions)
+
+
+class TestSlideAwareChunkingAndDigest:
+    def test_slide_aware_chunking(self):
+        text = (
+            "=== 第 1 页 · 计算机网络体系结构 ===\n"
+            "OSI七层模型包括物理层、数据链路层、网络层、传输层、会话层、表示层和应用层。\n\n"
+            "=== 第 2 页 · TCP与UDP区别 ===\n"
+            "TCP是面向连接的可靠传输协议，UDP是无连接的尽最大努力交付协议。"
+        )
+        chunks = _segment(text)
+        assert len(chunks) == 2
+        assert "第 1 页" in chunks[0] and "OSI七层模型" in chunks[0]
+        assert "第 2 页" in chunks[1] and "TCP是面向连接" in chunks[1]
+
+    def test_slide_aware_chunking_long_slide_retains_header(self):
+        long_body = "可靠传输滑动窗口协议实现流量控制与拥塞控制。" * 30
+        text = f"=== 第 3 页 · 滑动窗口 ===\n{long_body}"
+        chunks = _segment(text, max_len=200)
+        assert len(chunks) > 1
+        for ch in chunks:
+            assert "【第 3 页 · 滑动窗口】" in ch
+
+    def test_digest_lifecycle_in_kb(self, tmp_path):
+        kb_dir = tmp_path / "kb"
+        src_dir = tmp_path / "downloads"
+        src_dir.mkdir(exist_ok=True)
+        kb = KnowledgeBase(folder=str(kb_dir))
+
+        src_file = src_dir / "课件.pptx"
+        _create_dummy_pptx(str(src_file), ["计算机操作系统PV操作", "死锁产生的原因"])
+        kb.import_file(str(src_file), course="OS")
+
+        fn = "课件.pptx"
+        course = "OS"
+        assert not kb.has_digest(fn, course)
+        assert kb.get_digest(fn, course) == ""
+
+        mock_digest = (
+            "# 《课件.pptx》核心考点提炼\n\n"
+            "## 1. 核心概念与必背定义\n"
+            "- **PV操作**：P操作申请资源，V操作释放资源。\n\n"
+            "## 2. 期末常考题型与解题套路\n"
+            "- 生产者-消费者问题与哲学家就餐问题经典伪代码模板。"
+        )
+
+        ok = kb.save_digest(fn, course, mock_digest)
+        assert ok is True
+        assert kb.has_digest(fn, course) is True
+        assert "PV操作" in kb.get_digest(fn, course)
+
+        # 检查是否作为考点提炼切片被索引到 RAG 中
+        hits = kb.retrieve("生产者 消费者 哲学家", course="OS", top_k=1)
+        assert hits and hits[0]["is_digest"] is True
+        assert "考点提炼" in hits[0]["source"]
+
+        # 检查文件删除时是否连带清理 digest
+        assert kb.delete_file(fn, course=course) is True
+        assert not kb.has_digest(fn, course)
+
+    def test_generate_courseware_digest(self, tmp_path):
+        from pet.ai import AmiyaBrain
+        from unittest.mock import MagicMock
+
+        brain = AmiyaBrain(str(tmp_path), persona="dummy")
+        brain._post_stream = MagicMock(side_effect=RuntimeError("stream disabled in unit test"))
+        brain._post = MagicMock(return_value="## 1. 核心概念\n- 死锁\n## 💡 五、 期末高分冲刺自测 Q&A\n> Q1: 题目")
+
+        raw_slides = "=== 第 1 页 · 死锁 ===\n死锁的定义与必要条件"
+        digest = brain.generate_courseware_digest(raw_slides, filename="ch3.pptx", course="操作系统")
+        assert "死锁" in digest
+        brain._post.assert_called_once()
+        call_msgs = brain._post.call_args[0][0]
+        assert any("ch3.pptx" in m["content"] for m in call_msgs if m["role"] == "user")
+        assert any("操作系统" in m["content"] for m in call_msgs if m["role"] == "user")
+
+    def test_generate_courseware_digest_stream(self, tmp_path):
+        from pet.ai import AmiyaBrain
+        from unittest.mock import MagicMock
+
+        brain = AmiyaBrain(str(tmp_path), persona="dummy")
+        brain._post_stream = MagicMock(return_value={"content": "## 1. 核心概念\n- 死锁\n## 💡 五、 期末高分冲刺自测 Q&A\n> Q1: 题目", "finish_reason": "stop"})
+
+        raw_slides = "=== 第 1 页 · 死锁 ===\n死锁的定义与必要条件"
+        digest = brain.generate_courseware_digest(raw_slides, filename="ch3.pptx", course="操作系统")
+        assert "死锁" in digest
+        brain._post_stream.assert_called_once()
+
+    def test_courseware_summary_dialog(self, tmp_path):
+        from pet.schedule_dialogs import CoursewareSummaryDialog
+        from PyQt5 import QtWidgets
+
+        app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+        kb_dir = tmp_path / "kb"
+        kb = KnowledgeBase(folder=str(kb_dir))
+        kb.save_digest("test.pdf", "微积分", "## 核心概念\n- 极限与导数")
+
+        dlg = CoursewareSummaryDialog(
+            filename="test.pdf",
+            course="微积分",
+            file_path=str(tmp_path / "test.pdf"),
+            kb=kb,
+            brain=None
+        )
+        assert dlg.filename == "test.pdf"
+        assert "极限与导数" in dlg._current_text
+        dlg.close()
+
+    def test_empty_or_failed_file_still_in_files_meta(self, tmp_path):
+        """修复上传课件因解析为空而不显示的 Bug：确保即使文本提取为空，课件仍在 files_meta 中。"""
+        kb_dir = tmp_path / "kb"
+        kb = KnowledgeBase(folder=str(kb_dir))
+
+        # 构造一个无文本内容的空白 pptx / docx
+        empty_ppt = kb_dir / "courses" / "信号处理" / "空白课件.pptx"
+        empty_ppt.parent.mkdir(parents=True, exist_ok=True)
+        empty_ppt.write_bytes(b"PK\x05\x06" + b"\x00" * 18)  # minimal empty zip header
+
+        kb.reload()
+        files = kb.get_course_files("信号处理")
+        assert len(files) == 1
+        assert files[0]["filename"] == "空白课件.pptx"
+        assert files[0]["chunks"] == 0
+
+    def test_extract_ppt_legacy(self, tmp_path):
+        """测试从二进制 .ppt 模拟文件中提取 UTF-16LE 文本。"""
+        from pet.knowledge import _extract_ppt_legacy
+        ppt_file = tmp_path / "legacy.ppt"
+        payload = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"  # OLE header prefix
+        text_utf16 = "数字信号处理与滤波器设计".encode("utf-16le")
+        ppt_file.write_bytes(payload + b"\x00" * 20 + text_utf16 + b"\x00" * 20)
+
+        extracted = _extract_ppt_legacy(str(ppt_file))
+        assert "数字信号处理" in extracted
+
+    def test_global_and_all_course_files(self, tmp_path):
+        kb_dir = tmp_path / "kb"
+        kb = KnowledgeBase(folder=str(kb_dir))
+        
+        # 课程课件
+        c_file = kb_dir / "courses" / "操作系统" / "ch1.txt"
+        c_file.parent.mkdir(parents=True, exist_ok=True)
+        c_file.write_text("操作系统概述", encoding="utf-8")
+
+        # 通用课件（根目录）
+        g_file = kb_dir / "general_handout.txt"
+        g_file.write_text("公共英语四级核心词汇", encoding="utf-8")
+
+        kb.reload()
+        all_f = kb.get_course_files("__ALL__")
+        assert len(all_f) == 2
+
+        global_f = kb.get_course_files("__GLOBAL__")
+        assert len(global_f) == 1
+        assert global_f[0]["filename"] == "general_handout.txt"
+
+        os_f = kb.get_course_files("操作系统")
+        assert len(os_f) == 1
+        assert os_f[0]["filename"] == "ch1.txt"
+
+    def test_digest_generate_thread_progress(self, tmp_path):
+        from pet.schedule_dialogs import DigestGenerateThread
+        from pet.ai import AmiyaBrain
+        from unittest.mock import MagicMock
+
+        txt_file = tmp_path / "test.txt"
+        txt_file.write_text("=== 第 1 页 ===\n线性代数行列式计算与特征值", encoding="utf-8")
+
+        brain = AmiyaBrain(str(tmp_path), persona="dummy")
+        brain.generate_courseware_digest = MagicMock(return_value="## 核心考点\n- 特征值")
+
+        thread = DigestGenerateThread(brain, str(txt_file), "test.txt", "高数")
+        progresses = []
+        thread.sig_progress.connect(lambda pct, msg: progresses.append((pct, msg)))
+
+        thread.run()
+        assert len(progresses) >= 3
+        assert any(p[0] == 10 for p in progresses)
+        assert any(p[0] == 25 for p in progresses)
+        assert any(p[0] == 98 for p in progresses)
+
+    def test_info_panel_active_task_progressbar(self, tmp_path):
+        from pet.info_panel import InfoPanel
+        from PyQt5 import QtWidgets, QtCore
+        from unittest.mock import MagicMock
+
+        app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+
+        kb_dir = tmp_path / "kb"
+        kb = KnowledgeBase(folder=str(kb_dir))
+        c_file = kb_dir / "courses" / "微积分" / "ch1.txt"
+        c_file.parent.mkdir(parents=True, exist_ok=True)
+        c_file.write_text("导数定义与连续性", encoding="utf-8")
+        kb.reload()
+
+        class MockOwner(QtCore.QObject):
+            sig_digest_progress = QtCore.pyqtSignal(str, str, int, str)
+            sig_digest_finished = QtCore.pyqtSignal(str, str, bool, str)
+
+            def __init__(self):
+                super().__init__()
+                self.schedule = MagicMock()
+                self.schedule.courses = []
+                self.brain = MagicMock()
+                self.brain.knowledge = kb
+                self._active_digest_tasks = {
+                    ("ch1.txt", "微积分"): {"progress": 45, "status": "正在生成考纲..."}
+                }
+
+        mock_owner = MockOwner()
+        panel = InfoPanel(owner=mock_owner)
+        panel.refresh_knowledge_page(select_course="微积分")
+        assert hasattr(panel, "_btn_open_web")
+        assert panel._btn_open_web is not None
+        panel.close()
+
+    def test_text_cache_path_location_independence(self, tmp_path):
+        from pet.knowledge import _text_cache_path, extract_text_from_file
+        import shutil
+
+        dir1 = tmp_path / "dir1"
+        dir2 = tmp_path / "dir2"
+        dir1.mkdir()
+        dir2.mkdir()
+
+        f1 = dir1 / "lecture.txt"
+        f1.write_text("Hello World! 恒定磁场与高斯定理", encoding="utf-8")
+
+        f2 = dir2 / "lecture.txt"
+        shutil.copy2(str(f1), str(f2))
+
+        cp1 = _text_cache_path(str(f1))
+        cp2 = _text_cache_path(str(f2))
+        assert cp1 is not None and cp2 is not None
+        assert cp1 == cp2, "Cache paths must match regardless of folder location"
+
+        res1 = extract_text_from_file(str(f1))
+        assert "恒定磁场" in res1
+        # f2 should immediately hit the cache
+        res2 = extract_text_from_file(str(f2))
+        assert res2 == res1
+
+
+
 
