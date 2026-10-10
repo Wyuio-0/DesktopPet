@@ -27,11 +27,15 @@ SetupIconFile=..\app.ico
 UninstallDisplayIcon={app}\DesktopPet.exe
 WizardStyle=modern
 
+[InstallDelete]
+; 安装升级或覆盖时清除旧版 _internal 运行时目录，防止不同 Python 版本或旧依赖动态库遗留造成冲突
+Type: filesandordirs; Name: "{app}\_internal"
+
 [Files]
 ; onedir 分发（exe + 旁边 characters\ + _internal）
 ; Excludes 双保险：ai_config.json（含 key）、.claude（本地工具状态）
 Source: "..\dist\DesktopPet\*"; DestDir: "{app}"; \
-    Flags: recursesubdirs createallsubdirs; \
+    Flags: ignoreversion recursesubdirs createallsubdirs; \
     Excludes: "ai_config.json,.claude"
 
 [Icons]

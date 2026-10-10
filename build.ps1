@@ -1,4 +1,4 @@
-﻿# -*- coding: utf-8 -*-
+# -*- coding: utf-8 -*-
 # 桌面宠物 —— 一键构建脚本
 #
 # 作用：重新用 PyInstaller 打包 DesktopPet.exe，同步角色资源（阿米娅 / 圣聆初雪
@@ -71,6 +71,8 @@ Write-Host ("    角色（{0}个）: {1}" -f $chars.Count, ($chars -join ', ')) 
 $InstalledDir = 'D:\AmiyaDesktopPet'
 if (Test-Path $InstalledDir) {
     Write-Host "==> 同步最新构建至安装目录 $InstalledDir..." -ForegroundColor Yellow
+    $OldInternal = Join-Path $InstalledDir '_internal'
+    if (Test-Path $OldInternal) { Remove-Item $OldInternal -Recurse -Force -ErrorAction SilentlyContinue }
     Copy-Item "$AppDir\*" $InstalledDir -Recurse -Force -ErrorAction SilentlyContinue
     $WebStaticSrc = Join-Path $Root 'web\static'
     if (Test-Path $WebStaticSrc) {
