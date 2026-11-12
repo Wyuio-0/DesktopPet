@@ -78,17 +78,41 @@ def main():
     if icon_path:
         app.setWindowIcon(QtGui.QIcon(icon_path))
 
-    saved_name = None if char_arg else Settings().get("character")
+    prefs = Settings()
+    saved_name = None if char_arg else prefs.get("character")
     try:
         char_path = find_character(char_arg or saved_name)
     except SystemExit:
         if char_arg:
             raise
         char_path = find_character(None)
+    welcome_completed = False
+    if not prefs.get("onboarding_completed", False):
+        from pet.onboarding import WelcomeDialog, available_characters
+        choices = available_characters(CHARACTERS_DIRS)
+        if choices:
+            # The welcome dialog closes before the pet window exists.
+            app.setQuitOnLastWindowClosed(False)
+            welcome = WelcomeDialog(choices, char_path, prefs)
+            if welcome.exec_() == QtWidgets.QDialog.Accepted:
+                char_path = welcome.selected_path
+                welcome_completed = True
+            app.setQuitOnLastWindowClosed(True)
     character = Character(char_path)
     petlog.log("角色: %s (%s)" % (character.key, character.display_name))
     window = PetWindow(character)
     window.show()
+
+    if welcome_completed:
+        # Animation decoding must finish before open_chat can position its input.
+        chat_timer = QtCore.QTimer(window)
+        def open_first_chat():
+            if window._first_frame_shown:
+                chat_timer.stop()
+                window.open_chat()
+        chat_timer.timeout.connect(open_first_chat)
+        chat_timer.start(100)
+        QtCore.QTimer.singleShot(10000, chat_timer.stop)
 
     if pending_files:
         QtCore.QTimer.singleShot(600, lambda: window._handle_dropped_files(pending_files))
