@@ -17,6 +17,10 @@ import com.amiya.pet.widget.ScheduleWidgetProvider
 import kotlinx.coroutines.*
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.ByteArrayOutputStream
+import java.io.InputStream
+import java.security.MessageDigest
+import kotlinx.coroutines.sync.Semaphore
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.io.OutputStreamWriter
@@ -45,10 +49,12 @@ object SyncManager {
     private var udpJob: Job? = null
     private val mainScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private val ioScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private val connectionSlots = Semaphore(16)
 
     // 待确认配对请求映射 requestId -> CompletableDeferred<Boolean>
     private val pendingPairRequests = ConcurrentHashMap<String, CompletableDeferred<Boolean>>()
     private val pendingPairModels = ConcurrentHashMap<String, PairRequest>()
+    private val pairAttempts = mutableMapOf<String, List<Long>>()
 
     // UI 配对弹窗回调监听器
     var onPairRequestedListener: ((PairRequest) -> Unit)? = null
@@ -81,8 +87,13 @@ object SyncManager {
             while (isActive && !socket.isClosed) {
                 try {
                     val client = socket.accept()
+                    if (!connectionSlots.tryAcquire()) {
+                        client.close()
+                        continue
+                    }
                     ioScope.launch {
-                        handleClientConnection(context.applicationContext, client)
+                        try { handleClientConnection(context.applicationContext, client) }
+                        finally { connectionSlots.release() }
                     }
                 } catch (e: Exception) {
                     break
@@ -136,44 +147,25 @@ object SyncManager {
         udpJob?.cancel()
         try { serverSocket?.close() } catch (_: Exception) {}
         serverSocket = null
+        pendingPairRequests.values.forEach { it.complete(false) }
+        pendingPairRequests.clear()
+        pendingPairModels.clear()
     }
 
     // ── HTTP 请求分发处理 ─────────────────────────────────────────────
 
     private suspend fun handleClientConnection(context: Context, client: Socket) = withContext(Dispatchers.IO) {
         try {
-            client.soTimeout = 30000
-            val reader = BufferedReader(InputStreamReader(client.getInputStream(), Charsets.UTF_8))
-            val firstLine = reader.readLine() ?: return@withContext
-            val parts = firstLine.split(" ")
-            if (parts.size < 2) return@withContext
-            val method = parts[0].uppercase()
-            val uri = parts[1]
-
-            val headers = mutableMapOf<String, String>()
-            var line: String?
-            while (reader.readLine().also { line = it } != null) {
-                if (line.isNullOrEmpty()) break
-                val idx = line!!.indexOf(":")
-                if (idx != -1) {
-                    val k = line!!.substring(0, idx).trim().lowercase()
-                    val v = line!!.substring(idx + 1).trim()
-                    headers[k] = v
-                }
+            client.soTimeout = 5000
+            val request = SyncHttpProtocol.read(client.getInputStream()) { headers ->
+                val auth = headers["authorization"] ?: ""
+                val token = if (auth.startsWith("Bearer ")) auth.substring(7).trim() else ""
+                isTokenValid(context, token)
             }
-
-            var postBody = ""
-            val contentLength = headers["content-length"]?.toIntOrNull() ?: 0
-            if (contentLength > 0) {
-                val chars = CharArray(contentLength)
-                var readCount = 0
-                while (readCount < contentLength) {
-                    val count = reader.read(chars, readCount, contentLength - readCount)
-                    if (count == -1) break
-                    readCount += count
-                }
-                postBody = String(chars, 0, readCount)
-            }
+            val method = request.method
+            val uri = request.uri
+            val headers = request.headers
+            val postBody = request.body
 
             // 路由处理
             val clientIp = client.inetAddress.hostAddress ?: "127.0.0.1"
@@ -181,6 +173,14 @@ object SyncManager {
             val writer = OutputStreamWriter(client.getOutputStream(), Charsets.UTF_8)
             writer.write(response)
             writer.flush()
+        } catch (e: SyncHttpProtocol.Rejected) {
+            try {
+                val body = JSONObject().put("error", e.message ?: "Invalid request").toString()
+                client.getOutputStream().write(makeHttpResponse(e.code, "Request Rejected", body).toByteArray(Charsets.UTF_8))
+                client.getOutputStream().flush()
+            } catch (_: Exception) {}
+        } catch (_: SocketTimeoutException) {
+            try { client.getOutputStream().write(makeHttpResponse(408, "Request Timeout", "{}").toByteArray(Charsets.UTF_8)) } catch (_: Exception) {}
         } catch (_: Exception) {
         } finally {
             try { client.close() } catch (_: Exception) {}
@@ -197,8 +197,9 @@ object SyncManager {
     ): String {
         val path = if (uri.contains("?")) uri.substring(0, uri.indexOf("?")) else uri
 
-        if (method == "OPTIONS") {
-            return makeHttpResponse(200, "OK", "{}")
+        if (method == "POST" && body.isNotEmpty()) {
+            try { JSONObject(body) }
+            catch (_: Exception) { return makeHttpResponse(400, "Bad Request", "{\"error\":\"Invalid JSON object\"}") }
         }
 
         // 1. 公开接口：设备探测
@@ -274,28 +275,39 @@ object SyncManager {
         val clientId = payload.optString("client_id", "")
         val clientName = payload.optString("client_name", "未知设备")
         val clientPort = payload.optInt("client_port", 23333)
-        val payloadIp = payload.optString("client_ip", "")
-        val effectiveIp = if (payloadIp.isNotEmpty() && (clientIp == "127.0.0.1" || clientIp == "::1" || clientIp == "localhost")) payloadIp else clientIp
+        val effectiveIp = clientIp
         val pin = payload.optString("pin", "")
 
-        if (clientId.isEmpty()) {
+        if (clientId.isEmpty() || clientId.length > 128 || clientName.isEmpty() || clientName.length > 128 ||
+            clientPort !in 1..65535 || !pin.matches(Regex("[0-9]{6}"))) {
             return makeHttpResponse(400, "Bad Request", "{\"error\":\"Missing client_id\"}")
         }
 
-        val reqId = UUID.randomUUID().toString().substring(0, 8)
+        val reqId = UUID.randomUUID().toString()
         val pairReq = PairRequest(reqId, clientId, clientName, effectiveIp, clientPort, pin)
         val deferred = CompletableDeferred<Boolean>()
-        pendingPairRequests[reqId] = deferred
-        pendingPairModels[reqId] = pairReq
-
-        // 触发 UI 弹窗
-        withContext(Dispatchers.Main) {
-            onPairRequestedListener?.invoke(pairReq)
+        synchronized(pendingPairRequests) {
+            if (pendingPairRequests.size >= 8 || pendingPairModels.values.any { it.clientIp == effectiveIp }) {
+                return makeHttpResponse(429, "Too Many Requests", "{\"error\":\"Pairing already pending\"}")
+            }
+            val now = android.os.SystemClock.elapsedRealtime()
+            for (ip in pairAttempts.keys.toList()) {
+                val recent = pairAttempts.getValue(ip).filter { now - it < 60000L }
+                if (recent.isEmpty()) pairAttempts.remove(ip) else pairAttempts[ip] = recent
+            }
+            val attempts = pairAttempts[effectiveIp] ?: emptyList()
+            if (attempts.size >= 5 || (effectiveIp !in pairAttempts && pairAttempts.size >= 128)) {
+                return makeHttpResponse(429, "Too Many Requests", "{\"error\":\"Pairing too frequent\"}")
+            }
+            pairAttempts[effectiveIp] = attempts + now
+            pendingPairRequests[reqId] = deferred
+            pendingPairModels[reqId] = pairReq
         }
 
         // 等待博士在屏幕上确认，超时 30 秒
         val confirmed = try {
             withTimeout(30000L) {
+                withContext(Dispatchers.Main) { onPairRequestedListener?.invoke(pairReq) }
                 deferred.await()
             }
         } catch (e: TimeoutCancellationException) {
@@ -344,12 +356,25 @@ object SyncManager {
         onTacticalDropReceived?.invoke(text, title)
     }
 
+    private fun readLimitedResponse(input: InputStream): String {
+        val output = ByteArrayOutputStream()
+        val buffer = ByteArray(8192)
+        while (true) {
+            val count = input.read(buffer)
+            if (count < 0) break
+            if (output.size() + count > SyncHttpProtocol.MAX_BODY) throw IllegalArgumentException("Sync response too large")
+            output.write(buffer, 0, count)
+        }
+        return output.toString("UTF-8")
+    }
+
     private fun makeHttpResponse(code: Int, statusText: String, bodyJson: String): String {
         val bodyBytes = bodyJson.toByteArray(Charsets.UTF_8)
         return "HTTP/1.1 $code $statusText\r\n" +
                 "Content-Type: application/json; charset=utf-8\r\n" +
                 "Content-Length: ${bodyBytes.size}\r\n" +
-                "Access-Control-Allow-Origin: *\r\n" +
+                "Cache-Control: no-store\r\n" +
+                "X-Content-Type-Options: nosniff\r\n" +
                 "Connection: close\r\n\r\n" +
                 bodyJson
     }
@@ -404,12 +429,13 @@ object SyncManager {
     suspend fun probeDevice(ip: String, port: Int = 23333): DeviceInfo? = withContext(Dispatchers.IO) {
         try {
             val url = URL("http://$ip:$port/api/info")
-            val conn = url.openConnection() as HttpURLConnection
+            val conn = url.openConnection(Proxy.NO_PROXY) as HttpURLConnection
+            conn.instanceFollowRedirects = false
             conn.connectTimeout = 3000
             conn.readTimeout = 3000
             conn.requestMethod = "GET"
             if (conn.responseCode == 200) {
-                val text = conn.inputStream.bufferedReader().readText()
+                val text = conn.inputStream.use { readLimitedResponse(it) }
                 val json = JSONObject(text)
                 return@withContext DeviceInfo.fromJson(json, ip)
             }
@@ -457,14 +483,15 @@ object SyncManager {
         context: Context,
         ip: String,
         port: Int = 23333,
-        pin: String = (100000..999999).random().toString()
+        pin: String = (java.security.SecureRandom().nextInt(900000) + 100000).toString()
     ): Pair<Boolean, String> = withContext(Dispatchers.IO) {
         val candidates = getCandidateIps(ip)
         var lastErr = ""
         for (targetIp in candidates) {
             try {
                 val url = URL("http://$targetIp:$port/api/pair/request")
-                val conn = (url.openConnection() as HttpURLConnection).apply {
+                val conn = (url.openConnection(Proxy.NO_PROXY) as HttpURLConnection).apply {
+                    instanceFollowRedirects = false
                     connectTimeout = 3000
                     readTimeout = 35000
                     requestMethod = "POST"
@@ -481,15 +508,16 @@ object SyncManager {
 
                 val code = conn.responseCode
                 val respText = if (code in 200..299) {
-                    conn.inputStream.bufferedReader().readText()
+                    conn.inputStream.use { readLimitedResponse(it) }
                 } else {
-                    conn.errorStream?.bufferedReader()?.readText() ?: ""
+                    conn.errorStream?.use { readLimitedResponse(it) } ?: ""
                 }
                 val json = try { JSONObject(respText) } catch (_: Exception) { JSONObject() }
                 if (code == 200 && json.optString("status") == "accepted") {
                     val token = json.optString("auth_token", "")
                     val devName = json.optString("device_name", targetIp)
                     val devId = json.optString("device_id", targetIp)
+                    if (token.isEmpty() || devId.isEmpty()) return@withContext Pair(false, "目标设备返回无效配对凭证")
                     saveTrustedDevice(context, devId, devName, targetIp, port, token)
                     return@withContext Pair(true, "配对成功！已与「$devName」建立信任互联。")
                 } else {
@@ -512,14 +540,15 @@ object SyncManager {
         for (targetIp in candidates) {
             try {
                 val url = URL("http://$targetIp:$port/api/sync/pull")
-                val conn = (url.openConnection() as HttpURLConnection).apply {
+                val conn = (url.openConnection(Proxy.NO_PROXY) as HttpURLConnection).apply {
+                    instanceFollowRedirects = false
                     connectTimeout = 3000
                     readTimeout = 8000
                     requestMethod = "POST"
                     setRequestProperty("Authorization", "Bearer $token")
                 }
                 if (conn.responseCode == 200) {
-                    val jsonStr = conn.inputStream.bufferedReader().readText()
+                    val jsonStr = conn.inputStream.use { readLimitedResponse(it) }
                     val payload = JSONObject(jsonStr)
                     val report = applyReceivedData(context, payload, "merge")
                     withContext(Dispatchers.Main) {
@@ -548,7 +577,8 @@ object SyncManager {
         for (targetIp in candidates) {
             try {
                 val url = URL("http://$targetIp:$port/api/sync/push")
-                val conn = (url.openConnection() as HttpURLConnection).apply {
+                val conn = (url.openConnection(Proxy.NO_PROXY) as HttpURLConnection).apply {
+                    instanceFollowRedirects = false
                     connectTimeout = 3000
                     readTimeout = 8000
                     requestMethod = "POST"
@@ -584,7 +614,8 @@ object SyncManager {
         for (targetIp in candidates) {
             try {
                 val url = URL("http://$targetIp:$port/api/clipboard")
-                val conn = (url.openConnection() as HttpURLConnection).apply {
+                val conn = (url.openConnection(Proxy.NO_PROXY) as HttpURLConnection).apply {
+                    instanceFollowRedirects = false
                     connectTimeout = 3000
                     readTimeout = 5000
                     requestMethod = "POST"
@@ -841,7 +872,7 @@ object SyncManager {
         try {
             val root = JSONObject(jsonStr)
             for (k in root.keys()) {
-                if (root.getJSONObject(k).optString("token") == token) return true
+                if (MessageDigest.isEqual(root.getJSONObject(k).optString("token").toByteArray(Charsets.UTF_8), token.toByteArray(Charsets.UTF_8))) return true
             }
         } catch (_: Exception) {}
         return false

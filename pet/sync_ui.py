@@ -232,9 +232,12 @@ class RhodesPairConfirmDialog(QtWidgets.QDialog):
 
     def _on_accept(self):
         self.timer.stop()
-        self.accepted_result = True
         service = get_sync_service()
-        service.pair_manager.accept_request(self.pair_req.request_id)
+        token = service.pair_manager.accept_request(self.pair_req.request_id)
+        self.accepted_result = bool(token)
+        if not token:
+            self.reject()
+            return
         self.accept()
 
     def _on_reject(self):

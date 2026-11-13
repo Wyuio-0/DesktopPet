@@ -13,7 +13,8 @@
 import http.server
 import json
 import os
-import random
+import secrets
+import hmac
 import socket
 import socketserver
 import threading
@@ -30,7 +31,39 @@ from .tasks import Tasks, Task
 
 DEFAULT_HTTP_PORT = 23333
 DEFAULT_UDP_PORT = 23332
-APP_VERSION = "1.9.0"
+from .updater import APP_VERSION
+
+MAX_REQUEST_BYTES = 4 * 1024 * 1024
+MAX_PAIR_BYTES = 4096
+MAX_CLIPBOARD_BYTES = 256 * 1024
+PAIR_TTL = 30.0
+MAX_PENDING_PAIRS = 8
+SOCKET_TIMEOUT = 5.0
+
+
+class _NoSyncRedirects(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        # Never forward a paired-device token or a pairing body to another URL.
+        return None
+
+
+def _open_sync_request(req, timeout):
+    limit = MAX_PAIR_BYTES if req.selector.split("?", 1)[0] == "/api/pair/request" else MAX_REQUEST_BYTES
+    if req.data is not None and len(req.data) > limit:
+        raise ValueError("同步请求过大")
+    # A LAN peer must not receive credentials through system-configured proxies.
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), _NoSyncRedirects())
+    return opener.open(req, timeout=timeout)
+
+
+def _read_sync_json(resp):
+    body = resp.read(MAX_REQUEST_BYTES + 1)
+    if len(body) > MAX_REQUEST_BYTES:
+        raise ValueError("同步响应过大")
+    payload = json.loads(body.decode("utf-8"))
+    if not isinstance(payload, dict):
+        raise ValueError("同步响应必须是 JSON 对象")
+    return payload
 
 
 def _paired_devices_path():
@@ -69,7 +102,7 @@ class PairRequest:
         self.client_ip = client_ip
         self.client_port = client_port
         self.pin = pin
-        self.created_at = time.time()
+        self.created_at = time.monotonic()
         self.event = threading.Event()
         self.accepted = False
         self.auth_token = None
@@ -82,6 +115,7 @@ class PairManager:
         self.path = path or _paired_devices_path()
         self.paired_devices = {}  # device_id -> {name, token, ip, port, paired_at}
         self.pending_requests = {}  # request_id -> PairRequest
+        self.recent_attempts = {}
         self.lock = threading.RLock()
         self.load()
 
@@ -109,13 +143,13 @@ class PairManager:
                 return False
 
     def is_device_trusted(self, device_id, token):
+        if not isinstance(token, str) or not token:
+            return False
         with self.lock:
-            dev = self.paired_devices.get(device_id)
-            if dev and dev.get("token") == token:
-                return True
-            # Also check if token matches any trusted device
-            for d in self.paired_devices.values():
-                if d.get("token") == token:
+            devices = [self.paired_devices.get(device_id)] if device_id else self.paired_devices.values()
+            for d in devices:
+                saved = d.get("token") if isinstance(d, dict) else None
+                if isinstance(saved, str) and saved and hmac.compare_digest(saved.encode(), token.encode()):
                     return True
         return False
 
@@ -125,23 +159,63 @@ class PairManager:
 
     def create_pending_request(self, client_id, client_name, client_ip, client_port, pin=None):
         with self.lock:
-            req_id = uuid.uuid4().hex[:8]
+            self._prune_requests()
+            if (not isinstance(client_id, str) or not 1 <= len(client_id) <= 128
+                    or not isinstance(client_name, str) or not 1 <= len(client_name) <= 128
+                    or type(client_port) is not int or not 1 <= client_port <= 65535
+                    or (pin not in (None, "") and (not isinstance(pin, str) or len(pin) != 6 or not pin.isascii() or not pin.isdigit()))):
+                raise ValueError("无效的配对设备信息或 PIN")
+            if (len(self.pending_requests) >= MAX_PENDING_PAIRS
+                    or any(r.client_ip == client_ip for r in self.pending_requests.values())):
+                raise OverflowError("配对请求过多，请稍后重试")
+            attempts = self.recent_attempts.get(client_ip, [])
+            if len(attempts) >= 5 or (client_ip not in self.recent_attempts and len(self.recent_attempts) >= 128):
+                raise OverflowError("配对请求过于频繁，请稍后重试")
+            self.recent_attempts[client_ip] = attempts + [time.monotonic()]
+            req_id = secrets.token_urlsafe(24)
             if not pin:
-                pin = f"{random.randint(100000, 999999)}"
+                pin = str(secrets.randbelow(900000) + 100000)
             req = PairRequest(req_id, client_id, client_name, client_ip, client_port, pin)
             self.pending_requests[req_id] = req
             return req
 
     def get_pending_request(self, req_id):
         with self.lock:
+            self._prune_requests()
             return self.pending_requests.get(req_id)
+
+    def _prune_requests(self):
+        now = time.monotonic()
+        for ip, attempts in list(self.recent_attempts.items()):
+            current = [t for t in attempts if now - t < 60]
+            if current:
+                self.recent_attempts[ip] = current
+            else:
+                del self.recent_attempts[ip]
+        for req_id, req in list(self.pending_requests.items()):
+            if now - req.created_at >= PAIR_TTL:
+                req.event.set()
+                del self.pending_requests[req_id]
+
+    def clear_pending_requests(self):
+        with self.lock:
+            for req in self.pending_requests.values():
+                req.event.set()
+            self.pending_requests.clear()
+
+    def complete_request(self, req_id):
+        with self.lock:
+            self.pending_requests.pop(req_id, None)
 
     def accept_request(self, req_id):
         with self.lock:
+            self._prune_requests()
             req = self.pending_requests.get(req_id)
             if not req:
                 return None
-            token = "rhodes_" + uuid.uuid4().hex
+            if req.accepted:
+                return req.auth_token
+            token = "rhodes_" + secrets.token_urlsafe(32)
             req.accepted = True
             req.auth_token = token
             self.paired_devices[req.client_id] = {
@@ -347,27 +421,40 @@ class DataSyncEngine:
 class RhodesHttpHandler(http.server.BaseHTTPRequestHandler):
     """处理 Android 与 PC 之间的 HTTP 请求。"""
 
-    server_service = None  # RhodesSyncService instance
+    @property
+    def server_service(self):
+        return self.server.server_service
+
+    def setup(self):
+        super().setup()
+        self.connection.settimeout(SOCKET_TIMEOUT)
+
+    def _native_request(self):
+        if "Origin" in self.headers or "Sec-Fetch-Site" in self.headers:
+            self._send_json(403, {"error": "同步接口仅供原生客户端使用，拒绝浏览器跨站请求"})
+            return False
+        return True
 
     def log_message(self, format, *args):
         pass
 
     def _send_json(self, status_code, data):
+        body = json.dumps(data, ensure_ascii=False).encode("utf-8")
         self.send_response(status_code)
         self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Headers", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
+        self.send_header("Connection", "close")
+        self.close_connection = True
         self.end_headers()
-        body = json.dumps(data, ensure_ascii=False).encode("utf-8")
-        self.wfile.write(body)
+        try:
+            self.wfile.write(body)
+        except (BrokenPipeError, ConnectionResetError):
+            pass
 
     def do_OPTIONS(self):
-        self.send_response(200)
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Headers", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-        self.end_headers()
+        self._send_json(403, {"error": "Browser access is not supported"})
 
     def _check_auth(self):
         auth = self.headers.get("Authorization", "")
@@ -378,6 +465,8 @@ class RhodesHttpHandler(http.server.BaseHTTPRequestHandler):
         return pair_mgr.is_device_trusted("", token)
 
     def do_GET(self):
+        if not self._native_request():
+            return
         parsed = urllib.parse.urlparse(self.path)
         path = parsed.path
 
@@ -396,7 +485,7 @@ class RhodesHttpHandler(http.server.BaseHTTPRequestHandler):
             query = urllib.parse.parse_qs(parsed.query)
             req_id = query.get("request_id", [""])[0]
             req = self.server_service.pair_manager.get_pending_request(req_id)
-            if not req:
+            if not req or req.client_ip != self.client_address[0]:
                 return self._send_json(404, {"error": "Request not found"})
             if req.accepted:
                 return self._send_json(200, {
@@ -415,20 +504,45 @@ class RhodesHttpHandler(http.server.BaseHTTPRequestHandler):
         self._send_json(404, {"error": "Not Found"})
 
     def do_POST(self):
+        if not self._native_request():
+            return
         parsed = urllib.parse.urlparse(self.path)
         path = parsed.path
 
-        content_length = int(self.headers.get("Content-Length", 0))
+        lengths = self.headers.get_all("Content-Length", [])
+        if not lengths and path == "/api/sync/pull":
+            lengths = ["0"]  # Legacy native clients send an empty POST here.
+        if "Transfer-Encoding" in self.headers or len(lengths) != 1:
+            return self._send_json(400, {"error": "需要单个 Content-Length，不支持分块传输"})
+        if not lengths[0].isascii() or not lengths[0].isdigit():
+            return self._send_json(400, {"error": "Invalid Content-Length"})
+        if len(lengths[0]) > 10:
+            return self._send_json(413, {"error": "请求过大"})
+        content_length = int(lengths[0])
+        limit = MAX_PAIR_BYTES if path == "/api/pair/request" else (MAX_CLIPBOARD_BYTES if path == "/api/clipboard" else MAX_REQUEST_BYTES)
+        if content_length > limit:
+            return self._send_json(413, {"error": "请求过大"})
+        if path != "/api/pair/request" and not self._check_auth():
+            return self._send_json(401, {"error": "Unauthorized. 请先完成终端配对确认。"})
+        if content_length and self.headers.get_content_type() != "application/json":
+            return self._send_json(415, {"error": "需要 application/json"})
         post_data = b""
         if content_length > 0:
-            post_data = self.rfile.read(content_length)
+            try:
+                post_data = self.rfile.read(content_length)
+            except (TimeoutError, OSError):
+                return self._send_json(408, {"error": "请求读取超时"})
+            if len(post_data) != content_length:
+                return self._send_json(400, {"error": "请求体不完整"})
 
         payload = {}
         if post_data:
             try:
                 payload = json.loads(post_data.decode("utf-8"))
-            except Exception:
-                pass
+            except (ValueError, UnicodeDecodeError):
+                return self._send_json(400, {"error": "无效的 JSON"})
+        if not isinstance(payload, dict):
+            return self._send_json(400, {"error": "JSON 必须是对象"})
 
         # ── 1. 蓝牙式显式配对握手接口（无需事前 Token）─────────────────────
         if path == "/api/pair/request":
@@ -442,13 +556,14 @@ class RhodesHttpHandler(http.server.BaseHTTPRequestHandler):
                 return self._send_json(400, {"error": "Missing client_id"})
 
             # 创建待确认请求
-            req = self.server_service.pair_manager.create_pending_request(
-                client_id=client_id,
-                client_name=client_name,
-                client_ip=client_ip,
-                client_port=client_port,
-                pin=pin
-            )
+            try:
+                req = self.server_service.pair_manager.create_pending_request(
+                    client_id=client_id, client_name=client_name, client_ip=client_ip,
+                    client_port=client_port, pin=pin)
+            except ValueError as exc:
+                return self._send_json(400, {"error": str(exc)})
+            except OverflowError as exc:
+                return self._send_json(429, {"error": str(exc)})
 
             # 触发 UI 确认回调（弹窗或桌面气泡通知）
             if self.server_service.on_pair_request_callback:
@@ -458,7 +573,8 @@ class RhodesHttpHandler(http.server.BaseHTTPRequestHandler):
                     pass
 
             # 同步等待用户点击确认，最多等待 30 秒
-            accepted = req.event.wait(timeout=30.0)
+            accepted = req.event.wait(timeout=PAIR_TTL)
+            self.server_service.pair_manager.complete_request(req.request_id)
             if accepted and req.accepted:
                 return self._send_json(200, {
                     "status": "accepted",
@@ -513,6 +629,9 @@ class RhodesHttpHandler(http.server.BaseHTTPRequestHandler):
 
         if path == "/api/pair/unpair":
             device_id = payload.get("device_id", "")
+            token = self.headers.get("Authorization", "")[7:].strip()
+            if not isinstance(device_id, str) or not self.server_service.pair_manager.is_device_trusted(device_id, token):
+                return self._send_json(403, {"error": "只能解除自身设备的配对"})
             self.server_service.pair_manager.unpair_device(device_id)
             return self._send_json(200, {"status": "unpaired"})
 
@@ -522,6 +641,49 @@ class RhodesHttpHandler(http.server.BaseHTTPRequestHandler):
 class ThreadedHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
     daemon_threads = True
     allow_reuse_address = True
+    request_queue_size = 16
+
+    def __init__(self, *args, **kwargs):
+        self._slots = threading.BoundedSemaphore(16)
+        super().__init__(*args, **kwargs)
+
+    def process_request(self, request, client_address):
+        if not self._slots.acquire(blocking=False):
+            try:
+                # Drain a bounded header before closing. Windows may otherwise
+                # reset a connection with unread bytes and hide the 503 reply.
+                deadline = time.monotonic() + 0.1
+                header = b""
+                while b"\r\n\r\n" not in header and len(header) < 16384:
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        break
+                    request.settimeout(remaining)
+                    chunk = request.recv(min(4096, 16384 - len(header)))
+                    if not chunk:
+                        break
+                    header += chunk
+            except OSError:
+                pass
+            try:
+                request.settimeout(0.1)
+                request.sendall(b"HTTP/1.0 503 Service Unavailable\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+            except OSError:
+                pass
+            finally:
+                self.shutdown_request(request)
+            return
+        try:
+            super().process_request(request, client_address)
+        except Exception:
+            self._slots.release()
+            raise
+
+    def process_request_thread(self, request, client_address):
+        try:
+            super().process_request_thread(request, client_address)
+        finally:
+            self._slots.release()
 
 
 class RhodesSyncService:
@@ -549,21 +711,24 @@ class RhodesSyncService:
         """启动 HTTP 与 UDP 局域网服务。"""
         if self.running:
             return
-        self.running = True
 
         # 1. 启动多线程 HTTP 服务端
-        RhodesHttpHandler.server_service = self
+        self.http_server = None
         for port in range(self.http_port, self.http_port + 10):
             try:
                 self.http_server = ThreadedHTTPServer(("0.0.0.0", port), RhodesHttpHandler)
-                self.http_port = port
+                self.http_server.server_service = self
+                self.http_port = self.http_server.server_address[1]
                 break
             except OSError:
                 continue
 
         if self.http_server:
+            self.running = True
             self.http_thread = threading.Thread(target=self.http_server.serve_forever, daemon=True)
             self.http_thread.start()
+        else:
+            raise RuntimeError("无法启动同步服务：没有可用 HTTP 端口")
 
         # 2. 启动 UDP 发现监听服务
         try:
@@ -571,6 +736,8 @@ class RhodesSyncService:
             self.udp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             self.udp_socket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
             self.udp_socket.bind(("0.0.0.0", self.udp_port))
+            self.udp_port = self.udp_socket.getsockname()[1]
+            self.udp_socket.settimeout(0.5)
             self.udp_thread = threading.Thread(target=self._udp_listen_loop, daemon=True)
             self.udp_thread.start()
         except Exception:
@@ -579,6 +746,7 @@ class RhodesSyncService:
     def stop(self):
         """安全停止所有网络监听。"""
         self.running = False
+        self.pair_manager.clear_pending_requests()
         if self.http_server:
             try:
                 self.http_server.shutdown()
@@ -590,6 +758,9 @@ class RhodesSyncService:
                 self.udp_socket.close()
             except Exception:
                 pass
+        for thread in (self.http_thread, self.udp_thread):
+            if thread and thread is not threading.current_thread():
+                thread.join(timeout=1.0)
 
     def _udp_listen_loop(self):
         while self.running:
@@ -613,6 +784,8 @@ class RhodesSyncService:
                         "version": APP_VERSION,
                     }
                     self.udp_socket.sendto(json.dumps(resp).encode("utf-8"), addr)
+            except socket.timeout:
+                continue
             except Exception:
                 break
 
@@ -655,9 +828,9 @@ class RhodesSyncService:
         url = f"http://{ip}:{port}/api/info"
         req = urllib.request.Request(url, headers={"User-Agent": "RhodesSync/1.0"})
         try:
-            with urllib.request.urlopen(req, timeout=3.0) as resp:
+            with _open_sync_request(req, timeout=3.0) as resp:
                 if resp.status == 200:
-                    data = json.loads(resp.read().decode("utf-8"))
+                    data = _read_sync_json(resp)
                     data["ip"] = ip
                     data["http_port"] = port
                     return data
@@ -668,7 +841,7 @@ class RhodesSyncService:
     def request_pair(self, target_ip, target_port, pin=None):
         """向目标设备主动发起配对请求，等待对方屏幕确认。"""
         if not pin:
-            pin = f"{random.randint(100000, 999999)}"
+            pin = str(secrets.randbelow(900000) + 100000)
         url = f"http://{target_ip}:{target_port}/api/pair/request"
         local_ips = get_local_ips()
         payload = {
@@ -684,12 +857,14 @@ class RhodesSyncService:
             headers={"Content-Type": "application/json; charset=utf-8"}
         )
         try:
-            with urllib.request.urlopen(req, timeout=35.0) as resp:
-                res = json.loads(resp.read().decode("utf-8"))
+            with _open_sync_request(req, timeout=35.0) as resp:
+                res = _read_sync_json(resp)
                 if res.get("status") == "accepted":
                     token = res.get("auth_token")
                     dev_name = res.get("device_name", target_ip)
                     dev_id = res.get("device_id", target_ip)
+                    if not isinstance(token, str) or not token or not isinstance(dev_id, str) or not dev_id:
+                        return False, "目标设备返回了无效的配对凭证", None
                     with self.pair_manager.lock:
                         self.pair_manager.paired_devices[dev_id] = {
                             "name": dev_name,
@@ -703,7 +878,7 @@ class RhodesSyncService:
                 return False, res.get("error", "配对被拒绝"), res
         except urllib.error.HTTPError as e:
             try:
-                err_body = json.loads(e.read().decode("utf-8"))
+                err_body = _read_sync_json(e)
                 return False, err_body.get("error", f"HTTP {e.code}"), err_body
             except Exception:
                 return False, f"配对失败 (HTTP {e.code})", None
@@ -726,7 +901,7 @@ class RhodesSyncService:
             }
         )
         try:
-            with urllib.request.urlopen(req, timeout=5.0) as resp:
+            with _open_sync_request(req, timeout=5.0) as resp:
                 return resp.status == 200
         except Exception:
             return False
@@ -743,9 +918,9 @@ class RhodesSyncService:
             }
         )
         try:
-            with urllib.request.urlopen(req, timeout=10.0) as resp:
+            with _open_sync_request(req, timeout=10.0) as resp:
                 if resp.status == 200:
-                    payload = json.loads(resp.read().decode("utf-8"))
+                    payload = _read_sync_json(resp)
                     result = DataSyncEngine.apply_data(payload, mode="merge")
                     return True, result
         except Exception as e:
@@ -765,9 +940,9 @@ class RhodesSyncService:
             }
         )
         try:
-            with urllib.request.urlopen(req, timeout=10.0) as resp:
+            with _open_sync_request(req, timeout=10.0) as resp:
                 if resp.status == 200:
-                    data = json.loads(resp.read().decode("utf-8"))
+                    data = _read_sync_json(resp)
                     return True, data.get("result")
         except Exception as e:
             return False, str(e)
@@ -792,7 +967,13 @@ class RhodesSyncService:
                         "Authorization": f"Bearer {token}"
                     }
                 )
-                threading.Thread(target=urllib.request.urlopen, args=(req,), kwargs={"timeout": 3.0}, daemon=True).start()
+                def send_status(request=req):
+                    try:
+                        with _open_sync_request(request, timeout=3.0):
+                            pass
+                    except Exception:
+                        pass
+                threading.Thread(target=send_status, daemon=True).start()
             except Exception:
                 pass
 

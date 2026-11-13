@@ -109,6 +109,8 @@ jobs:
           if (-not (Test-Path ..\dist)) { New-Item -ItemType Directory -Path ..\dist }
           Copy-Item app\build\outputs\apk\debug\app-debug.apk "..\dist\AmiyaPet-Android-$env:MY_APP_VERSION.apk" -Force
           cd ..
+      - name: Check native sync HTTP boundaries
+        run: python tools/check_sync_protocol.py
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
