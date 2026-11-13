@@ -14,6 +14,7 @@ import urllib.parse
 import webbrowser
 
 from . import logging as petlog
+from web.security import ACCESS_KEY, local_host
 
 _SERVER_STARTED = False
 _SERVER_LOCK = threading.Lock()
@@ -21,6 +22,9 @@ _LOOP = None
 _RUNNER = None
 _SITE = None
 _SERVER_THREAD = None
+_ACCESS = None
+_WEB_SERVER = None
+_SERVER_ADDRESS = None
 
 
 def is_server_listening(host: str = "127.0.0.1", port: int = 5050) -> bool:
@@ -37,77 +41,91 @@ def is_running(host: str = "127.0.0.1", port: int = 5050) -> bool:
     return is_server_listening(host, port)
 
 
-def ensure_server_running(host: str = "127.0.0.1", port: int = 5050, brain=None, kb=None) -> bool:
-    """确保 NotebookLM 后台 Web 服务正在运行（线程内免依赖托管）。"""
-    global _SERVER_STARTED, _SERVER_THREAD
-    if is_server_listening(host, port):
-        if brain or kb:
-            try:
-                import web.server as ws
-                ws.set_app_context(brain, kb)
-            except Exception:
-                pass
-        _SERVER_STARTED = True
-        return True
+def _get_web_server_module():
+    """动态获取 web.server 模块，优先读取磁盘上的最新源文件，方便热更新与免重构调试。"""
+    import importlib.util
+    import os
+    import sys
 
+    base_dirs = []
+    if getattr(sys, 'frozen', False):
+        exe_dir = os.path.dirname(sys.executable)
+        base_dirs.extend([exe_dir, os.path.join(exe_dir, '_internal')])
+    else:
+        root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        base_dirs.append(root_dir)
+
+    for b in base_dirs:
+        candidate = os.path.join(b, "web", "server.py")
+        if os.path.isfile(candidate):
+            try:
+                spec = importlib.util.spec_from_file_location("web.server", candidate)
+                if spec and spec.loader:
+                    mod = importlib.util.module_from_spec(spec)
+                    spec.loader.exec_module(mod)
+                    return mod
+            except Exception as e:
+                petlog.warn(f"web_launcher: 动态载入外部 {candidate} 失败，回退内建模块: {e}")
+
+    import web.server as ws
+    return ws
+
+
+def ensure_server_running(host: str = "127.0.0.1", port: int = 5050, brain=None, kb=None) -> bool:
+    """Start an owned loopback service; never trust another listener on the port."""
+    global _SERVER_STARTED, _SERVER_THREAD
+    host = local_host(host)
     with _SERVER_LOCK:
-        if is_server_listening(host, port):
-            if brain or kb:
-                try:
-                    import web.server as ws
-                    ws.set_app_context(brain, kb)
-                except Exception:
-                    pass
-            _SERVER_STARTED = True
+        if (_SITE is not None and _SERVER_ADDRESS == (host, port)
+                and _SERVER_THREAD and _SERVER_THREAD.is_alive()):
+            if brain is not None or kb is not None:
+                _WEB_SERVER.set_app_context(brain, kb)
             return True
+        if is_server_listening(host, port) or (_SERVER_THREAD and _SERVER_THREAD.is_alive()):
+            petlog.warn("web_launcher: 端口已占用或工作台正在启动，请关闭已有服务后重试")
+            return False
+
+        ready = threading.Event()
 
         def _run_server():
-            global _LOOP, _RUNNER, _SITE
+            global _LOOP, _RUNNER, _SITE, _ACCESS, _WEB_SERVER, _SERVER_ADDRESS
+            loop = asyncio.new_event_loop()
+            runner = None
             try:
-                loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
                 _LOOP = loop
-
                 from aiohttp import web
-                from web.server import make_app, set_app_context
-
-                if brain or kb:
-                    set_app_context(brain, kb)
-
-                app = make_app()
-                runner = web.AppRunner(app)
+                ws = _get_web_server_module()
+                if brain is not None or kb is not None:
+                    ws.set_app_context(brain, kb)
+                app = ws.make_app()
+                runner = web.AppRunner(app, access_log=None)
                 loop.run_until_complete(runner.setup())
-                _RUNNER = runner
-
                 site = web.TCPSite(runner, host, port)
                 loop.run_until_complete(site.start())
-                _SITE = site
-
-                petlog.log(f"web_launcher: NotebookLM Web 服务已就绪 -> http://{host}:{port}")
+                _RUNNER, _SITE = runner, site
+                _ACCESS, _WEB_SERVER = app[ACCESS_KEY], ws
+                _SERVER_ADDRESS = (host, port)
+                ready.set()
+                petlog.log("web_launcher: NotebookLM 本机服务已就绪")
                 loop.run_forever()
             except Exception as e:
                 petlog.warn(f"web_launcher: 后台启动 NotebookLM 服务失败: {e}")
             finally:
-                _LOOP = None
-                _RUNNER = None
-                _SITE = None
+                try:
+                    if runner:
+                        loop.run_until_complete(runner.cleanup())
+                finally:
+                    loop.close()
+                    _LOOP = _RUNNER = _SITE = None
+                    _ACCESS = _WEB_SERVER = _SERVER_ADDRESS = None
+                    ready.set()
 
-        server_thread = threading.Thread(
-            target=_run_server,
-            name="NotebookLMWebDaemon",
-            daemon=True
-        )
-        _SERVER_THREAD = server_thread
-        server_thread.start()
-
-        # 等待服务端口就绪（最多 2 秒）
-        for _ in range(20):
-            time.sleep(0.1)
-            if is_server_listening(host, port):
-                _SERVER_STARTED = True
-                return True
-
-        return False
+        _SERVER_THREAD = threading.Thread(target=_run_server, name="NotebookLMWebDaemon", daemon=True)
+        _SERVER_THREAD.start()
+        ready.wait(timeout=6)
+        _SERVER_STARTED = _SITE is not None and _SERVER_ADDRESS == (host, port)
+        return _SERVER_STARTED
 
 
 def stop_server(timeout: float = 2.0, host: str = "127.0.0.1", port: int = 5050) -> bool:
@@ -138,11 +156,11 @@ def stop_server(timeout: float = 2.0, host: str = "127.0.0.1", port: int = 5050)
                             await runner.cleanup()
                         except Exception:
                             pass
-                    loop.stop()
 
                 f = asyncio.run_coroutine_threadsafe(_shutdown(), loop)
                 try:
                     f.result(timeout=timeout)
+                    loop.call_soon_threadsafe(loop.stop)
                 except Exception as e:
                     petlog.warn(f"web_launcher: cleanup runner 异常: {e}")
                     loop.call_soon_threadsafe(loop.stop)
@@ -182,7 +200,9 @@ def open_notebook_lm(course: str = None, filename: str = None, host: str = "127.
     Returns:
         打开的网页 URL
     """
-    ensure_server_running(host, port, brain=brain, kb=kb)
+    host = local_host(host)
+    if not ensure_server_running(host, port, brain=brain, kb=kb):
+        raise RuntimeError("网页工作台启动失败：端口可能被其他程序占用")
 
     params = {}
     if course and str(course).strip() and course != "__ALL__":
@@ -191,8 +211,10 @@ def open_notebook_lm(course: str = None, filename: str = None, host: str = "127.
         params["file"] = str(filename).strip()
     params["_t"] = int(time.time())
 
-    query = urllib.parse.urlencode(params)
-    url = f"http://{host}:{port}/?{query}"
+    with _SERVER_LOCK:
+        if _ACCESS is None or _SERVER_ADDRESS != (host, port):
+            raise RuntimeError("网页工作台已停止，请重试")
+        url = _ACCESS.launch_url(host, port, params)
 
     try:
         webbrowser.open(url)

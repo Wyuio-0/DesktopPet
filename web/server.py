@@ -27,6 +27,7 @@ if sys.platform == "win32":
         pass
 
 from aiohttp import web
+from web.security import ACCESS_KEY, LocalWebAccess, local_session, bootstrap, establish_session, local_host
 
 # 确保能加载项目根目录下的 pet 模块
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -657,7 +658,10 @@ async def knowledge_path_errors(request, handler):
 def make_app():
     # 限制放宽至 1024MB (1GB)，彻底消除大课件上传时的 413 Request Entity Too Large 错误
     app = web.Application(client_max_size=1024 * 1024 * 1024,
-                          middlewares=[knowledge_path_errors])
+                          middlewares=[local_session, knowledge_path_errors])
+    app[ACCESS_KEY] = LocalWebAccess()
+    app.router.add_get("/auth", bootstrap)
+    app.router.add_post("/auth/session", establish_session)
     app.router.add_get("/", handle_index)
     app.router.add_get("/api/stats", handle_stats)
     app.router.add_get("/api/files", handle_files)
@@ -683,11 +687,13 @@ def make_app():
 
 
 def run(host="127.0.0.1", port=5050, open_browser=True):
+    host = local_host(host)
     app = make_app()
-    url = f"http://{host}:{port}"
+    url = app[ACCESS_KEY].launch_url(host, port)
     print("\n========================================================")
     print(f"[*] Google NotebookLM Web 调试工作台已启动！")
-    print(f"[*] 访问地址: {url}")
+    if not open_browser:
+        print(f"[*] 本机打开链接（5 分钟内有效）: {url}")
     print(f"[*] 可在网页中实时调试字号、主题配色、三栏比例与考纲排版")
     print("========================================================\n")
     if open_browser:

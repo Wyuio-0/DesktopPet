@@ -473,9 +473,9 @@ class PetWindow(QtWidgets.QWidget):
         from .web_launcher import ensure_server_running
         ok = ensure_server_running(brain=self.brain, kb=getattr(self.brain, "knowledge", None))
         if ok:
-            self.bubble.say("博士，知识库 Web 服务已启动，可随时在浏览器中访问！", self._body_rect(), auto_ms=3500)
+            self.bubble.say("博士，知识库 Web 服务已启动，请从课程知识库菜单打开网页！", self._body_rect(), auto_ms=3500)
             if hasattr(self, "tray_coord") and self.tray_coord:
-                self.tray_coord.show_message("NotebookLM 服务", "Web 服务已就绪 -> http://127.0.0.1:5050")
+                self.tray_coord.show_message("NotebookLM 服务", "Web 服务已就绪，请从课程知识库菜单打开网页。")
         else:
             self.bubble.say("博士，启动 Web 服务失败，请检查端口是否被占用。", self._body_rect(), auto_ms=3000)
 

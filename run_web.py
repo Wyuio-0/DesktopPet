@@ -14,6 +14,7 @@ if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)
 
 from web.server import run
+from web.security import local_host
 
 def main():
     parser = argparse.ArgumentParser(description="Amiya NotebookLM Web 调试工作台")
@@ -21,6 +22,10 @@ def main():
     parser.add_argument("--port", type=int, default=5050, help="监听端口 (默认 5050)")
     parser.add_argument("--no-browser", action="store_true", help="启动时不自动打开浏览器")
     args = parser.parse_args()
+    try:
+        args.host = local_host(args.host)
+    except ValueError as exc:
+        parser.error(str(exc))
 
     try:
         run(host=args.host, port=args.port, open_browser=not args.no_browser)

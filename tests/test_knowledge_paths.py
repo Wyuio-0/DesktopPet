@@ -123,11 +123,18 @@ def library_server(tmp_path, monkeypatch):
 
 
 def request(server, method, route, **kwargs):
-    from aiohttp import ClientTimeout
+    from aiohttp import ClientTimeout, CookieJar
     from aiohttp.test_utils import TestClient, TestServer
+    from web.security import ACCESS_KEY
 
     async def run():
-        async with TestClient(TestServer(server.make_app()), timeout=ClientTimeout(total=10)) as client:
+        app = server.make_app()
+        async with TestClient(TestServer(app), timeout=ClientTimeout(total=10), cookie_jar=CookieJar(unsafe=True)) as client:
+            origin = str(client.make_url("/")).rstrip("/")
+            client.session.headers["Origin"] = origin
+            url = app[ACCESS_KEY].launch_url("127.0.0.1", client.port)
+            async with client.post("/auth/session", json={"token": url.split("#token=")[1]}) as login:
+                assert login.status == 200
             async with client.request(method, route, **kwargs) as response:
                 return response.status, await response.read()
     return asyncio.run(run())

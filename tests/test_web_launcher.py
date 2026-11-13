@@ -8,11 +8,18 @@ from pet import web_launcher
 @pytest.fixture(autouse=True)
 def isolated_knowledge(tmp_path, monkeypatch):
     """Web API tests must never write to the user's default knowledge folder."""
+    # Earlier UI tests may start the process-wide service on its default port.
+    # Close that owned instance before testing a different port.
+    web_launcher.stop_server()
     monkeypatch.setenv("APPDATA", str(tmp_path / "appdata"))
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
     from pet.knowledge import KnowledgeBase
     from web import server
     monkeypatch.setattr(server, "kb", KnowledgeBase(str(tmp_path / "knowledge"), use_embed=False))
+    try:
+        yield
+    finally:
+        web_launcher.stop_server()
 
 
 def test_web_launcher_lifecycle():
@@ -38,13 +45,19 @@ def test_web_launcher_lifecycle():
 
 def test_web_courses_and_upload_api():
     import asyncio
+    from aiohttp import CookieJar
     from aiohttp.test_utils import TestClient, TestServer
     from web.server import make_app
+    from web.security import ACCESS_KEY
 
     async def _run():
         app = make_app()
         server = TestServer(app)
-        async with TestClient(server) as client:
+        async with TestClient(server, cookie_jar=CookieJar(unsafe=True)) as client:
+            client.session.headers["Origin"] = str(client.make_url("/")).rstrip("/")
+            url = app[ACCESS_KEY].launch_url("127.0.0.1", client.port)
+            res = await client.post("/auth/session", json={"token": url.split("#token=")[1]})
+            assert res.status == 200
             # 1. 验证课程统计结构
             res = await client.get("/api/stats")
             data = await res.json()
