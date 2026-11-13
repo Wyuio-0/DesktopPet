@@ -6,6 +6,7 @@ import urllib.request
 import json
 
 from pet.sync_service import RhodesSyncService, DataSyncEngine
+from pet.sync_crypto import make_request, read_response, pairing_code
 
 
 class TestSyncService(unittest.TestCase):
@@ -44,12 +45,12 @@ class TestSyncService(unittest.TestCase):
             with urllib.request.urlopen(req, timeout=2.0) as resp:
                 self.fail("Should have raised HTTPError 401")
         except urllib.error.HTTPError as e:
-            self.assertEqual(e.code, 401)
+            self.assertEqual(e.code, 426)
 
     def test_03_pairing_flow(self):
         """测试蓝牙式配对流程（发起 -> 确认 -> 授权 -> 获取 Token）。"""
         def auto_accept_callback(pair_req):
-            self.assertEqual(pair_req.pin, "123456")
+            self.assertEqual(pair_req.pin, pairing_code(secret))
             self.assertEqual(pair_req.client_name, "Doctor-Android-Test")
             # 模拟用户在弹窗点击确认
             self.service.pair_manager.accept_request(pair_req.request_id)
@@ -63,31 +64,31 @@ class TestSyncService(unittest.TestCase):
             "pin": "123456",
             "client_port": 29992
         }
-        req = urllib.request.Request(
-            url,
-            data=json.dumps(payload).encode("utf-8"),
-            headers={"Content-Type": "application/json"}
-        )
+        secret = self.service.create_pairing_invite()
+        envelope = make_request(secret, "/api/pair/request", payload, self.service.secure.epoch)
+        req = urllib.request.Request(url, data=json.dumps(envelope).encode(),
+            headers={"Content-Type": "application/json", "X-Rhodes-Protocol": "2"})
         with urllib.request.urlopen(req, timeout=5.0) as resp:
             self.assertEqual(resp.status, 200)
-            data = json.loads(resp.read().decode("utf-8"))
+            data = read_response(secret, "/api/pair/request", json.loads(resp.read().decode()), envelope, resp.status)
             self.assertEqual(data.get("status"), "accepted")
             token = data.get("auth_token")
             self.assertTrue(token and token.startswith("rhodes_"))
 
             # 验证配对后可以成功调用受保护接口
             pull_url = f"http://127.0.0.1:{self.service.http_port}/api/sync/pull"
+            pull_envelope = make_request(secret, "/api/sync/pull", {"_auth_token": token}, self.service.secure.epoch)
             pull_req = urllib.request.Request(
                 pull_url,
-                data=b"{}",
+                data=json.dumps(pull_envelope).encode(),
                 headers={
                     "Content-Type": "application/json",
-                    "Authorization": f"Bearer {token}"
+                    "X-Rhodes-Protocol": "2"
                 }
             )
             with urllib.request.urlopen(pull_req, timeout=2.0) as pull_resp:
                 self.assertEqual(pull_resp.status, 200)
-                sync_data = json.loads(pull_resp.read().decode("utf-8"))
+                sync_data = read_response(secret, "/api/sync/pull", json.loads(pull_resp.read().decode()), pull_envelope, pull_resp.status)
                 self.assertIn("schedule", sync_data)
                 self.assertIn("exams", sync_data)
                 self.assertIn("notes", sync_data)

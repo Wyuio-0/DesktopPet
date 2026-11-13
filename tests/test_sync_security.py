@@ -12,6 +12,7 @@ import urllib.request
 import pytest
 
 from pet import sync_service as sync
+from pet import sync_crypto as crypto
 
 
 @pytest.fixture
@@ -79,6 +80,8 @@ def service(tmp_path, monkeypatch):
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
     service = sync.RhodesSyncService(device_name="security-test", http_port=0, udp_port=0)
     req = pending(service.pair_manager)
+    service.secret = crypto.new_secret()
+    req.sync_key = service.secret
     service.token = service.pair_manager.accept_request(req.request_id)
     service.pair_manager.complete_request(req.request_id)
     service.start()
@@ -91,7 +94,9 @@ def service(tmp_path, monkeypatch):
 def call(service, method="GET", path="/api/info", body=None, headers=None):
     conn = http.client.HTTPConnection("127.0.0.1", service.http_port, timeout=3)
     try:
-        conn.request(method, path, body=body, headers=headers or {})
+        merged = {"X-Rhodes-Protocol": "2"} if method == "POST" else {}
+        merged.update(headers or {})
+        conn.request(method, path, body=body, headers=merged)
         response = conn.getresponse()
         return response.status, dict(response.getheaders()), response.read()
     finally:
@@ -107,7 +112,7 @@ def test_browser_requests_rejected(service, method, headers):
 
 
 @pytest.mark.parametrize("length,status", [("-1", 400), ("bad", 400), ("9" * 5000, 413),
-                                         (str(sync.MAX_PAIR_BYTES + 1), 413)])
+                                         (str((sync.MAX_PAIR_BYTES + 16) * 4 // 3 + 2049), 413)])
 def test_lengths_rejected_without_reading_body(service, length, status):
     assert call(service, "POST", "/api/pair/request", headers={"Content-Length": length})[0] == status
 
@@ -117,6 +122,7 @@ def test_chunked_and_duplicate_length_rejected(service):
     conn = http.client.HTTPConnection("127.0.0.1", service.http_port, timeout=3)
     try:
         conn.putrequest("POST", "/api/pair/request")
+        conn.putheader("X-Rhodes-Protocol", "2")
         conn.putheader("Content-Length", "0")
         conn.putheader("Content-Length", "1")
         conn.endheaders()
@@ -135,6 +141,7 @@ def test_truncated_body_rejected(service):
     conn = http.client.HTTPConnection("127.0.0.1", service.http_port, timeout=3)
     try:
         conn.putrequest("POST", "/api/pair/request")
+        conn.putheader("X-Rhodes-Protocol", "2")
         conn.putheader("Content-Length", "20")
         conn.putheader("Content-Type", "application/json")
         conn.endheaders()
@@ -147,31 +154,46 @@ def test_truncated_body_rejected(service):
 
 def test_native_chinese_pairing_clears_request(service):
     service.on_pair_request_callback = lambda req: service.pair_manager.accept_request(req.request_id)
-    body = json.dumps({"client_id": "second", "client_name": "中文设备", "client_port": 23334, "pin": "123456"}, ensure_ascii=False).encode()
-    status, headers, data = call(service, "POST", "/api/pair/request", body=body, headers={"Content-Type": "application/json"})
+    secret = service.create_pairing_invite()
+    payload = {"client_id": "second", "client_name": "中文设备", "client_port": 23334, "pin": "123456"}
+    envelope = crypto.make_request(secret, "/api/pair/request", payload, service.secure.epoch)
+    status, headers, data = call(service, "POST", "/api/pair/request", body=json.dumps(envelope).encode(), headers={"Content-Type": "application/json"})
     assert status == 200
-    assert json.loads(data)["auth_token"]
+    result = crypto.read_response(secret, "/api/pair/request", json.loads(data), envelope, status)
+    assert result["auth_token"]
+    assert result["auth_token"].encode() not in data
     assert not service.pair_manager.pending_requests
     assert headers["Cache-Control"] == "no-store"
+
+
+def secure_call(service, path, payload):
+    payload = dict(payload, _auth_token=service.token)
+    envelope = crypto.make_request(service.secret, path, payload, service.secure.epoch)
+    status, headers, data = call(service, "POST", path, body=json.dumps(envelope).encode(), headers={"Content-Type": "application/json"})
+    return status, crypto.read_response(service.secret, path, json.loads(data), envelope, status)
 
 
 def test_polling_cannot_retrieve_other_peers_pair_token(service):
     req = pending(service.pair_manager, ip="10.0.0.20", client="remote")
     service.pair_manager.accept_request(req.request_id)
-    assert call(service, path="/api/pair/status?request_id=" + req.request_id)[0] == 404
+    status, _, body = call(service, path="/api/pair/status?request_id=" + req.request_id)
+    assert status == 426
+    assert req.auth_token.encode() not in body
 
 
-def test_authenticated_empty_pull_keeps_legacy_compatibility(service):
+def test_legacy_pull_is_blocked_and_encrypted_pull_works(service):
     status, _, body = call(service, "POST", "/api/sync/pull", headers={"Authorization": "Bearer " + service.token})
+    assert status == 426
+    assert b"schedule" not in body
+    status, result = secure_call(service, "/api/sync/pull", {})
     assert status == 200
-    assert "schedule" in json.loads(body)
+    assert "schedule" in result
 
 
-def test_unauthorized_body_not_read_and_token_cannot_unpair_other_devices(service):
-    assert call(service, "POST", "/api/sync/push", headers={"Content-Length": "1000"})[0] == 401
-    args = dict(method="POST", path="/api/pair/unpair", headers={"Authorization": "Bearer " + service.token, "Content-Type": "application/json"})
-    assert call(service, body=b'{"device_id":"other"}', **args)[0] == 403
-    assert call(service, body=b'{"device_id":"phone"}', **args)[0] == 200
+def test_unknown_key_rejected_and_cannot_unpair_other_devices(service):
+    assert call(service, "POST", "/api/sync/push", body=b"{}", headers={"Content-Type": "application/json"})[0] == 401
+    assert secure_call(service, "/api/pair/unpair", {"device_id": "other"})[0] == 403
+    assert secure_call(service, "/api/pair/unpair", {"device_id": "phone"})[0] == 200
     assert not service.pair_manager.is_device_trusted("phone", service.token)
 
 
@@ -182,7 +204,7 @@ def test_server_instances_do_not_share_identity_or_auth(service, tmp_path):
     try:
         assert json.loads(call(service)[2])["device_name"] == "security-test"
         assert json.loads(call(other)[2])["device_name"] == "other"
-        assert call(other, path="/api/sync/pull", headers={"Authorization": "Bearer " + service.token})[0] == 401
+        assert call(other, path="/api/sync/pull", headers={"Authorization": "Bearer " + service.token})[0] == 426
     finally:
         other.stop()
 
@@ -222,4 +244,4 @@ def test_outgoing_requests_do_not_follow_redirects():
 
 def test_oversized_response_rejected_before_parsing():
     with pytest.raises(ValueError):
-        sync._read_sync_json(io.BytesIO(b" " * (sync.MAX_REQUEST_BYTES + 1)))
+        sync._read_sync_json(io.BytesIO(b" " * (crypto.MAX_WIRE + 1)))

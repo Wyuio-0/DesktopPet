@@ -143,6 +143,10 @@ jobs:
         run: |
           cd ios
           xcodegen generate
+      - name: Check Apple sync crypto interoperability
+        run: |
+          swiftc ios/AmiyaPet/Core/Sync/SyncCrypto.swift ios/tools/SyncCryptoCheck.swift -o /tmp/amiya-sync-crypto-check
+          /tmp/amiya-sync-crypto-check tests/fixtures/sync_v2_vectors.tsv
       - name: Build iOS App (.app and .ipa)
         env:
           MY_APP_VERSION: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'dev' }}
