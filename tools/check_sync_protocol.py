@@ -51,9 +51,12 @@ def main():
                         "org.jetbrains.kotlin.cli.jvm.K2JVMCompiler", "-no-stdlib", "-no-reflect",
                         "-classpath", os.pathsep.join(map(str, (stdlib, annotations))), "-d", output,
                         str(root / "android/app/src/main/java/com/amiya/pet/core/sync/SyncHttpProtocol.kt"),
-                        str(root / "android/tools/SyncHttpProtocolCheck.kt")], check=True)
+                        str(root / "android/app/src/main/java/com/amiya/pet/core/sync/SyncCrypto.kt"),
+                        str(root / "android/tools/SyncHttpProtocolCheck.kt"),
+                        str(root / "android/tools/SyncCryptoCheck.kt")], check=True)
         subprocess.run([java, "-cp", os.pathsep.join((output, str(stdlib))),
-                        "com.amiya.pet.core.sync.SyncHttpProtocolCheckKt"], check=True)
+                        "com.amiya.pet.core.sync.SyncHttpProtocolCheckKt",
+                        str(root / "tests/fixtures/sync_v2_vectors.tsv")], check=True)
 
 
 if __name__ == "__main__":

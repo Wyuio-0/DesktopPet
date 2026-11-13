@@ -46,6 +46,10 @@ internal object SyncHttpProtocol {
         }
         if (method == "OPTIONS" || "origin" in headers || "sec-fetch-site" in headers) throw Rejected(403, "Browser access is not supported")
         if (method !in listOf("GET", "POST")) throw Rejected(405, "Method not allowed")
+        if (method == "GET" && path != "/api/info" || method == "POST" &&
+            (headers["x-rhodes-protocol"] != "2" || "authorization" in headers || path !in SyncCrypto.paths)) {
+            throw Rejected(426, "Upgrade to encrypted sync v2 and pair again")
+        }
         if ("transfer-encoding" in headers) throw Rejected(400, "Chunked requests are not supported")
         val rawLength = headers["content-length"] ?: if (method == "GET" || path == "/api/sync/pull") "0" else throw Rejected(400, "Missing Content-Length")
         if (!rawLength.matches(Regex("[0-9]+"))) throw Rejected(400, "Invalid Content-Length")
@@ -55,7 +59,7 @@ internal object SyncHttpProtocol {
             "/api/clipboard" -> MAX_CLIPBOARD
             else -> MAX_BODY
         }
-        if (length > limit) throw Rejected(413, "Body too large")
+        if (length > (limit + 16L) * 4 / 3 + 2048) throw Rejected(413, "Body too large")
         val public = method == "GET" && path == "/api/info" || method == "POST" && path == "/api/pair/request"
         if (!public && !authorized(headers)) throw Rejected(401, "Unauthorized")
         if (length > 0 && headers["content-type"]?.substringBefore(';')?.trim()?.lowercase() != "application/json") throw Rejected(415, "JSON required")

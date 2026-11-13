@@ -28,6 +28,7 @@ from .notes import NotesManager, Note
 from .schedule import Schedule, Course
 from .settings import config_dir
 from .tasks import Tasks, Task
+from .sync_crypto import SecureSync, InvalidEnvelope, key_id, pairing_code, make_request, read_response, seal, PATHS, MAX_WIRE
 
 DEFAULT_HTTP_PORT = 23333
 DEFAULT_UDP_PORT = 23332
@@ -48,7 +49,7 @@ class _NoSyncRedirects(urllib.request.HTTPRedirectHandler):
 
 
 def _open_sync_request(req, timeout):
-    limit = MAX_PAIR_BYTES if req.selector.split("?", 1)[0] == "/api/pair/request" else MAX_REQUEST_BYTES
+    limit = MAX_WIRE
     if req.data is not None and len(req.data) > limit:
         raise ValueError("同步请求过大")
     # A LAN peer must not receive credentials through system-configured proxies.
@@ -57,8 +58,8 @@ def _open_sync_request(req, timeout):
 
 
 def _read_sync_json(resp):
-    body = resp.read(MAX_REQUEST_BYTES + 1)
-    if len(body) > MAX_REQUEST_BYTES:
+    body = resp.read(MAX_WIRE + 1)
+    if len(body) > MAX_WIRE:
         raise ValueError("同步响应过大")
     payload = json.loads(body.decode("utf-8"))
     if not isinstance(payload, dict):
@@ -106,6 +107,7 @@ class PairRequest:
         self.event = threading.Event()
         self.accepted = False
         self.auth_token = None
+        self.sync_key = None
 
 
 class PairManager:
@@ -225,6 +227,8 @@ class PairManager:
                 "port": req.client_port,
                 "paired_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             }
+            if req.sync_key:
+                self.paired_devices[req.client_id].update(sync_key=req.sync_key, protocol=2)
             self.save()
             req.event.set()
             return token
@@ -428,6 +432,17 @@ class RhodesHttpHandler(http.server.BaseHTTPRequestHandler):
     def setup(self):
         super().setup()
         self.connection.settimeout(SOCKET_TIMEOUT)
+        self.secure_context = None
+        self.secure_peer_id = ""
+        self.secure_payload = {}
+        self.invite_claim = None
+
+    def finish(self):
+        try:
+            super().finish()
+        finally:
+            if self.invite_claim:
+                self.server_service.secure.release_invite(*self.invite_claim)
 
     def _native_request(self):
         if "Origin" in self.headers or "Sec-Fetch-Site" in self.headers:
@@ -439,6 +454,13 @@ class RhodesHttpHandler(http.server.BaseHTTPRequestHandler):
         pass
 
     def _send_json(self, status_code, data):
+        if self.secure_context:
+            secret, path, request = self.secure_context
+            try:
+                data = seal(secret, path, data, request, "response", status_code)
+            except InvalidEnvelope:
+                status_code = 413
+                data = seal(secret, path, {"error": "同步响应过大"}, request, "response", status_code)
         body = json.dumps(data, ensure_ascii=False).encode("utf-8")
         self.send_response(status_code)
         self.send_header("Content-Type", "application/json; charset=utf-8")
@@ -457,12 +479,8 @@ class RhodesHttpHandler(http.server.BaseHTTPRequestHandler):
         self._send_json(403, {"error": "Browser access is not supported"})
 
     def _check_auth(self):
-        auth = self.headers.get("Authorization", "")
-        if not auth.startswith("Bearer "):
-            return False
-        token = auth[7:].strip()
         pair_mgr = self.server_service.pair_manager
-        return pair_mgr.is_device_trusted("", token)
+        return bool(self.secure_peer_id) and pair_mgr.is_device_trusted(self.secure_peer_id, self.secure_payload.get("_auth_token"))
 
     def do_GET(self):
         if not self._native_request():
@@ -478,28 +496,13 @@ class RhodesHttpHandler(http.server.BaseHTTPRequestHandler):
                 "http_port": self.server_service.http_port,
                 "version": APP_VERSION,
                 "paired": len(self.server_service.pair_manager.paired_devices) > 0,
+                "protocol": 2,
+                "epoch": self.server_service.secure.epoch,
             }
             return self._send_json(200, info)
 
-        if path == "/api/pair/status":
-            query = urllib.parse.parse_qs(parsed.query)
-            req_id = query.get("request_id", [""])[0]
-            req = self.server_service.pair_manager.get_pending_request(req_id)
-            if not req or req.client_ip != self.client_address[0]:
-                return self._send_json(404, {"error": "Request not found"})
-            if req.accepted:
-                return self._send_json(200, {
-                    "status": "accepted",
-                    "auth_token": req.auth_token,
-                    "device_name": self.server_service.device_name
-                })
-            return self._send_json(200, {"status": "pending"})
-
-        if path == "/api/sync/pull":
-            if not self._check_auth():
-                return self._send_json(401, {"error": "Unauthorized. 请先完成终端配对确认。"})
-            data = DataSyncEngine.pack_all_data()
-            return self._send_json(200, data)
+        if path.startswith("/api/"):
+            return self._send_json(426, {"error": "请升级并使用加密同步协议 v2，旧配对需要重新建立"})
 
         self._send_json(404, {"error": "Not Found"})
 
@@ -508,10 +511,12 @@ class RhodesHttpHandler(http.server.BaseHTTPRequestHandler):
             return
         parsed = urllib.parse.urlparse(self.path)
         path = parsed.path
+        if path not in PATHS or parsed.query:
+            return self._send_json(404, {"error": "Not Found"})
+        if self.headers.get("X-Rhodes-Protocol") != "2" or "Authorization" in self.headers:
+            return self._send_json(426, {"error": "仅支持加密同步协议 v2，请升级并重新配对"})
 
         lengths = self.headers.get_all("Content-Length", [])
-        if not lengths and path == "/api/sync/pull":
-            lengths = ["0"]  # Legacy native clients send an empty POST here.
         if "Transfer-Encoding" in self.headers or len(lengths) != 1:
             return self._send_json(400, {"error": "需要单个 Content-Length，不支持分块传输"})
         if not lengths[0].isascii() or not lengths[0].isdigit():
@@ -520,10 +525,8 @@ class RhodesHttpHandler(http.server.BaseHTTPRequestHandler):
             return self._send_json(413, {"error": "请求过大"})
         content_length = int(lengths[0])
         limit = MAX_PAIR_BYTES if path == "/api/pair/request" else (MAX_CLIPBOARD_BYTES if path == "/api/clipboard" else MAX_REQUEST_BYTES)
-        if content_length > limit:
+        if content_length > (limit + 16) * 4 // 3 + 2048:
             return self._send_json(413, {"error": "请求过大"})
-        if path != "/api/pair/request" and not self._check_auth():
-            return self._send_json(401, {"error": "Unauthorized. 请先完成终端配对确认。"})
         if content_length and self.headers.get_content_type() != "application/json":
             return self._send_json(415, {"error": "需要 application/json"})
         post_data = b""
@@ -543,6 +546,31 @@ class RhodesHttpHandler(http.server.BaseHTTPRequestHandler):
                 return self._send_json(400, {"error": "无效的 JSON"})
         if not isinstance(payload, dict):
             return self._send_json(400, {"error": "JSON 必须是对象"})
+        envelope = payload
+        kid = envelope.get("kid")
+        secret = None
+        if path == "/api/pair/request":
+            secret = self.server_service.secure.invite_secret(kid)
+        else:
+            for device_id, device in self.server_service.pair_manager.get_trusted_devices().items():
+                if device.get("protocol") == 2 and device.get("sync_key") and key_id(device["sync_key"]) == kid:
+                    secret = device["sync_key"]
+                    self.secure_peer_id = device_id
+                    break
+        try:
+            if secret is None:
+                raise InvalidEnvelope()
+            payload = self.server_service.secure.accept(secret, path, envelope)
+        except (InvalidEnvelope, TypeError, ValueError):
+            return self._send_json(401, {"error": "加密认证失败，请重新配对"})
+        self.secure_context = (secret, path, envelope)
+        self.secure_payload = payload
+        if path == "/api/pair/request":
+            if not self.server_service.secure.claim_invite(secret, envelope["id"]):
+                return self._send_json(429, {"error": "配对密钥正在使用或已失效"})
+            self.invite_claim = (secret, envelope["id"])
+        if len(json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode()) > limit:
+            return self._send_json(413, {"error": "请求过大"})
 
         # ── 1. 蓝牙式显式配对握手接口（无需事前 Token）─────────────────────
         if path == "/api/pair/request":
@@ -550,7 +578,7 @@ class RhodesHttpHandler(http.server.BaseHTTPRequestHandler):
             client_name = payload.get("client_name", "未知设备")
             client_ip = self.client_address[0]
             client_port = payload.get("client_port", DEFAULT_HTTP_PORT + 1)
-            pin = payload.get("pin", "")
+            pin = pairing_code(secret)
 
             if not client_id:
                 return self._send_json(400, {"error": "Missing client_id"})
@@ -566,6 +594,7 @@ class RhodesHttpHandler(http.server.BaseHTTPRequestHandler):
                 return self._send_json(429, {"error": str(exc)})
 
             # 触发 UI 确认回调（弹窗或桌面气泡通知）
+            req.sync_key = secret
             if self.server_service.on_pair_request_callback:
                 try:
                     self.server_service.on_pair_request_callback(req)
@@ -576,6 +605,7 @@ class RhodesHttpHandler(http.server.BaseHTTPRequestHandler):
             accepted = req.event.wait(timeout=PAIR_TTL)
             self.server_service.pair_manager.complete_request(req.request_id)
             if accepted and req.accepted:
+                self.server_service.secure.consume_invite(secret)
                 return self._send_json(200, {
                     "status": "accepted",
                     "auth_token": req.auth_token,
@@ -629,7 +659,7 @@ class RhodesHttpHandler(http.server.BaseHTTPRequestHandler):
 
         if path == "/api/pair/unpair":
             device_id = payload.get("device_id", "")
-            token = self.headers.get("Authorization", "")[7:].strip()
+            token = self.secure_payload.get("_auth_token")
             if not isinstance(device_id, str) or not self.server_service.pair_manager.is_device_trusted(device_id, token):
                 return self._send_json(403, {"error": "只能解除自身设备的配对"})
             self.server_service.pair_manager.unpair_device(device_id)
@@ -701,6 +731,7 @@ class RhodesSyncService:
         self.udp_socket = None
         self.udp_thread = None
         self.running = False
+        self.secure = SecureSync()
 
         self.on_pair_request_callback = None
         self.on_clipboard_callback = None
@@ -711,6 +742,7 @@ class RhodesSyncService:
         """启动 HTTP 与 UDP 局域网服务。"""
         if self.running:
             return
+        self.secure = SecureSync()
 
         # 1. 启动多线程 HTTP 服务端
         self.http_server = None
@@ -838,144 +870,102 @@ class RhodesSyncService:
             return None
         return None
 
-    def request_pair(self, target_ip, target_port, pin=None):
-        """向目标设备主动发起配对请求，等待对方屏幕确认。"""
-        if not pin:
-            pin = str(secrets.randbelow(900000) + 100000)
-        url = f"http://{target_ip}:{target_port}/api/pair/request"
-        local_ips = get_local_ips()
-        payload = {
-            "client_id": self.device_id,
-            "client_name": self.device_name,
-            "client_ip": local_ips[0] if local_ips else "127.0.0.1",
-            "client_port": self.http_port,
-            "pin": pin
-        }
-        data_bytes = json.dumps(payload).encode("utf-8")
-        req = urllib.request.Request(
-            url, data=data_bytes,
-            headers={"Content-Type": "application/json; charset=utf-8"}
-        )
+    def create_pairing_invite(self):
+        return self.secure.create_invite()
+
+    def _key_for_token(self, token):
+        for device in self.pair_manager.get_trusted_devices().values():
+            saved = device.get("token")
+            if (isinstance(token, str) and isinstance(saved, str) and token
+                    and hmac.compare_digest(token.encode(), saved.encode())
+                    and device.get("protocol") == 2 and device.get("sync_key")):
+                return device["sync_key"]
+        raise InvalidEnvelope("旧配对已失效，请使用配对密钥重新配对")
+
+    def _secure_post(self, ip, port, path, payload, secret, token=None, timeout=10):
+        # Discovery contains no credentials. A forged epoch can only cause failure.
+        info = self.probe_device(ip, port)
+        if not info or info.get("protocol") != 2:
+            raise InvalidEnvelope("目标设备不支持加密同步 v2，请先升级")
+        body = dict(payload)
+        if token:
+            body["_auth_token"] = token
+        envelope = make_request(secret, path, body, info.get("epoch"))
+        req = urllib.request.Request(f"http://{ip}:{port}{path}",
+            data=json.dumps(envelope, separators=(",", ":")).encode(),
+            headers={"Content-Type": "application/json", "X-Rhodes-Protocol": "2"})
         try:
-            with _open_sync_request(req, timeout=35.0) as resp:
-                res = _read_sync_json(resp)
-                if res.get("status") == "accepted":
-                    token = res.get("auth_token")
-                    dev_name = res.get("device_name", target_ip)
-                    dev_id = res.get("device_id", target_ip)
-                    if not isinstance(token, str) or not token or not isinstance(dev_id, str) or not dev_id:
-                        return False, "目标设备返回了无效的配对凭证", None
-                    with self.pair_manager.lock:
-                        self.pair_manager.paired_devices[dev_id] = {
-                            "name": dev_name,
-                            "token": token,
-                            "ip": target_ip,
-                            "port": target_port,
-                            "paired_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                        }
-                        self.pair_manager.save()
-                    return True, "配对成功并已建立信任！", res
-                return False, res.get("error", "配对被拒绝"), res
-        except urllib.error.HTTPError as e:
-            try:
-                err_body = _read_sync_json(e)
-                return False, err_body.get("error", f"HTTP {e.code}"), err_body
-            except Exception:
-                return False, f"配对失败 (HTTP {e.code})", None
-        except Exception as e:
-            return False, f"连接目标异常: {str(e)}", None
+            response = _open_sync_request(req, timeout=timeout)
+        except urllib.error.HTTPError as exc:
+            response = exc
+        with response:
+            status = response.code
+            result = read_response(secret, path, _read_sync_json(response), envelope, status)
+        return status, result
+
+    def request_pair(self, target_ip, target_port, pin=None, pairing_secret=None):
+        """The receiving device's random invitation is supplied out of band."""
+        try:
+            key_id(pairing_secret)
+            payload = {"client_id": self.device_id, "client_name": self.device_name,
+                       "client_port": self.http_port,
+                       "pin": pairing_code(pairing_secret)}
+            status, result = self._secure_post(target_ip, target_port, "/api/pair/request",
+                                               payload, pairing_secret, timeout=35)
+            if status != 200 or result.get("status") != "accepted":
+                return False, result.get("error", "配对被拒绝"), None
+            token, device_id = result.get("auth_token"), result.get("device_id")
+            if not isinstance(token, str) or not token or not isinstance(device_id, str) or not device_id:
+                raise InvalidEnvelope("无效的配对响应")
+            with self.pair_manager.lock:
+                self.pair_manager.paired_devices[device_id] = {
+                    "name": result.get("device_name", target_ip), "token": token,
+                    "ip": target_ip, "port": target_port, "sync_key": pairing_secret,
+                    "protocol": 2, "paired_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
+                self.pair_manager.save()
+            return True, "加密配对成功！", result
+        except Exception:
+            return False, "加密配对失败：请确认两端已升级、配对密钥正确且未过期，并在接收端确认。", None
 
     def send_clipboard(self, target_ip, target_port, token, text, title=None):
-        """将剪贴板文本发送给对端设备。"""
-        url = f"http://{target_ip}:{target_port}/api/clipboard"
-        payload = {
-            "text": text,
-            "title": title or self.device_name,
-            "timestamp": int(time.time())
-        }
-        req = urllib.request.Request(
-            url, data=json.dumps(payload).encode("utf-8"),
-            headers={
-                "Content-Type": "application/json; charset=utf-8",
-                "Authorization": f"Bearer {token}"
-            }
-        )
         try:
-            with _open_sync_request(req, timeout=5.0) as resp:
-                return resp.status == 200
+            status, _ = self._secure_post(target_ip, target_port, "/api/clipboard",
+                {"text": text, "title": title or self.device_name, "timestamp": int(time.time())},
+                self._key_for_token(token), token, timeout=5)
+            return status == 200
         except Exception:
             return False
 
     def sync_pull(self, target_ip, target_port, token):
-        """从目标设备拉取学业数据并应用到本地。"""
-        url = f"http://{target_ip}:{target_port}/api/sync/pull"
-        req = urllib.request.Request(
-            url,
-            data=b"{}",
-            headers={
-                "Content-Type": "application/json; charset=utf-8",
-                "Authorization": f"Bearer {token}"
-            }
-        )
         try:
-            with _open_sync_request(req, timeout=10.0) as resp:
-                if resp.status == 200:
-                    payload = _read_sync_json(resp)
-                    result = DataSyncEngine.apply_data(payload, mode="merge")
-                    return True, result
-        except Exception as e:
-            return False, str(e)
-        return False, "拉取失败"
+            status, payload = self._secure_post(target_ip, target_port, "/api/sync/pull", {}, self._key_for_token(token), token)
+            if status != 200:
+                return False, payload.get("error", "拉取失败")
+            return True, DataSyncEngine.apply_data(payload, mode="merge")
+        except Exception:
+            return False, "加密拉取失败，请检查连接或重新配对"
 
     def sync_push(self, target_ip, target_port, token, mode="merge"):
-        """将本地学业数据推送到目标设备。"""
-        url = f"http://{target_ip}:{target_port}/api/sync/push"
-        payload = DataSyncEngine.pack_all_data()
-        payload["mode"] = mode
-        req = urllib.request.Request(
-            url, data=json.dumps(payload).encode("utf-8"),
-            headers={
-                "Content-Type": "application/json; charset=utf-8",
-                "Authorization": f"Bearer {token}"
-            }
-        )
         try:
-            with _open_sync_request(req, timeout=10.0) as resp:
-                if resp.status == 200:
-                    data = _read_sync_json(resp)
-                    return True, data.get("result")
-        except Exception as e:
-            return False, str(e)
-        return False, "推送失败"
+            payload = DataSyncEngine.pack_all_data()
+            payload["mode"] = mode
+            status, result = self._secure_post(target_ip, target_port, "/api/sync/push", payload, self._key_for_token(token), token)
+            return status == 200, result.get("result") if status == 200 else result.get("error", "推送失败")
+        except Exception:
+            return False, "加密推送失败，请检查连接或重新配对"
 
     def broadcast_status(self, event, data=None):
-        """向所有已配对设备广播当前状态（如专注自习开始/结束）。"""
-        paired = self.pair_manager.get_trusted_devices()
-        payload = {"event": event, "data": data or {}, "timestamp": int(time.time())}
-        for dev_id, dev_info in paired.items():
-            ip = dev_info.get("ip")
-            port = dev_info.get("port")
-            token = dev_info.get("token")
-            if not ip or not port or not token:
+        for device in self.pair_manager.get_trusted_devices().values():
+            if device.get("protocol") != 2:
                 continue
-            url = f"http://{ip}:{port}/api/status"
-            try:
-                req = urllib.request.Request(
-                    url, data=json.dumps(payload).encode("utf-8"),
-                    headers={
-                        "Content-Type": "application/json; charset=utf-8",
-                        "Authorization": f"Bearer {token}"
-                    }
-                )
-                def send_status(request=req):
-                    try:
-                        with _open_sync_request(request, timeout=3.0):
-                            pass
-                    except Exception:
-                        pass
-                threading.Thread(target=send_status, daemon=True).start()
-            except Exception:
-                pass
+            def send_status(peer=dict(device)):
+                try:
+                    self._secure_post(peer["ip"], peer["port"], "/api/status",
+                        {"event": event, "data": data or {}, "timestamp": int(time.time())},
+                        peer["sync_key"], peer["token"], timeout=3)
+                except Exception:
+                    pass
+            threading.Thread(target=send_status, daemon=True).start()
 
 
 _GLOBAL_SYNC_SERVICE = None

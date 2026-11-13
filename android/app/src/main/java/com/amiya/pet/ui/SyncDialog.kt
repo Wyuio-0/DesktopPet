@@ -52,6 +52,8 @@ fun SyncDialog(
     var isScanning by remember { mutableStateOf(false) }
     var discoveredDevices by remember { mutableStateOf<List<DeviceInfo>>(emptyList()) }
     var manualIp by remember { mutableStateOf("") }
+    var pairingSecret by remember { mutableStateOf("") }
+    var localInvite by remember { mutableStateOf("") }
     var syncStatusText by remember { mutableStateOf("就绪。") }
     var isOperating by remember { mutableStateOf(false) }
 
@@ -293,6 +295,17 @@ fun SyncDialog(
                                 }
                             }
 
+                            OutlinedButton(onClick = {
+                                localInvite = SyncManager.createPairingInvite()
+                                (context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager)
+                                    .setPrimaryClip(android.content.ClipData.newPlainText("配对密钥", localInvite))
+                            }) { Text("生成并复制本机配对密钥（5 分钟有效）") }
+                            if (localInvite.isNotEmpty()) Text("密钥已复制，请粘贴到另一台设备后，在此确认配对。", fontSize = 11.sp)
+                            OutlinedTextField(value = pairingSecret, onValueChange = { pairingSecret = it },
+                                label = { Text("目标设备生成的配对密钥") }, singleLine = true,
+                                visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                                modifier = Modifier.fillMaxWidth())
+                            if (pairingSecret.isNotEmpty()) Text("核对码：${SyncManager.pairingCode(pairingSecret.trim())}", fontSize = 12.sp)
                             // 扫描结果列表
                             if (discoveredDevices.isNotEmpty()) {
                                 Spacer(Modifier.height(10.dp))
@@ -309,7 +322,7 @@ fun SyncDialog(
                                                 scope.launch {
                                                     isOperating = true
                                                     syncStatusText = "正在向「${dev.deviceName}」发起配对请求，请在电脑屏幕上点击确认..."
-                                                    val (ok, msg) = SyncManager.requestPairToRemote(context, dev.ip, dev.httpPort)
+                                                    val (ok, msg) = SyncManager.requestPairToRemote(context, dev.ip, dev.httpPort, pairingSecret.trim())
                                                     isOperating = false
                                                     syncStatusText = msg
                                                     refreshStats()
@@ -360,7 +373,7 @@ fun SyncDialog(
                                                     port = parts[1].toIntOrNull() ?: 23333
                                                 }
                                                 syncStatusText = "正在直连探测 $ip:$port..."
-                                                val (ok, msg) = SyncManager.requestPairToRemote(context, ip, port)
+                                                val (ok, msg) = SyncManager.requestPairToRemote(context, ip, port, pairingSecret.trim())
                                                 isOperating = false
                                                 syncStatusText = msg
                                                 refreshStats()

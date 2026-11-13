@@ -50,6 +50,9 @@ object SyncManager {
     private val mainScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private val ioScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val connectionSlots = Semaphore(16)
+    private var secure = SyncCrypto.Server()
+    fun createPairingInvite(): String = secure.createInvite()
+    fun pairingCode(secret: String): String = runCatching { SyncCrypto.pairingCode(secret) }.getOrDefault("无效密钥")
 
     // 待确认配对请求映射 requestId -> CompletableDeferred<Boolean>
     private val pendingPairRequests = ConcurrentHashMap<String, CompletableDeferred<Boolean>>()
@@ -70,6 +73,7 @@ object SyncManager {
     fun start(context: Context) {
         if (isServerRunning) return
         isServerRunning = true
+        secure = SyncCrypto.Server()
 
         // 1. 启动轻量 HTTP 服务端
         serverJob = ioScope.launch {
@@ -155,21 +159,36 @@ object SyncManager {
     // ── HTTP 请求分发处理 ─────────────────────────────────────────────
 
     private suspend fun handleClientConnection(context: Context, client: Socket) = withContext(Dispatchers.IO) {
+        val watchdog = ioScope.launch { delay(45000); try { client.close() } catch (_: Exception) {} }
+        var claim: Pair<String, String>? = null
         try {
             client.soTimeout = 5000
-            val request = SyncHttpProtocol.read(client.getInputStream()) { headers ->
-                val auth = headers["authorization"] ?: ""
-                val token = if (auth.startsWith("Bearer ")) auth.substring(7).trim() else ""
-                isTokenValid(context, token)
+            val request = SyncHttpProtocol.read(client.getInputStream()) { it["x-rhodes-protocol"] == "2" }
+            val path = request.uri.substringBefore('?')
+            var response: String
+            if (request.method == "GET" && path == "/api/info") {
+                response = routeRequest(context, request.method, request.uri, request.headers, "", client.inetAddress.hostAddress ?: "")
+            } else {
+                val envelope = envelope(JSONObject(request.body))
+                val record = trustedRecords(context).firstOrNull { it.optInt("protocol") == 2 &&
+                    it.optString("sync_key").isNotEmpty() && SyncCrypto.keyId(it.getString("sync_key")) == envelope.kid }
+                val secret = if (path == "/api/pair/request") secure.inviteSecret(envelope.kid) else record?.optString("sync_key")
+                require(!secret.isNullOrEmpty())
+                val plain = secure.accept(secret, path, envelope)
+                if (path == "/api/pair/request") { require(secure.claimInvite(secret, envelope.id)); claim = secret to envelope.id }
+                val limit = when(path) { "/api/pair/request" -> SyncHttpProtocol.MAX_PAIR; "/api/clipboard" -> SyncHttpProtocol.MAX_CLIPBOARD; else -> SyncCrypto.MAX_PLAIN }
+                require(plain.size <= limit)
+                val payload = JSONObject(String(plain, Charsets.UTF_8))
+                if (path != "/api/pair/request") {
+                    val token = payload.optString("_auth_token")
+                    require(token.isNotEmpty() && record != null && MessageDigest.isEqual(token.toByteArray(), record.optString("token").toByteArray()))
+                }
+                val headers = request.headers + ("authorization" to "Bearer ${payload.optString("_auth_token")}")
+                val result = routeRequest(context, request.method, path, headers, payload.toString(), client.inetAddress.hostAddress ?: "", secret)
+                val status = result.substringAfter(' ').substringBefore(' ').toInt()
+                val cipher = SyncCrypto.seal(secret, path, result.substringAfter("\r\n\r\n").toByteArray(Charsets.UTF_8), envelope, "response", status)
+                response = makeHttpResponse(status, "Sync", wire(cipher).toString())
             }
-            val method = request.method
-            val uri = request.uri
-            val headers = request.headers
-            val postBody = request.body
-
-            // 路由处理
-            val clientIp = client.inetAddress.hostAddress ?: "127.0.0.1"
-            val response = routeRequest(context, method, uri, headers, postBody, clientIp)
             val writer = OutputStreamWriter(client.getOutputStream(), Charsets.UTF_8)
             writer.write(response)
             writer.flush()
@@ -182,7 +201,10 @@ object SyncManager {
         } catch (_: SocketTimeoutException) {
             try { client.getOutputStream().write(makeHttpResponse(408, "Request Timeout", "{}").toByteArray(Charsets.UTF_8)) } catch (_: Exception) {}
         } catch (_: Exception) {
+            try { client.getOutputStream().write(makeHttpResponse(401, "Unauthorized", "{\"error\":\"Encrypted authentication failed\"}").toByteArray(Charsets.UTF_8)) } catch (_: Exception) {}
         } finally {
+            claim?.let { secure.releaseInvite(it.first, it.second) }
+            watchdog.cancel()
             try { client.close() } catch (_: Exception) {}
         }
     }
@@ -193,7 +215,8 @@ object SyncManager {
         uri: String,
         headers: Map<String, String>,
         body: String,
-        clientIp: String
+        clientIp: String,
+        secret: String? = null
     ): String {
         val path = if (uri.contains("?")) uri.substring(0, uri.indexOf("?")) else uri
 
@@ -211,13 +234,15 @@ object SyncManager {
                 put("http_port", localHttpPort)
                 put("version", "1.9.0")
                 put("paired", getTrustedDevices(context).isNotEmpty())
+                put("protocol", 2)
+                put("epoch", secure.epoch)
             }
             return makeHttpResponse(200, "OK", res.toString())
         }
 
         // 2. 蓝牙式配对握手请求：必须屏幕确认
         if (method == "POST" && path == "/api/pair/request") {
-            return handlePairRequest(context, body, clientIp)
+            return handlePairRequest(context, body, clientIp, requireNotNull(secret))
         }
 
         // 3. 受保护接口鉴权验证
@@ -266,17 +291,27 @@ object SyncManager {
         if (method == "POST" && path == "/api/status") {
             return makeHttpResponse(200, "OK", JSONObject().apply { put("status", "ok") }.toString())
         }
+        if (method == "POST" && path == "/api/pair/unpair") {
+            val id = JSONObject(body).optString("device_id")
+            val root = JSONObject(context.getSharedPreferences(PREFS_SYNC, Context.MODE_PRIVATE).getString("paired_list", "{}") ?: "{}")
+            val peer = root.optJSONObject(id)
+            if (peer == null || !MessageDigest.isEqual(token.toByteArray(), peer.optString("token").toByteArray())) {
+                return makeHttpResponse(403, "Forbidden", "{\"error\":\"Can only unpair your own device\"}")
+            }
+            unpairDevice(context, id)
+            return makeHttpResponse(200, "OK", "{\"status\":\"unpaired\"}")
+        }
 
         return makeHttpResponse(404, "Not Found", "{\"error\":\"Not Found\"}")
     }
 
-    private suspend fun handlePairRequest(context: Context, body: String, clientIp: String): String {
+    private suspend fun handlePairRequest(context: Context, body: String, clientIp: String, secret: String): String {
         val payload = try { JSONObject(body) } catch (_: Exception) { JSONObject() }
         val clientId = payload.optString("client_id", "")
         val clientName = payload.optString("client_name", "未知设备")
         val clientPort = payload.optInt("client_port", 23333)
         val effectiveIp = clientIp
-        val pin = payload.optString("pin", "")
+        val pin = SyncCrypto.pairingCode(secret)
 
         if (clientId.isEmpty() || clientId.length > 128 || clientName.isEmpty() || clientName.length > 128 ||
             clientPort !in 1..65535 || !pin.matches(Regex("[0-9]{6}"))) {
@@ -319,7 +354,8 @@ object SyncManager {
 
         if (confirmed) {
             val token = "rhodes_m_" + UUID.randomUUID().toString().replace("-", "")
-            saveTrustedDevice(context, clientId, clientName, effectiveIp, clientPort, token)
+            saveTrustedDevice(context, clientId, clientName, effectiveIp, clientPort, token, secret)
+            secure.consumeInvite(secret)
             val res = JSONObject().apply {
                 put("status", "accepted")
                 put("auth_token", token)
@@ -362,7 +398,7 @@ object SyncManager {
         while (true) {
             val count = input.read(buffer)
             if (count < 0) break
-            if (output.size() + count > SyncHttpProtocol.MAX_BODY) throw IllegalArgumentException("Sync response too large")
+            if (output.size() + count > SyncCrypto.MAX_WIRE) throw IllegalArgumentException("Sync response too large")
             output.write(buffer, 0, count)
         }
         return output.toString("UTF-8")
@@ -479,167 +515,77 @@ object SyncManager {
     /**
      * 主动向电脑端发起配对请求，等待电脑端屏幕核验确认
      */
-    suspend fun requestPairToRemote(
-        context: Context,
-        ip: String,
-        port: Int = 23333,
-        pin: String = (java.security.SecureRandom().nextInt(900000) + 100000).toString()
-    ): Pair<Boolean, String> = withContext(Dispatchers.IO) {
-        val candidates = getCandidateIps(ip)
-        var lastErr = ""
-        for (targetIp in candidates) {
-            try {
-                val url = URL("http://$targetIp:$port/api/pair/request")
-                val conn = (url.openConnection(Proxy.NO_PROXY) as HttpURLConnection).apply {
-                    instanceFollowRedirects = false
-                    connectTimeout = 3000
-                    readTimeout = 35000
-                    requestMethod = "POST"
-                    doOutput = true
-                    setRequestProperty("Content-Type", "application/json; charset=utf-8")
-                }
-                val payload = JSONObject().apply {
-                    put("client_id", getMyDeviceId(context))
-                    put("client_name", getMyDeviceName(context))
-                    put("client_port", localHttpPort)
-                    put("pin", pin)
-                }
-                conn.outputStream.bufferedWriter().use { it.write(payload.toString()) }
-
-                val code = conn.responseCode
-                val respText = if (code in 200..299) {
-                    conn.inputStream.use { readLimitedResponse(it) }
-                } else {
-                    conn.errorStream?.use { readLimitedResponse(it) } ?: ""
-                }
-                val json = try { JSONObject(respText) } catch (_: Exception) { JSONObject() }
-                if (code == 200 && json.optString("status") == "accepted") {
-                    val token = json.optString("auth_token", "")
-                    val devName = json.optString("device_name", targetIp)
-                    val devId = json.optString("device_id", targetIp)
-                    if (token.isEmpty() || devId.isEmpty()) return@withContext Pair(false, "目标设备返回无效配对凭证")
-                    saveTrustedDevice(context, devId, devName, targetIp, port, token)
-                    return@withContext Pair(true, "配对成功！已与「$devName」建立信任互联。")
-                } else {
-                    val err = json.optString("error", "电脑端拒绝或超时未确认")
-                    return@withContext Pair(false, err)
-                }
-            } catch (e: Exception) {
-                lastErr = "连接目标电脑失败: ${e.localizedMessage}"
-            }
-        }
-        return@withContext Pair(false, lastErr)
+    private fun wire(e: SyncCrypto.Envelope): JSONObject = JSONObject().apply {
+        put("v", e.v); put("kid", e.kid); put("epoch", e.epoch); put("id", e.id)
+        put("ts", e.ts); put("s", e.s); put("nonce", e.nonce); put("ct", e.ct)
     }
-
-    /**
-     * 从电脑端拉取学业数据并合并到本地
-     */
+    private fun envelope(j: JSONObject) = SyncCrypto.Envelope(j.getInt("v"), j.getString("kid"), j.getString("epoch"),
+        j.getString("id"), j.getLong("ts"), j.getInt("s"), j.getString("nonce"), j.getString("ct"))
+    private fun trustedRecords(context: Context): List<JSONObject> {
+        val root = JSONObject(context.getSharedPreferences(PREFS_SYNC, Context.MODE_PRIVATE).getString("paired_list", "{}") ?: "{}")
+        return root.keys().asSequence().mapNotNull { root.optJSONObject(it) }.toList()
+    }
+    private fun keyForToken(context: Context, token: String): String = trustedRecords(context).firstOrNull {
+        token.isNotEmpty() && it.optInt("protocol") == 2 && MessageDigest.isEqual(token.toByteArray(), it.optString("token").toByteArray())
+    }?.getString("sync_key") ?: throw IllegalArgumentException("请升级并重新配对")
+    private fun exchange(ip: String, port: Int, path: String, payload: JSONObject, secret: String, token: String? = null): Pair<Int, JSONObject> {
+        val probe = URL("http://$ip:$port/api/info").openConnection(Proxy.NO_PROXY) as HttpURLConnection
+        val info = try {
+            probe.instanceFollowRedirects = false; probe.connectTimeout = 3000; probe.readTimeout = 3000
+            require(probe.responseCode == 200)
+            JSONObject(probe.inputStream.use { readLimitedResponse(it) })
+        } finally { probe.disconnect() }
+        require(info.optInt("protocol") == 2) { "目标设备需要升级加密协议" }
+        if (token != null) payload.put("_auth_token", token)
+        val request = SyncCrypto.request(secret, path, payload.toString().toByteArray(Charsets.UTF_8), info.getString("epoch"))
+        val conn = URL("http://$ip:$port$path").openConnection(Proxy.NO_PROXY) as HttpURLConnection
+        return try {
+            conn.instanceFollowRedirects = false; conn.connectTimeout = 3000
+            conn.readTimeout = if (path == "/api/pair/request") 35000 else 10000
+            conn.requestMethod = "POST"; conn.doOutput = true
+            conn.setRequestProperty("Content-Type", "application/json")
+            conn.setRequestProperty("X-Rhodes-Protocol", "2")
+            conn.outputStream.use { it.write(wire(request).toString().toByteArray(Charsets.UTF_8)) }
+            val status = conn.responseCode
+            val body = (if (status in 200..299) conn.inputStream else conn.errorStream).use { readLimitedResponse(it) }
+            val plain = SyncCrypto.response(secret, path, envelope(JSONObject(body)), request, status)
+            status to JSONObject(String(plain, Charsets.UTF_8))
+        } finally { conn.disconnect() }
+    }
+    suspend fun requestPairToRemote(context: Context, ip: String, port: Int = 23333, pairingSecret: String = ""): Pair<Boolean, String> = withContext(Dispatchers.IO) {
+        try {
+            SyncCrypto.keyId(pairingSecret)
+            val payload = JSONObject().apply {
+                put("client_id", getMyDeviceId(context)); put("client_name", getMyDeviceName(context)); put("client_port", localHttpPort)
+                put("pin", SyncCrypto.pairingCode(pairingSecret))
+            }
+            val (status, result) = exchange(ip, port, "/api/pair/request", payload, pairingSecret)
+            if (status != 200 || result.optString("status") != "accepted") return@withContext false to result.optString("error", "配对被拒绝")
+            val token = result.getString("auth_token"); val id = result.getString("device_id")
+            require(token.isNotEmpty() && id.isNotEmpty())
+            saveTrustedDevice(context, id, result.optString("device_name", ip), ip, port, token, pairingSecret)
+            true to "加密配对成功"
+        } catch (_: Exception) { false to "加密配对失败：请确认配对密钥正确、未过期，并在目标设备确认。" }
+    }
     suspend fun syncPull(context: Context, ip: String, port: Int, token: String): SyncReport = withContext(Dispatchers.IO) {
-        val candidates = getCandidateIps(ip)
-        var lastErr = ""
-        for (targetIp in candidates) {
-            try {
-                val url = URL("http://$targetIp:$port/api/sync/pull")
-                val conn = (url.openConnection(Proxy.NO_PROXY) as HttpURLConnection).apply {
-                    instanceFollowRedirects = false
-                    connectTimeout = 3000
-                    readTimeout = 8000
-                    requestMethod = "POST"
-                    setRequestProperty("Authorization", "Bearer $token")
-                }
-                if (conn.responseCode == 200) {
-                    val jsonStr = conn.inputStream.use { readLimitedResponse(it) }
-                    val payload = JSONObject(jsonStr)
-                    val report = applyReceivedData(context, payload, "merge")
-                    withContext(Dispatchers.Main) {
-                        ScheduleWidgetProvider.sendUpdateBroadcast(context)
-                    }
-                    if (targetIp != ip) {
-                        updateDeviceIp(context, ip, targetIp)
-                    }
-                    return@withContext report
-                } else {
-                    lastErr = "拉取失败 (HTTP ${conn.responseCode})"
-                }
-            } catch (e: Exception) {
-                lastErr = "拉取异常: ${e.localizedMessage}"
-            }
-        }
-        return@withContext SyncReport(false, lastErr)
+        try {
+            val (status, payload) = exchange(ip, port, "/api/sync/pull", JSONObject(), keyForToken(context, token), token)
+            require(status == 200)
+            val report = applyReceivedData(context, payload, "merge")
+            withContext(Dispatchers.Main) { ScheduleWidgetProvider.sendUpdateBroadcast(context) }
+            report
+        } catch (_: Exception) { SyncReport(false, "加密拉取失败，请升级并重新配对") }
     }
-
-    /**
-     * 推送手机数据到电脑端
-     */
     suspend fun syncPush(context: Context, ip: String, port: Int, token: String, mode: String = "replace"): SyncReport = withContext(Dispatchers.IO) {
-        val candidates = getCandidateIps(ip)
-        var lastErr = ""
-        for (targetIp in candidates) {
-            try {
-                val url = URL("http://$targetIp:$port/api/sync/push")
-                val conn = (url.openConnection(Proxy.NO_PROXY) as HttpURLConnection).apply {
-                    instanceFollowRedirects = false
-                    connectTimeout = 3000
-                    readTimeout = 8000
-                    requestMethod = "POST"
-                    doOutput = true
-                    setRequestProperty("Content-Type", "application/json; charset=utf-8")
-                    setRequestProperty("Authorization", "Bearer $token")
-                }
-                val payload = packAllData(context).apply {
-                    put("mode", mode)
-                }
-                conn.outputStream.bufferedWriter().use { it.write(payload.toString()) }
-
-                if (conn.responseCode == 200) {
-                    if (targetIp != ip) {
-                        updateDeviceIp(context, ip, targetIp)
-                    }
-                    return@withContext SyncReport(true, "推送学业数据到电脑成功！")
-                } else {
-                    lastErr = "推送失败 (HTTP ${conn.responseCode})"
-                }
-            } catch (e: Exception) {
-                lastErr = "推送异常: ${e.localizedMessage}"
-            }
-        }
-        return@withContext SyncReport(false, lastErr)
+        try {
+            val (status, _) = exchange(ip, port, "/api/sync/push", packAllData(context).put("mode", mode), keyForToken(context, token), token)
+            SyncReport(status == 200, if (status == 200) "加密推送成功" else "推送被拒绝")
+        } catch (_: Exception) { SyncReport(false, "加密推送失败，请升级并重新配对") }
     }
-
-    /**
-     * 发送当前剪贴板/文本至电脑
-     */
     suspend fun sendClipboard(context: Context, ip: String, port: Int, token: String, text: String): Boolean = withContext(Dispatchers.IO) {
-        val candidates = getCandidateIps(ip)
-        for (targetIp in candidates) {
-            try {
-                val url = URL("http://$targetIp:$port/api/clipboard")
-                val conn = (url.openConnection(Proxy.NO_PROXY) as HttpURLConnection).apply {
-                    instanceFollowRedirects = false
-                    connectTimeout = 3000
-                    readTimeout = 5000
-                    requestMethod = "POST"
-                    doOutput = true
-                    setRequestProperty("Content-Type", "application/json; charset=utf-8")
-                    setRequestProperty("Authorization", "Bearer $token")
-                }
-                val payload = JSONObject().apply {
-                    put("text", text)
-                    put("title", getMyDeviceName(context))
-                    put("timestamp", System.currentTimeMillis())
-                }
-                conn.outputStream.bufferedWriter().use { it.write(payload.toString()) }
-                if (conn.responseCode == 200) {
-                    if (targetIp != ip) {
-                        updateDeviceIp(context, ip, targetIp)
-                    }
-                    return@withContext true
-                }
-            } catch (e: Exception) {
-                android.util.Log.e("SyncManager", "sendClipboard try $targetIp error: ${e.localizedMessage}")
-            }
-        }
-        return@withContext false
+        try {
+            exchange(ip, port, "/api/clipboard", JSONObject().put("text", text).put("title", getMyDeviceName(context)), keyForToken(context, token), token).first == 200
+        } catch (_: Exception) { false }
     }
 
     // ── 数据打包与应用引擎 ───────────────────────────────────────────
@@ -835,7 +781,7 @@ object SyncManager {
         return ""
     }
 
-    fun saveTrustedDevice(context: Context, id: String, name: String, ip: String, port: Int, token: String) {
+    fun saveTrustedDevice(context: Context, id: String, name: String, ip: String, port: Int, token: String, secret: String) {
         val prefs = context.getSharedPreferences(PREFS_SYNC, Context.MODE_PRIVATE)
         val jsonStr = prefs.getString("paired_list", "{}") ?: "{}"
         val root = try { JSONObject(jsonStr) } catch (_: Exception) { JSONObject() }
@@ -844,6 +790,8 @@ object SyncManager {
             put("ip", ip)
             put("port", port)
             put("token", token)
+            put("sync_key", secret)
+            put("protocol", 2)
             put("paired_at", SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date()))
         })
         prefs.edit().putString("paired_list", root.toString()).commit()

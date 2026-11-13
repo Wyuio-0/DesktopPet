@@ -14,6 +14,7 @@ from .notes import NotesManager
 from .schedule import Schedule
 from .sync_service import get_sync_service, get_local_ips
 from .tasks import Tasks
+from .sync_crypto import pairing_code, InvalidEnvelope
 
 _SYNC_QSS = """
 QDialog, QWidget#RhodesSyncWindow {
@@ -328,6 +329,24 @@ class RhodesSyncWindow(QtWidgets.QDialog):
         search_bar.addStretch()
         dev_layout.addLayout(search_bar)
 
+        invite_bar = QtWidgets.QHBoxLayout()
+        self.txt_invite = QtWidgets.QLineEdit()
+        self.txt_invite.setReadOnly(True)
+        self.txt_invite.setPlaceholderText("生成本机配对密钥后，复制到另一台设备（5 分钟有效）")
+        invite_bar.addWidget(self.txt_invite)
+        generate = QtWidgets.QPushButton("生成并复制配对密钥")
+        def create_invite():
+            secret = self.service.create_pairing_invite()
+            self.txt_invite.setText(secret)
+            QtWidgets.QApplication.clipboard().setText(secret)
+        generate.clicked.connect(create_invite)
+        invite_bar.addWidget(generate)
+        dev_layout.addLayout(invite_bar)
+        self.txt_remote_secret = QtWidgets.QLineEdit()
+        self.txt_remote_secret.setEchoMode(QtWidgets.QLineEdit.Password)
+        self.txt_remote_secret.setPlaceholderText("粘贴目标设备生成的配对密钥，然后选择目标设备发起配对")
+        dev_layout.addWidget(self.txt_remote_secret)
+
         # 设备列表分为：发现的设备 / 已配对设备
         lists_layout = QtWidgets.QHBoxLayout()
 
@@ -513,6 +532,15 @@ class RhodesSyncWindow(QtWidgets.QDialog):
         self._request_pair_to_remote(ip, port, ip)
 
     def _request_pair_to_remote(self, ip, port, name):
+        secret = self.txt_remote_secret.text().strip()
+        if not secret:
+            QtWidgets.QMessageBox.warning(self, "需要配对密钥", "请先在目标设备生成配对密钥，并粘贴到本窗口。旧配对需要重新建立。")
+            return
+        try:
+            code = pairing_code(secret)
+        except InvalidEnvelope:
+            QtWidgets.QMessageBox.warning(self, "配对密钥无效", "请完整复制目标设备生成的配对密钥。")
+            return
         reply = QtWidgets.QMessageBox.question(
             self, "发起配对确认",
             f"确定向终端「{name}」({ip}:{port}) 发起蓝牙式配对请求？\n发起后目标端屏幕将弹出核验确认卡片。",
@@ -521,10 +549,10 @@ class RhodesSyncWindow(QtWidgets.QDialog):
         if reply != QtWidgets.QMessageBox.Yes:
             return
 
-        self.lbl_sync_result.setText(f"正在向 {name} 发送配对握手请求，等待手机端确认...")
+        self.lbl_sync_result.setText(f"正在向 {name} 发起加密配对，核对码：{code}，请在目标设备确认。")
 
         def pair_worker():
-            success, msg, _ = self.service.request_pair(ip, port)
+            success, msg, _ = self.service.request_pair(ip, port, pairing_secret=secret)
             QtCore.QMetaObject.invokeMethod(
                 self, "_on_pair_result", QtCore.Qt.QueuedConnection,
                 QtCore.Q_ARG(bool, success), QtCore.Q_ARG(str, msg)

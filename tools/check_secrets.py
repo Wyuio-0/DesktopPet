@@ -31,6 +31,7 @@ BANNED = (
     "tts_token",           # 语音克隆共享密钥
     ".env", "secrets.json",  # 环境变量/密钥文件
     "history.json",        # 聊天历史（个人数据）
+    "paired_devices.json", # 同步令牌与加密配对密钥
 )
 
 # --all 模式跳过的大目录
