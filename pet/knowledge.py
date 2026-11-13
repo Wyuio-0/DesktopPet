@@ -34,6 +34,7 @@ import xml.etree.ElementTree as ET
 
 from . import logging as petlog
 from .settings import config_dir
+from .knowledge_paths import InvalidKnowledgePath, course_name, safe_child, validate_name
 
 # 多语言 embedding 模型（中英皆可；约 470MB，首次使用时下载并缓存）。
 _EMBED_MODEL_NAME = "paraphrase-multilingual-MiniLM-L12-v2"
@@ -508,7 +509,7 @@ class KnowledgeBase:
 
     def __init__(self, folder=None, use_embed=True):
         self.folder = folder or os.path.join(config_dir(), "knowledge")
-        self.courses_dir = os.path.join(self.folder, "courses")
+        self.courses_dir = safe_child(self.folder, "courses")
         self.use_embed = bool(use_embed)
         self.chunks = []            # [{"text", "source", "course", "path"}]
         self.files_meta = []        # [{"filename", "course", "size", "chunks", "mtime", "path"}]
@@ -523,6 +524,7 @@ class KnowledgeBase:
         self.chunks = []
         self.files_meta = []
         os.makedirs(self.folder, exist_ok=True)
+        self.courses_dir = safe_child(self.folder, "courses")
         os.makedirs(self.courses_dir, exist_ok=True)
 
         # 1. 扫描根目录下的全局文档 (course="")
@@ -531,7 +533,10 @@ class KnowledgeBase:
         # 2. 扫描 courses 子目录下的各个课程文件夹
         if os.path.isdir(self.courses_dir):
             for cname in sorted(os.listdir(self.courses_dir)):
-                cdir = os.path.join(self.courses_dir, cname)
+                try:
+                    cdir = self.course_directory(cname)
+                except InvalidKnowledgePath:
+                    continue
                 if os.path.isdir(cdir):
                     self._scan_directory(cdir, course=cname)
 
@@ -547,7 +552,10 @@ class KnowledgeBase:
         for fn in files:
             if not fn.lower().endswith(self.SUPPORTED_EXTS):
                 continue
-            path = os.path.join(dpath, fn)
+            try:
+                path = self.document_path(fn, course)
+            except InvalidKnowledgePath:
+                continue
             if not os.path.isfile(path):
                 continue
 
@@ -574,7 +582,11 @@ class KnowledgeBase:
                         doc_chunks.append(c_obj)
 
             # 若已生成 AI 核心考点纲要，作为高权重知识切片一并收录
-            has_digest = self.has_digest(fn, course)
+            try:
+                has_digest = self.has_digest(fn, course)
+            except InvalidKnowledgePath:
+                # A bad optional digest/link must not prevent indexing the document.
+                has_digest = False
             if has_digest:
                 digest_text = self.get_digest(fn, course)
                 if digest_text:
@@ -601,11 +613,13 @@ class KnowledgeBase:
 
     def get_digest_path(self, filename, course=None):
         """获取指定课件的知识点考纲 Markdown 存储路径。"""
-        safe_course = re.sub(r'[\/\\:\*\?"<>\|]', "_", str(course).strip()) if course and str(course).strip() else "_global"
-        safe_fn = re.sub(r'[\/\\:\*\?"<>\|]', "_", filename)
-        d_dir = os.path.join(self.folder, "digests", safe_course)
+        validate_name(filename)
+        safe_course = course_name(course) or "_global"
+        # Preserve the existing digest filename layout for valid documents.
+        d_dir = safe_child(self.folder, "digests", safe_course)
+        path = safe_child(self.folder, "digests", safe_course, f"{filename}.md")
         os.makedirs(d_dir, exist_ok=True)
-        return os.path.join(d_dir, f"{safe_fn}.md")
+        return path
 
     def has_digest(self, filename, course=None):
         """检查指定课件是否已经提炼过 AI 知识点与考纲。"""
@@ -670,6 +684,36 @@ class KnowledgeBase:
 
     # ── 知识库管理与导入操作 ───────────────────────────────────────────────────
 
+    def course_directory(self, course=None):
+        name = course_name(course)
+        return safe_child(self.folder, "courses", name) if name else os.path.realpath(self.folder)
+
+    def document_path(self, filename, course=None):
+        validate_name(filename)
+        name = course_name(course)
+        parts = ("courses", name, filename) if name else (filename,)
+        return safe_child(self.folder, *parts)
+
+    def find_file(self, filename, course=None):
+        """Find a document, returning its path and actual course after fallback."""
+        requested = course_name(course)
+        path = self.document_path(filename, requested)
+        if os.path.isfile(path):
+            return path, requested
+        candidates = [""]
+        if os.path.isdir(self.courses_dir):
+            candidates.extend(sorted(os.listdir(self.courses_dir)))
+        for name in candidates:
+            if name == requested:
+                continue
+            try:
+                path = self.document_path(filename, name)
+            except InvalidKnowledgePath:
+                continue
+            if os.path.isfile(path):
+                return path, name
+        return None, requested
+
     def import_file(self, src_path, course=None, copy=True, reload_index=True):
         """将外部课件导入知识库，并与指定课程关联绑定。
         返回: (bool 成功与否, int 生成切片数, str 课程名称)
@@ -678,15 +722,10 @@ class KnowledgeBase:
             return False, 0, ""
 
         fn = os.path.basename(src_path)
-        if course and str(course).strip():
-            course_clean = re.sub(r'[\/\\:\*\?"<>\|]', "_", str(course).strip())
-            dest_dir = os.path.join(self.courses_dir, course_clean)
-        else:
-            course_clean = ""
-            dest_dir = self.folder
-
+        course_clean = course_name(course)
+        dest_dir = self.course_directory(course_clean)
+        dest_path = self.document_path(fn, course_clean)
         os.makedirs(dest_dir, exist_ok=True)
-        dest_path = os.path.join(dest_dir, fn)
 
         if copy and os.path.abspath(src_path) != os.path.abspath(dest_path):
             shutil.copy2(src_path, dest_path)
@@ -701,20 +740,14 @@ class KnowledgeBase:
     def delete_file(self, filename, course=None):
         """从知识库及磁盘中移除指定文件并刷新索引。"""
         deleted = False
-        if course and str(course).strip():
-            course_clean = re.sub(r'[\/\\:\*\?"<>\|]', "_", str(course).strip())
-            path = os.path.join(self.courses_dir, course_clean, filename)
-            if os.path.isfile(path):
-                os.remove(path)
-                deleted = True
-        else:
-            path = os.path.join(self.folder, filename)
-            if os.path.isfile(path):
-                os.remove(path)
-                deleted = True
+        path = self.document_path(filename, course)
+        # Validate the related digest before performing any destructive action.
+        d_path = self.get_digest_path(filename, course)
+        if os.path.isfile(path):
+            os.remove(path)
+            deleted = True
 
         if deleted:
-            d_path = self.get_digest_path(filename, course)
             if os.path.isfile(d_path):
                 try:
                     os.remove(d_path)

@@ -7,11 +7,15 @@
 
 import asyncio
 import concurrent.futures
+from contextlib import ExitStack
 import json
+import mimetypes
 import os
+import re
 import sys
 import tempfile
 import webbrowser
+from urllib.parse import quote
 
 if sys.platform == "win32":
     try:
@@ -30,6 +34,7 @@ if ROOT_DIR not in sys.path:
     sys.path.insert(0, ROOT_DIR)
 
 from pet.knowledge import KnowledgeBase
+from pet.knowledge_paths import InvalidKnowledgePath, course_name, safe_child, validate_name
 from pet.ai import AmiyaBrain
 
 
@@ -103,7 +108,11 @@ def get_all_courses():
     c_set = set(kb.get_courses())
     if os.path.isdir(kb.courses_dir):
         for d in os.listdir(kb.courses_dir):
-            if os.path.isdir(os.path.join(kb.courses_dir, d)):
+            try:
+                path = kb.course_directory(d)
+            except InvalidKnowledgePath:
+                continue
+            if os.path.isdir(path):
                 c_set.add(d)
 
     try:
@@ -144,13 +153,12 @@ async def handle_courses(request):
 async def handle_create_course(request):
     """在知识库中创建新课程分类。"""
     data = await request.json()
-    name = str(data.get("name", "")).strip()
+    name = course_name(data.get("name", ""))
     if not name:
         return web.json_response({"success": False, "error": "课程名称不能为空"}, status=400)
 
-    import re
-    safe_name = re.sub(r'[\/\\:\*\?"<>\|]', "_", name)
-    cdir = os.path.join(kb.courses_dir, safe_name)
+    safe_name = name
+    cdir = kb.course_directory(name)
     os.makedirs(cdir, exist_ok=True)
     kb.reload()
     return web.json_response({"success": True, "course": safe_name})
@@ -159,21 +167,21 @@ async def handle_create_course(request):
 async def handle_delete_course(request):
     """从知识库中移除课程分类及其目录。"""
     data = await request.json()
-    name = str(data.get("name", "")).strip()
-    if not name or name in ("__ALL__", "__GLOBAL__"):
+    name = course_name(data.get("name", ""))
+    if not name:
         return web.json_response({"success": False, "error": "无效的课程名称"}, status=400)
 
-    import re
     import shutil
-    safe_name = re.sub(r'[\/\\:\*\?"<>\|]', "_", name)
-    cdir = os.path.join(kb.courses_dir, safe_name)
+    safe_name = name
+    cdir = kb.course_directory(name)
+    # Resolve both targets before deleting either directory.
+    digests_cdir = safe_child(kb.folder, "digests", name)
     if os.path.isdir(cdir):
         try:
             shutil.rmtree(cdir)
         except Exception as e:
             return web.json_response({"success": False, "error": f"删除课程目录失败: {e}"}, status=500)
 
-    digests_cdir = os.path.join(kb.folder, "digests", safe_name)
     if os.path.isdir(digests_cdir):
         try:
             shutil.rmtree(digests_cdir)
@@ -194,47 +202,21 @@ async def handle_move_file(request):
     if not filename:
         return web.json_response({"success": False, "error": "缺少文件名"}, status=400)
 
-    import re
     import shutil
-
-    if old_course and old_course not in ("__GLOBAL__", "__ALL__", ""):
-        old_c_safe = re.sub(r'[\/\\:\*\?"<>\|]', "_", old_course.strip())
-        old_dir = os.path.join(kb.courses_dir, old_c_safe)
-    else:
-        old_c_safe = ""
-        old_dir = kb.folder
-    src_file = os.path.join(old_dir, filename)
-
-    if not os.path.isfile(src_file):
-        # 兜底：若原目录未找到，尝试全知识库检索该文件
-        if os.path.isfile(os.path.join(kb.folder, filename)):
-            src_file = os.path.join(kb.folder, filename)
-            old_c_safe = ""
-        elif os.path.isdir(kb.courses_dir):
-            for c_folder in os.listdir(kb.courses_dir):
-                candidate = os.path.join(kb.courses_dir, c_folder, filename)
-                if os.path.isfile(candidate):
-                    src_file = candidate
-                    old_c_safe = c_folder
-                    break
-
-    if not os.path.isfile(src_file):
+    new_c_safe = course_name(new_course)
+    new_dir = kb.course_directory(new_c_safe)
+    dst_file = kb.document_path(filename, new_c_safe)
+    src_file, old_c_safe = kb.find_file(filename, old_course)
+    if not src_file:
         return web.json_response({"success": False, "error": f"源文件未找到: {filename}"}, status=404)
-
-    if new_course and new_course not in ("__GLOBAL__", "__ALL__", ""):
-        new_c_safe = re.sub(r'[\/\\:\*\?"<>\|]', "_", new_course.strip())
-        new_dir = os.path.join(kb.courses_dir, new_c_safe)
-    else:
-        new_c_safe = ""
-        new_dir = kb.folder
-    os.makedirs(new_dir, exist_ok=True)
-    dst_file = os.path.join(new_dir, filename)
-
-    if os.path.abspath(src_file) != os.path.abspath(dst_file):
-        shutil.move(src_file, dst_file)
 
     old_digest_path = kb.get_digest_path(filename, old_c_safe)
     new_digest_path = kb.get_digest_path(filename, new_c_safe)
+    if os.path.abspath(src_file) != os.path.abspath(dst_file):
+        if os.path.exists(dst_file) or os.path.exists(new_digest_path):
+            return web.json_response({"success": False, "error": "目标课程已有同名课件或考纲"}, status=409)
+        os.makedirs(new_dir, exist_ok=True)
+        shutil.move(src_file, dst_file)
     if os.path.isfile(old_digest_path) and os.path.abspath(old_digest_path) != os.path.abspath(new_digest_path):
         os.makedirs(os.path.dirname(new_digest_path), exist_ok=True)
         try:
@@ -263,6 +245,113 @@ async def handle_files(request):
         f["size_str"] = f"{sz_kb/1024:.1f} MB" if sz_kb >= 1024 else f"{sz_kb:.0f} KB"
         f["has_digest"] = kb.has_digest(f["filename"], f.get("course"))
     return web.json_response(files)
+
+
+def find_file_path(filename, course=None):
+    """安全解析指定课件原件在知识库中的绝对路径。"""
+    validate_name(filename)
+    if not filename.lower().endswith(kb.SUPPORTED_EXTS):
+        raise InvalidKnowledgePath("仅支持读取或打开知识库课件格式")
+    return kb.find_file(filename, course)[0]
+
+
+async def handle_raw_file(request):
+    """直接按原始 MIME 类型返回课件文件（支持浏览器原生嵌入渲染 PDF、图片与纯文本）。"""
+    filename = request.query.get("filename", "").strip()
+    course = request.query.get("course", "").strip()
+    if not filename:
+        return web.Response(text="缺少文件名", status=400)
+
+    file_path = find_file_path(filename, course)
+    if not file_path or not os.path.isfile(file_path):
+        return web.Response(text="课件原件未找到", status=404)
+
+    ext = os.path.splitext(filename)[1].lower()
+    content_type, _ = mimetypes.guess_type(file_path)
+    if not content_type:
+        if ext in (".md", ".markdown"):
+            content_type = "text/markdown; charset=utf-8"
+        elif ext in (".txt", ".log", ".csv", ".json"):
+            content_type = "text/plain; charset=utf-8"
+        elif ext == ".pdf":
+            content_type = "application/pdf"
+        elif ext == ".pptx":
+            content_type = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+        elif ext == ".docx":
+            content_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        else:
+            content_type = "application/octet-stream"
+
+    response = web.FileResponse(file_path)
+    response.content_type = content_type
+    encoded_fn = quote(filename)
+    response.headers["Content-Disposition"] = f"inline; filename*=UTF-8''{encoded_fn}"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    return response
+
+
+async def handle_file_content(request):
+    """获取课件原件解析详情（文本提取、幻灯片切片、元数据等）。"""
+    filename = request.query.get("filename", "").strip()
+    course = request.query.get("course", "").strip()
+    if not filename:
+        return web.json_response({"success": False, "error": "缺少文件名"}, status=400)
+
+    file_path = find_file_path(filename, course)
+    if not file_path or not os.path.isfile(file_path):
+        return web.json_response({"success": False, "error": "课件原件未找到"}, status=404)
+
+    ext = os.path.splitext(filename)[1].lower()
+    sz = os.path.getsize(file_path)
+
+    # 提取文本与 PPT 幻灯片分页
+    slides = []
+    text_content = ""
+    try:
+        from pet.knowledge import _do_extract_text_from_file
+        text_content = _do_extract_text_from_file(file_path)
+    except Exception as e:
+        text_content = f"提取文本失败: {e}"
+
+    if ext in (".pptx", ".ppt"):
+        pages = re.split(r"(?:=== 第 \d+ 页 ===|--- Slide \d+ ---|\[Slide \d+\])", text_content)
+        slide_idx = 1
+        for p in pages:
+            clean_p = p.strip()
+            if clean_p:
+                slides.append({
+                    "slide_num": slide_idx,
+                    "content": clean_p
+                })
+                slide_idx += 1
+
+    return web.json_response({
+        "success": True,
+        "filename": filename,
+        "course": course,
+        "ext": ext,
+        "size": sz,
+        "size_str": f"{sz/(1024*1024):.1f} MB" if sz >= 1024*1024 else f"{sz/1024:.0f} KB",
+        "raw_url": f"/api/files/raw?filename={quote(filename)}&course={quote(course or '')}",
+        "text_content": text_content,
+        "slides": slides,
+    })
+
+
+async def handle_open_external(request):
+    """在宿主机上用系统关联的本地软件（如 WPS、Office、Acrobat）直接打开该课件原件。"""
+    data = await request.json()
+    filename = str(data.get("filename", "")).strip()
+    course = str(data.get("course", "")).strip()
+    file_path = find_file_path(filename, course)
+    if not file_path or not os.path.isfile(file_path):
+        return web.json_response({"success": False, "error": "课件原件未找到"}, status=404)
+
+    try:
+        os.startfile(file_path)
+        return web.json_response({"success": True})
+    except Exception as e:
+        return web.json_response({"success": False, "error": str(e)}, status=500)
 
 
 async def handle_get_digest(request):
@@ -302,55 +391,105 @@ async def handle_upload(request):
     reader = await request.multipart()
     course = None
     uploaded_files = []
+    # Clean up staged uploads even when later multipart fields are invalid.
+    with ExitStack() as staging:
+        while True:
+            part = await reader.next()
+            if part is None:
+                break
+            if part.name == "course":
+                course = course_name(await part.text())
+            elif part.name == "file":
+                saved_filename = validate_name(part.filename or "uploaded_file")
+                temp_dir = staging.enter_context(tempfile.TemporaryDirectory(prefix="amiya_up_"))
+                temp_path = safe_child(temp_dir, saved_filename)
+                with open(temp_path, "wb") as f:
+                    while True:
+                        chunk = await part.read_chunk()
+                        if not chunk:
+                            break
+                        f.write(chunk)
+                uploaded_files.append((temp_path, saved_filename))
 
-    while True:
-        part = await reader.next()
-        if part is None:
-            break
-        if part.name == "course":
-            course_text = (await part.text()).strip()
-            if course_text and course_text not in ("__ALL__", "__GLOBAL__"):
-                course = course_text
-            else:
-                course = None
-        elif part.name == "file":
-            saved_filename = os.path.basename(part.filename or "uploaded_file")
-            temp_dir = tempfile.mkdtemp(prefix="amiya_up_")
-            temp_path = os.path.join(temp_dir, saved_filename)
-            with open(temp_path, "wb") as f:
-                while True:
-                    chunk = await part.read_chunk()
-                    if not chunk:
-                        break
-                    f.write(chunk)
-            uploaded_files.append((temp_dir, temp_path, saved_filename))
+        # Validate every destination before importing the first file.
+        kb.course_directory(course)
+        for _, filename in uploaded_files:
+            kb.document_path(filename, course)
 
-    loop = asyncio.get_event_loop()
-
-    def do_import_all():
-        names = []
-        for idx, (temp_dir, temp_path, original_filename) in enumerate(uploaded_files):
-            try:
-                # 仅在最后一个文件导入完成后执行全量索引更新，减少多文件/大文件重复扫描开销
+        def do_import_all():
+            names = []
+            for idx, (temp_path, original_filename) in enumerate(uploaded_files):
                 is_last = (idx == len(uploaded_files) - 1)
                 ok, count, c_name = kb.import_file(temp_path, course=course, reload_index=is_last)
                 if ok:
                     names.append(original_filename)
-            finally:
-                import shutil
-                try:
-                    shutil.rmtree(temp_dir, ignore_errors=True)
-                except Exception:
-                    pass
-        return names
+            return names
 
-    imported_names = await loop.run_in_executor(None, do_import_all)
+        loop = asyncio.get_running_loop()
+        import_task = loop.run_in_executor(None, do_import_all)
+        try:
+            imported_names = await asyncio.shield(import_task)
+        except asyncio.CancelledError:
+            # The worker still uses the staging files after client disconnect.
+            await import_task
+            raise
 
     return web.json_response({
         "success": True,
         "filenames": imported_names,
         "course": course or ""
     })
+
+
+async def handle_save_note(request):
+    """将 AI 问答或学术心得保存为 Markdown 笔记并沉淀至知识库，自动建立切片索引。"""
+    try:
+        data = await request.json()
+        title = str(data.get("title") or "").strip()
+        content = str(data.get("content") or "").strip()
+        course = str(data.get("course") or "").strip()
+        append = bool(data.get("append", False))
+
+        if not content:
+            return web.json_response({"success": False, "error": "笔记内容不能为空"}, status=400)
+
+        import datetime
+        import re
+
+        if not title:
+            now_str = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            title = f"问答笔记_{now_str}"
+
+        safe_title = validate_name(title)
+        if not safe_title.lower().endswith(".md"):
+            safe_title += ".md"
+
+        safe_course = course_name(course)
+        dest_dir = kb.course_directory(safe_course)
+        target_path = kb.document_path(safe_title, safe_course)
+
+        os.makedirs(dest_dir, exist_ok=True)
+
+        if append and os.path.isfile(target_path):
+            with open(target_path, "a", encoding="utf-8") as f:
+                f.write(f"\n\n---\n\n{content}")
+        else:
+            with open(target_path, "w", encoding="utf-8") as f:
+                f.write(content)
+
+        # 重新加载知识库并切片索引
+        kb.reload()
+
+        return web.json_response({
+            "success": True,
+            "filename": safe_title,
+            "course": safe_course,
+            "path": target_path
+        })
+    except InvalidKnowledgePath:
+        raise
+    except Exception as e:
+        return web.json_response({"success": False, "error": f"保存笔记失败: {e}"}, status=500)
 
 
 async def handle_chat(request):
@@ -473,29 +612,13 @@ async def handle_generate_digest(request):
     filename = data.get("filename", "")
     course = data.get("course", "")
 
-    # 解析文件路径（带跨目录查找兜底）
-    fp = ""
-    if course and str(course).strip() and str(course).strip() not in ("__ALL__", "__GLOBAL__"):
-        fp = os.path.join(kb.courses_dir, str(course).strip(), filename)
-    else:
-        fp = os.path.join(kb.folder, filename)
-
-    if not os.path.isfile(fp):
-        if os.path.isfile(os.path.join(kb.folder, filename)):
-            fp = os.path.join(kb.folder, filename)
-        elif os.path.isdir(kb.courses_dir):
-            for c_folder in os.listdir(kb.courses_dir):
-                candidate = os.path.join(kb.courses_dir, c_folder, filename)
-                if os.path.isfile(candidate):
-                    fp = candidate
-                    course = c_folder
-                    break
-
-    if not os.path.isfile(fp):
+    fp, course = kb.find_file(filename, course)
+    if not fp:
         return web.json_response({"success": False, "error": f"源文件未找到: {filename}"}, status=404)
 
     # 1. 优先直接复用已扫描切片，避免重复 OCR 与解析开销（毫秒级提取）
-    existing_chunks = [c["text"] for c in kb.chunks if c.get("source") == filename]
+    existing_chunks = [c["text"] for c in kb.chunks
+                       if c.get("source") == filename and c.get("course", "") == course]
     loop = asyncio.get_event_loop()
     if existing_chunks:
         raw_text = "\n\n".join(existing_chunks)
@@ -523,9 +646,18 @@ async def handle_generate_digest(request):
         return web.json_response({"success": False, "error": f"考纲提炼失败: {err_msg}"}, status=500)
 
 
+@web.middleware
+async def knowledge_path_errors(request, handler):
+    try:
+        return await handler(request)
+    except InvalidKnowledgePath as exc:
+        return web.json_response({"success": False, "error": str(exc)}, status=400)
+
+
 def make_app():
     # 限制放宽至 1024MB (1GB)，彻底消除大课件上传时的 413 Request Entity Too Large 错误
-    app = web.Application(client_max_size=1024 * 1024 * 1024)
+    app = web.Application(client_max_size=1024 * 1024 * 1024,
+                          middlewares=[knowledge_path_errors])
     app.router.add_get("/", handle_index)
     app.router.add_get("/api/stats", handle_stats)
     app.router.add_get("/api/files", handle_files)
@@ -539,6 +671,10 @@ def make_app():
     app.router.add_post("/api/chat", handle_chat)
     app.router.add_post("/api/upload", handle_upload)
     app.router.add_post("/api/files/delete", handle_delete_file)
+    app.router.add_post("/api/notes/save", handle_save_note)
+    app.router.add_get("/api/files/raw", handle_raw_file)
+    app.router.add_get("/api/files/content", handle_file_content)
+    app.router.add_post("/api/files/open_external", handle_open_external)
 
     if os.path.isdir(STATIC_DIR):
         app.router.add_static("/static/", STATIC_DIR)
