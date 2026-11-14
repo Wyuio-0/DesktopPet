@@ -1,0 +1,55 @@
+{
+  "device": {
+    "model": "V2199A",
+    "manufacturer": "vivo",
+    "android": "14",
+    "sdk": "34",
+    "kind": "physical Android"
+  },
+  "transport": "Direct LAN TCP and UDP; USB test control only",
+  "checks": [
+    {
+      "name": "pc_loopback_listener_ready",
+      "passed": true
+    },
+    {
+      "name": "android_loopback_listener_ready",
+      "passed": true
+    },
+    {
+      "name": "android_stop_releases_udp_listener",
+      "passed": false,
+      "error": "BindException: bind failed: EADDRINUSE (Address already in use)"
+    },
+    {
+      "name": "pc_to_android_direct_lan_probe",
+      "passed": false,
+      "error": "IllegalStateException: TimeoutError"
+    },
+    {
+      "name": "android_to_pc_direct_lan_probe",
+      "passed": false,
+      "error": "IllegalStateException: SocketTimeoutException"
+    },
+    {
+      "name": "android_udp_discovers_pc",
+      "passed": false,
+      "error": "IllegalStateException: Check failed."
+    },
+    {
+      "name": "pc_udp_discovers_android",
+      "passed": false,
+      "error": "IllegalStateException: Check failed."
+    },
+    {
+      "name": "wire_contains_no_test_secrets_or_plaintext",
+      "passed": false,
+      "skipped": true,
+      "reason": "No private sync requests; transport precondition failed"
+    }
+  ],
+  "passed": false,
+  "wifi_cycle_requested": false,
+  "fatal": "IllegalStateException: Direct LAN endpoints unreachable; dependent sync checks not run",
+  "wire_chunks_checked": 3
+}

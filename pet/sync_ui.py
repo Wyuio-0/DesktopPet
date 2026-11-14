@@ -493,7 +493,7 @@ class RhodesSyncWindow(QtWidgets.QDialog):
         self.discovered_devices = results or []
 
         if not self.discovered_devices:
-            self.list_discovered.addItem("未扫描到附近的终端。提示：\n1. 确保手机处于同一局域网并打开终端互联页面\n2. 模拟器环境请在右侧直接输入 127.0.0.1 或 10.0.2.15 直连")
+            self.list_discovered.addItem("未发现附近设备。\n请确认两端已开启同步，并连接可互访的同一局域网。\n可输入目标 IP 尝试直连；若仍失败，校园网或访客网络可能禁止设备互访，\n可换用允许互访的手机热点或家用路由器。")
             return
 
         for dev in self.discovered_devices:

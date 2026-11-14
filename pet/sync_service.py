@@ -19,6 +19,7 @@ import socket
 import socketserver
 import threading
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
@@ -40,6 +41,16 @@ MAX_CLIPBOARD_BYTES = 256 * 1024
 PAIR_TTL = 30.0
 MAX_PENDING_PAIRS = 8
 SOCKET_TIMEOUT = 5.0
+
+
+class SyncConnectionError(ConnectionError):
+    """The peer could not be reached; existing trust must be kept for retry."""
+
+
+def _sync_failure_message(error, operation):
+    if isinstance(error, OSError) and not isinstance(error, urllib.error.HTTPError):
+        return f"{operation}失败：无法连接设备，请检查两端网络、设备互访或防火墙设置，网络恢复后重试。已有配对已保留。"
+    return f"{operation}失败，请确认两端已升级、密钥有效，必要时重新配对"
 
 
 class _NoSyncRedirects(urllib.request.HTTPRedirectHandler):
@@ -904,7 +915,9 @@ class RhodesSyncService:
     def _secure_post(self, ip, port, path, payload, secret, token=None, timeout=10):
         # Discovery contains no credentials. A forged epoch can only cause failure.
         info = self.probe_device(ip, port)
-        if not info or info.get("protocol") != 2:
+        if not info:
+            raise SyncConnectionError("无法连接目标设备")
+        if info.get("protocol") != 2:
             raise InvalidEnvelope("目标设备不支持加密同步 v2，请先升级")
         body = dict(payload)
         if token:
@@ -943,8 +956,8 @@ class RhodesSyncService:
                     "protocol": 2, "paired_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
                 self.pair_manager.save()
             return True, "加密配对成功！", result
-        except Exception:
-            return False, "加密配对失败：请确认两端已升级、配对密钥正确且未过期，并在接收端确认。", None
+        except Exception as error:
+            return False, _sync_failure_message(error, "加密配对"), None
 
     def send_clipboard(self, target_ip, target_port, token, text, title=None):
         try:
@@ -961,8 +974,8 @@ class RhodesSyncService:
             if status != 200:
                 return False, payload.get("error", "拉取失败")
             return True, DataSyncEngine.apply_data(payload, mode="merge")
-        except Exception:
-            return False, "加密拉取失败，请检查连接或重新配对"
+        except Exception as error:
+            return False, _sync_failure_message(error, "加密拉取")
 
     def sync_push(self, target_ip, target_port, token, mode="merge"):
         try:
@@ -970,8 +983,8 @@ class RhodesSyncService:
             payload["mode"] = mode
             status, result = self._secure_post(target_ip, target_port, "/api/sync/push", payload, self._key_for_token(token), token)
             return status == 200, result.get("result") if status == 200 else result.get("error", "推送失败")
-        except Exception:
-            return False, "加密推送失败，请检查连接或重新配对"
+        except Exception as error:
+            return False, _sync_failure_message(error, "加密推送")
 
     def broadcast_status(self, event, data=None):
         for device in self.pair_manager.get_trusted_devices().values():

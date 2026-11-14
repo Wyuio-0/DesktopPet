@@ -23,6 +23,7 @@ class SyncAcceptanceRunner : Instrumentation() {
     private val app get() = targetContext.applicationContext
     private val host get() = arguments.getString("host", "127.0.0.1")
     private val pcPort get() = arguments.getString("pc_port")!!.toInt()
+    private val lan get() = arguments.getString("transport") == "lan"
     private fun token() = SyncManager.getDeviceToken(app, "acceptance-pc")
 
     override fun onCreate(arguments: Bundle?) {
@@ -61,14 +62,20 @@ class SyncAcceptanceRunner : Instrumentation() {
     private fun item(array: JSONArray, id: String): JSONObject? = (0 until array.length())
         .map { array.getJSONObject(it) }.firstOrNull { it.optString("id") == id }
 
+    private fun shell(command: String) {
+        uiAutomation.executeShellCommand(command).use {
+            FileInputStream(it.fileDescriptor).use { input -> input.readBytes() }
+        }
+    }
+
+    private fun foreground() = shell("am start -W -n " + app.packageName + "/com.amiya.pet.acceptance.SyncAcceptanceActivity")
+
     override fun onStart() {
         val summary = JSONObject()
         try {
             check(app.packageName == "com.amiya.pet.syncacceptance") { "Refusing to test a production data directory" }
             android.util.Log.i("SyncAcceptance", "Starting isolated foreground")
-            uiAutomation.executeShellCommand("am start -W -n " + app.packageName + "/com.amiya.pet.acceptance.SyncAcceptanceActivity").use {
-                FileInputStream(it.fileDescriptor).use { input -> input.readBytes() }
-            }
+            foreground()
             android.util.Log.i("SyncAcceptance", "Preparing native sync")
             val prefs = app.getSharedPreferences("amiya_paired_devices", 0)
             prefs.edit().clear().putString("my_device_id", "acceptance-android").commit()
@@ -83,6 +90,44 @@ class SyncAcceptanceRunner : Instrumentation() {
                 repeat(40) { if (SyncManager.isServerRunning) delay(100) }
                 control("phone_port", JSONObject().put("port", SyncManager.localHttpPort))
                 val expected = control("seed").getJSONObject("expected")
+                case("android_stop_releases_udp_listener") {
+                    try {
+                        SyncManager.stop(); delay(300)
+                        java.net.DatagramSocket(null).use { socket ->
+                            socket.reuseAddress = false
+                            socket.bind(java.net.InetSocketAddress(SyncManager.DEFAULT_UDP_PORT))
+                        }
+                    } finally {
+                        SyncManager.start(app); delay(1000)
+                        control("phone_port", JSONObject().put("port", SyncManager.localHttpPort))
+                    }
+                }
+                if (lan) {
+                    case("pc_loopback_listener_ready") { check(control("probe_pc_loopback").getBoolean("ok")) }
+                    case("android_loopback_listener_ready") { check(SyncManager.probeDevice("127.0.0.1", SyncManager.localHttpPort)?.deviceId == "acceptance-android") }
+                    var phoneReachable = false
+                    var pcReachable = false
+                    case("pc_to_android_direct_lan_probe") {
+                        val probe = control("probe_phone"); phoneReachable = probe.getBoolean("ok")
+                        check(phoneReachable) { probe.optString("diagnostic") }
+                    }
+                    case("android_to_pc_direct_lan_probe") {
+                        pcReachable = SyncManager.probeDevice(host, pcPort)?.deviceId == "acceptance-pc"
+                        if (!pcReachable) {
+                            val diagnostic = try {
+                                java.net.Socket().use { it.connect(java.net.InetSocketAddress(host, pcPort), 3000) }
+                                "TCP reachable; HTTP probe failed"
+                            } catch (error: java.io.IOException) { error.javaClass.simpleName }
+                            error(diagnostic)
+                        }
+                    }
+                    case("android_udp_discovers_pc") {
+                        val found = SyncManager.scanLanDevices(2500).filter { it.deviceId == "acceptance-pc" }
+                        check(found.size == 1 && found[0].ip == host && found[0].httpPort == pcPort)
+                    }
+                    case("pc_udp_discovers_android") { check(control("scan_phone").getBoolean("ok")) }
+                    check(phoneReachable && pcReachable) { "Direct LAN endpoints unreachable; dependent sync checks not run" }
+                }
                 case("legacy_pair_cannot_send") {
                     prefs.edit().putString("paired_list", JSONObject().put("legacy", JSONObject()
                         .put("token", "legacy-test-token").put("name", "legacy").put("ip", host).put("port", pcPort)).toString()).commit()
@@ -149,10 +194,68 @@ class SyncAcceptanceRunner : Instrumentation() {
                     control("restart_pc")
                     check(SyncManager.syncPull(app, host, pcPort, token()).success)
                 }
+                case("pc_outage_preserves_data_and_trust_then_recovers") {
+                    val before = snapshot()
+                    val trustedToken = token()
+                    try {
+                        control("stop_pc")
+                        val report = SyncManager.syncPull(app, host, pcPort, token())
+                        check(!report.success && !report.message.contains("重新配对")) { "Connection loss incorrectly requests re-pairing" }
+                        check(token() == trustedToken)
+                        val after = snapshot()
+                        for (key in listOf("schedule", "exams", "notes")) check(before.get(key).toString() == after.get(key).toString())
+                    } finally { control("start_pc") }
+                    check(SyncManager.syncPull(app, host, pcPort, token()).success)
+                }
                 case("android_service_restart_keeps_trust") {
                     SyncManager.stop(); delay(700); SyncManager.start(app); delay(1000)
                     control("phone_port", JSONObject().put("port", SyncManager.localHttpPort))
                     check(control("pull_phone").getBoolean("ok"))
+                }
+                if (lan) {
+                    case("udp_discovery_after_android_service_restart") { check(control("scan_phone").getBoolean("ok")) }
+                    case("background_15s_bidirectional_sync") {
+                        try {
+                            shell("input keyevent KEYCODE_HOME")
+                            delay(15000)
+                            check(control("pull_phone").getBoolean("ok"))
+                            check(SyncManager.syncPull(app, host, pcPort, token()).success)
+                        } finally { foreground() }
+                    }
+                    if (arguments.getString("cycle_wifi") == "true") {
+                        val beforeDisconnect = snapshot().toString()
+                        val trustedToken = token()
+                        case("wifi_disabled_preserves_data_and_trust") {
+                            try {
+                                check(control("wifi_off").getBoolean("ok"))
+                                delay(3000)
+                                check(SyncManager.probeDevice(host, pcPort) == null) { "LAN peer still reachable with Wi-Fi disabled" }
+                                val report = SyncManager.syncPull(app, host, pcPort, token())
+                                check(!report.success)
+                                check(!report.message.contains("重新配对")) { "Network outage incorrectly requests re-pairing" }
+                                // packAllData contains a changing timestamp; compare persisted categories only.
+                                val before = JSONObject(beforeDisconnect)
+                                val after = snapshot()
+                                for (key in listOf("schedule", "exams", "notes")) check(before.get(key).toString() == after.get(key).toString())
+                                check(token() == trustedToken)
+                            } finally { control("wifi_on") }
+                        }
+                        case("wifi_reconnect_keeps_trust") {
+                            var online = false
+                            repeat(20) {
+                                if (!online) {
+                                    online = SyncManager.probeDevice(host, pcPort)?.deviceId == "acceptance-pc"
+                                    if (!online) delay(1000)
+                                }
+                            }
+                            check(online) { "Wi-Fi did not reconnect within the test window" }
+                            check(token() == trustedToken)
+                            check(SyncManager.syncPull(app, host, pcPort, token()).success)
+                            check(control("pull_phone").getBoolean("ok"))
+                            check(control("check_pc_data").getBoolean("ok"))
+                        }
+                        case("udp_discovery_after_wifi_reconnect") { check(control("scan_phone").getBoolean("ok")) }
+                    }
                 }
                 case("receiver_rejects_pair_without_replacing_trust") {
                     val before = token(); approval = "reject"
