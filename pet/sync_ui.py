@@ -390,11 +390,11 @@ class RhodesSyncWindow(QtWidgets.QDialog):
         self.btn_sync_all.clicked.connect(self._sync_merge_all)
         sync_btn_bar.addWidget(self.btn_sync_all)
 
-        self.btn_pull = QtWidgets.QPushButton("📥 从选中手机拉取覆盖")
+        self.btn_pull = QtWidgets.QPushButton("📥 从选中手机拉取并合并")
         self.btn_pull.clicked.connect(self._sync_pull_remote)
         sync_btn_bar.addWidget(self.btn_pull)
 
-        self.btn_push = QtWidgets.QPushButton("📤 推送电脑数据到手机")
+        self.btn_push = QtWidgets.QPushButton("📤 覆盖手机学业数据…")
         self.btn_push.clicked.connect(self._sync_push_remote)
         sync_btn_bar.addWidget(self.btn_push)
         sync_btn_bar.addStretch()
@@ -624,12 +624,8 @@ class RhodesSyncWindow(QtWidgets.QDialog):
         self.btn_sync_all.setEnabled(False)
 
         def merge_worker():
-            # 1. 先 Pull 远端合并到本地
-            ok1, res1 = self.service.sync_pull(ip, port, token)
-            # 2. 再 Push 本地最新合并数据给远端
-            ok2, res2 = self.service.sync_push(ip, port, token, mode="replace")
-            success = ok1 and ok2
-            msg = "双向同步完成！" if success else f"同步中断: {res1 if not ok1 else res2}"
+            success, result = self.service.sync_merge(ip, port, token)
+            msg = "双向同步完成！" if success else f"同步中断: {result}"
             QtCore.QMetaObject.invokeMethod(
                 self, "_on_sync_finished", QtCore.Qt.QueuedConnection,
                 QtCore.Q_ARG(bool, success), QtCore.Q_ARG(str, msg)
@@ -656,6 +652,12 @@ class RhodesSyncWindow(QtWidgets.QDialog):
     def _sync_push_remote(self):
         dev_id, info = self._get_target_paired_device()
         if not info:
+            return
+        reply = QtWidgets.QMessageBox.question(self, "确认覆盖手机数据",
+            "将用电脑当前的课表、考试和便签替换目标设备的数据。\n"
+            "目标独有内容会被删除；电脑中的空列表会清空目标对应类别。是否继续？",
+            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No, QtWidgets.QMessageBox.No)
+        if reply != QtWidgets.QMessageBox.Yes:
             return
         ip, port, token = info.get("ip"), info.get("port", 23334), info.get("token")
         self.lbl_sync_result.setText("正在推送电脑学业数据到手机...")

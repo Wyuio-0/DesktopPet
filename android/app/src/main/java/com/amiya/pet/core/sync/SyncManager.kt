@@ -266,6 +266,7 @@ object SyncManager {
             val payload = try { JSONObject(body) } catch (_: Exception) { JSONObject() }
             val mode = payload.optString("mode", "merge")
             val report = applyReceivedData(context, payload, mode)
+            if (!report.success) return makeHttpResponse(400, "Bad Request", JSONObject().put("error", report.message).toString())
             withContext(Dispatchers.Main) {
                 onDataSyncedListener?.invoke(report)
             }
@@ -591,11 +592,16 @@ object SyncManager {
             report
         } catch (error: Exception) { SyncReport(false, syncFailure(error, "加密拉取")) }
     }
-    suspend fun syncPush(context: Context, ip: String, port: Int, token: String, mode: String = "replace"): SyncReport = withContext(Dispatchers.IO) {
+    suspend fun syncPush(context: Context, ip: String, port: Int, token: String, mode: String = "merge"): SyncReport = withContext(Dispatchers.IO) {
         try {
             val (status, _) = exchange(ip, port, "/api/sync/push", packAllData(context).put("mode", mode), keyForToken(context, token), token)
             SyncReport(status == 200, if (status == 200) "加密推送成功" else "推送被拒绝")
         } catch (error: Exception) { SyncReport(false, syncFailure(error, "加密推送")) }
+    }
+    suspend fun syncMerge(context: Context, ip: String, port: Int, token: String): SyncReport {
+        val pulled = syncPull(context, ip, port, token)
+        if (!pulled.success) return pulled
+        return syncPush(context, ip, port, token, "merge")
     }
     suspend fun sendClipboard(context: Context, ip: String, port: Int, token: String, text: String): Boolean = withContext(Dispatchers.IO) {
         try {
@@ -660,37 +666,75 @@ object SyncManager {
         }
     }
 
+    private data class SyncInput(val schedule: JSONObject?, val courses: List<Course>?,
+        val exams: List<ExamItem>?, val notes: List<Note>?)
+
+    private fun parseSyncInput(payload: JSONObject, mode: String): SyncInput {
+        require(mode == "merge" || mode == "replace")
+        require(!payload.has("mode") || payload.get("mode") is String)
+        fun rows(parent: JSONObject, key: String): List<JSONObject>? {
+            if (!parent.has(key)) return null
+            val array = parent.getJSONArray(key)
+            val items = (0 until array.length()).map { array.getJSONObject(it) }
+            val ids = items.filter { it.has("id") }.map {
+                require(it.get("id") is String && it.getString("id").isNotEmpty())
+                it.getString("id")
+            }
+            require(ids.distinct().size == ids.size)
+            return items
+        }
+        val schedule = if (payload.has("schedule")) payload.getJSONObject("schedule") else null
+        if (schedule != null) {
+            if (schedule.has("term_start")) {
+                require(schedule.get("term_start") is String)
+                val text = schedule.getString("term_start")
+                if (text.isNotEmpty()) {
+                    val format = SimpleDateFormat("yyyy-MM-dd", Locale.ROOT).apply { isLenient = false }
+                    require(format.format(format.parse(text)!!) == text)
+                }
+            }
+            if (schedule.has("sections")) {
+                val sections = schedule.getJSONObject("sections")
+                require(sections.keys().asSequence().all { sections.get(it) is String })
+            }
+        }
+        val courses = schedule?.let { rows(it, "courses") }?.map { c ->
+            require(c.get("name") is String && c.getString("name").isNotEmpty())
+            Course(name = c.getString("name"), weekday = c.getInt("weekday"),
+                secStart = c.getInt("sec_start"), secEnd = c.getInt("sec_end"),
+                weekStart = c.optInt("week_start", 1), weekEnd = c.optInt("week_end", 20),
+                parity = c.optString("parity", "all"), room = c.optString("room", ""),
+                teacher = c.optString("teacher", ""), campus = c.optString("campus", ""),
+                note = c.optString("note", ""), id = c.optString("id", UUID.randomUUID().toString()),
+                customTime = c.optString("custom_time", ""))
+        }
+        val exams = rows(payload, "exams")?.map { e ->
+            require(e.get("title") is String && e.getString("title").isNotEmpty())
+            val stamp = e.get("examTimeMillis")
+            require(stamp is Number && stamp.toDouble().isFinite() && stamp.toDouble() >= 0)
+            ExamItem.fromJson(e)
+        }
+        val notes = rows(payload, "notes")?.map { n ->
+            require(n.has("id") && n.get("id") is String && n.getString("id").isNotEmpty())
+            Note.fromJsonObject(n)
+        }
+        return SyncInput(schedule, courses, exams, notes)
+    }
+
     fun applyReceivedData(context: Context, payload: JSONObject, mode: String = "merge"): SyncReport {
+        val input = try { parseSyncInput(payload, mode) }
+            catch (_: Exception) { return SyncReport(false, "同步数据格式无效，未应用。") }
         var courseCount = 0
         var examCount = 0
         var noteCount = 0
 
         // 1. 课表处理
-        val schedObj = payload.optJSONObject("schedule")
+        val schedObj = input.schedule
         if (schedObj != null) {
             ScheduleManager.load(context)
-            val coursesArray = schedObj.optJSONArray("courses") ?: JSONArray()
-            val newCourses = mutableListOf<Course>()
-            for (i in 0 until coursesArray.length()) {
-                val c = coursesArray.getJSONObject(i)
-                newCourses.add(Course(
-                    name = c.optString("name", ""),
-                    weekday = c.optInt("weekday", 1),
-                    secStart = c.optInt("sec_start", 1),
-                    secEnd = c.optInt("sec_end", 1),
-                    weekStart = c.optInt("week_start", 1),
-                    weekEnd = c.optInt("week_end", 1),
-                    parity = c.optString("parity", "all"),
-                    room = c.optString("room", ""),
-                    teacher = c.optString("teacher", ""),
-                    campus = c.optString("campus", ""),
-                    note = c.optString("note", ""),
-                    id = c.optString("id", UUID.randomUUID().toString()),
-                    customTime = c.optString("custom_time", "")
-                ))
-            }
+            val newCourses = input.courses ?: ScheduleManager.courses
 
-            if (mode == "replace" || ScheduleManager.courses.isEmpty()) {
+            if (input.courses == null || mode == "replace" || ScheduleManager.courses.isEmpty()) {
                 ScheduleManager.courses = newCourses
             } else {
                 val merged = ScheduleManager.courses.toMutableList()
@@ -705,7 +749,9 @@ object SyncManager {
             }
 
             val termStartStr = schedObj.optString("term_start", "")
-            if (termStartStr.isNotEmpty()) {
+            if (schedObj.has("term_start") && termStartStr.isEmpty()) {
+                ScheduleManager.termStart = null
+            } else if (termStartStr.isNotEmpty()) {
                 try {
                     ScheduleManager.termStart = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).parse(termStartStr)
                 } catch (_: Exception) {}
@@ -719,13 +765,14 @@ object SyncManager {
         }
 
         // 2. 考试日程处理
-        val examsArr = payload.optJSONArray("exams")
-        if (examsArr != null) {
+        if (input.exams != null) {
             ExamManager.load(context)
+            if (mode == "replace") {
+                ExamManager.exams.clear()
+                ExamManager.exams.addAll(input.exams)
+            }
             var addedExams = 0
-            for (i in 0 until examsArr.length()) {
-                val item = examsArr.getJSONObject(i)
-                val exam = ExamItem.fromJson(item)
+            for (exam in if (mode == "replace") emptyList() else input.exams) {
                 val byId = ExamManager.exams.indexOfFirst { it.id == exam.id }
                 val index = if (byId >= 0) byId else ExamManager.exams.indexOfFirst {
                     it.title == exam.title && it.examTimeMillis == exam.examTimeMillis }
@@ -733,33 +780,29 @@ object SyncManager {
                 addedExams++
             }
             ExamManager.save(context)
-            examCount = addedExams
+            examCount = if (mode == "replace") input.exams.size else addedExams
         }
 
         // 3. 便签处理
-        val notesArr = payload.optJSONArray("notes")
-        if (notesArr != null) {
+        if (input.notes != null) {
             val notesMgr = NotesManager.getInstance(context)
             var addedNotes = 0
-            for (i in 0 until notesArr.length()) {
-                val item = notesArr.getJSONObject(i)
-                val remoteNote = Note.fromJsonObject(item)
-                val localNote = notesMgr.notes.find { it.id == remoteNote.id }
+            val mergedNotes = notesMgr.notes.toMutableList()
+            for (remoteNote in if (mode == "replace") emptyList() else input.notes) {
+                val index = mergedNotes.indexOfFirst { it.id == remoteNote.id }
+                val localNote = mergedNotes.getOrNull(index)
                 if (localNote != null) {
                     if (remoteNote.updatedAt > localNote.updatedAt) {
-                        localNote.title = remoteNote.title
-                        localNote.content = remoteNote.content
-                        localNote.updatedAt = remoteNote.updatedAt
-                        localNote.pinned = remoteNote.pinned
+                        mergedNotes[index] = remoteNote
                         addedNotes++
                     }
                 } else {
-                    notesMgr.addNote(remoteNote)
+                    mergedNotes.add(remoteNote)
                     addedNotes++
                 }
             }
-            notesMgr.saveNotes()
-            noteCount = addedNotes
+            notesMgr.replaceNotes(if (mode == "replace") input.notes else mergedNotes)
+            noteCount = if (mode == "replace") input.notes.size else addedNotes
         }
 
         return SyncReport(

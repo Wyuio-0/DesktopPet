@@ -11,6 +11,7 @@
 """
 
 import http.server
+import functools
 import json
 import os
 import secrets
@@ -25,7 +26,7 @@ import urllib.request
 import uuid
 from datetime import datetime
 
-from .notes import NotesManager, Note
+from .notes import NotesManager, Note, sync_notes_manager
 from .schedule import Schedule, Course
 from .settings import config_dir
 from .tasks import Tasks, Task
@@ -45,6 +46,17 @@ SOCKET_TIMEOUT = 5.0
 
 class SyncConnectionError(ConnectionError):
     """The peer could not be reached; existing trust must be kept for retry."""
+
+
+_sync_data_lock = threading.RLock()
+
+
+def _serialized_data(operation):
+    @functools.wraps(operation)
+    def run(*args, **kwargs):
+        with _sync_data_lock:
+            return operation(*args, **kwargs)
+    return run
 
 
 def _sync_failure_message(error, operation):
@@ -265,6 +277,7 @@ class DataSyncEngine:
     """学业数据与日程整合引擎。"""
 
     @staticmethod
+    @_serialized_data
     def pack_all_data():
         """打包本地所有学业数据为 JSON 字典。"""
         # 1. 课表
@@ -317,8 +330,9 @@ class DataSyncEngine:
                 })
 
         # 3. 便签
-        notes_mgr = NotesManager()
-        notes_list = [n.to_dict() for n in notes_mgr.notes]
+        notes_mgr = sync_notes_manager()
+        with notes_mgr.sync_lock:
+            notes_list = [n.to_dict() for n in notes_mgr.notes]
 
         return {
             "version": APP_VERSION,
@@ -329,38 +343,69 @@ class DataSyncEngine:
         }
 
     @staticmethod
+    @_serialized_data
     def apply_data(payload, mode="merge"):
         """将远端数据应用至本地。mode: 'merge' or 'replace'。"""
+        # Parse every included category before changing any local collection.
+        if not isinstance(payload, dict) or mode not in ("merge", "replace"):
+            raise ValueError("无效的同步模式或数据")
+        sched_data = payload.get("schedule")
+        if "schedule" in payload and not isinstance(sched_data, dict):
+            raise ValueError("schedule 必须是对象")
+        for key in ("exams", "notes"):
+            if key in payload and not isinstance(payload[key], list):
+                raise ValueError(key + " 必须是数组")
+        if sched_data is not None and "courses" in sched_data and not isinstance(sched_data["courses"], list):
+            raise ValueError("courses 必须是数组")
+        courses = None
+        exams = None
+        notes = None
+        try:
+            if sched_data is not None and "courses" in sched_data:
+                if any(not isinstance(c, dict) for c in sched_data["courses"]): raise ValueError("课程必须是对象")
+                courses = [Course(**{k: v for k, v in c.items() if k in Course.__slots__}) for c in sched_data["courses"]]
+                if any(not c.name or not isinstance(c.name, str) for c in courses):
+                    raise ValueError("课程名称无效")
+            if "exams" in payload:
+                exams = []
+                for e in payload["exams"]:
+                    if not isinstance(e, dict) or not isinstance(e.get("title"), str) or not e["title"]:
+                        raise ValueError("考试名称无效")
+                    ms = e["examTimeMillis"]
+                    if type(ms) not in (int, float) or ms < 0:
+                        raise ValueError("考试时间无效")
+                    exams.append((e, datetime.fromtimestamp(ms / 1000.0)))
+            if "notes" in payload:
+                notes = []
+                for nd in payload["notes"]:
+                    if not isinstance(nd, dict) or not isinstance(nd.get("id"), str) or not nd["id"]:
+                        raise ValueError("便签 ID 无效")
+                    notes.append(Note.from_dict(nd))
+            for rows in (sched_data.get("courses", []) if sched_data else [], payload.get("exams", []), payload.get("notes", [])):
+                ids = [row["id"] for row in rows if "id" in row]
+                if any(not isinstance(nid, str) or not nid for nid in ids) or len(set(ids)) != len(ids):
+                    raise ValueError("同步列表含无效或重复 ID")
+            term_start = None
+            if sched_data is not None:
+                from datetime import date
+                if "term_start" in sched_data:
+                    text = sched_data["term_start"]
+                    if not isinstance(text, str): raise ValueError("学期日期无效")
+                    term_start = date.fromisoformat(text) if text else None
+                if "sections" in sched_data and (not isinstance(sched_data["sections"], dict)
+                        or any(not isinstance(k, str) or not isinstance(v, str) for k, v in sched_data["sections"].items())):
+                    raise ValueError("节次时间无效")
+        except (TypeError, KeyError, ValueError, OverflowError, OSError) as error:
+            raise ValueError("无效的同步数据") from error
         results = {"schedule": False, "exams": 0, "notes": 0}
 
         # 1. 应用课表
-        sched_data = payload.get("schedule")
         if isinstance(sched_data, dict):
             sched = Schedule()
-            courses = []
-            for c in sched_data.get("courses", []):
-                try:
-                    courses.append(Course(
-                        name=c["name"], weekday=c["weekday"],
-                        sec_start=c["sec_start"], sec_end=c["sec_end"],
-                        week_start=c["week_start"], week_end=c["week_end"],
-                        parity=c.get("parity", "all"),
-                        room=c.get("room", ""), teacher=c.get("teacher", ""),
-                        campus=c.get("campus", ""), note=c.get("note", ""),
-                        id=c.get("id"), custom_time=c.get("custom_time", "")))
-                except Exception:
-                    continue
-            
-            term_start = None
-            ts_str = sched_data.get("term_start", "")
-            if ts_str:
-                try:
-                    from datetime import date
-                    term_start = date.fromisoformat(ts_str)
-                except Exception:
-                    pass
-
-            if mode == "replace" or not sched.courses:
+            if "term_start" in sched_data: sched.term_start = term_start
+            if courses is None:
+                courses = sched.courses
+            if "courses" not in sched_data or mode == "replace" or not sched.courses:
                 sched.save(
                     term=sched_data.get("term", sched.term),
                     term_start=term_start or sched.term_start,
@@ -390,21 +435,18 @@ class DataSyncEngine:
             results["schedule"] = True
 
         # 2. 应用考试日程
-        exams_data = payload.get("exams", [])
-        if isinstance(exams_data, list) and exams_data:
+        if exams is not None:
             tasks_mgr = Tasks()
+            previous_exams = [t for t in tasks_mgr.items if t.kind == "exam"]
+            if mode == "replace":
+                tasks_mgr.items = [t for t in tasks_mgr.items if t.kind != "exam"]
             added_count = 0
-            for e in exams_data:
+            for e, due_dt in exams:
                 title = e.get("title", "未命名考试")
-                try:
-                    ms = e.get("examTimeMillis", 0)
-                    due_dt = datetime.fromtimestamp(ms / 1000.0) if ms > 0 else datetime.now()
-                except Exception:
-                    due_dt = datetime.now()
                 location = e.get("location", "")
-                existing = next((t for t in tasks_mgr.items if t.kind == "exam" and t.id == e.get("id")), None)
+                existing = next((t for t in previous_exams if t.id == e.get("id")), None)
                 if existing is None:
-                    existing = next((t for t in tasks_mgr.items if t.kind == "exam" and t.title == title and t.due == due_dt), None)
+                    existing = next((t for t in previous_exams if t.title == title and t.due == due_dt), None)
                 task = Task(
                     title=title,
                     kind="exam",
@@ -415,7 +457,7 @@ class DataSyncEngine:
                     done=existing.done if existing else False,
                     exam_details=e
                 )
-                if existing:
+                if existing in tasks_mgr.items:
                     tasks_mgr.items[tasks_mgr.items.index(existing)] = task
                 else:
                     tasks_mgr.items.append(task)
@@ -424,30 +466,9 @@ class DataSyncEngine:
             results["exams"] = added_count
 
         # 3. 应用便签
-        notes_data = payload.get("notes", [])
-        if isinstance(notes_data, list) and notes_data:
-            notes_mgr = NotesManager()
-            existing_notes_map = {n.id: n for n in notes_mgr.notes}
-            added_notes = 0
-            for nd in notes_data:
-                nid = nd.get("id")
-                if not nid:
-                    continue
-                remote_note = Note.from_dict(nd)
-                if nid in existing_notes_map:
-                    local_note = existing_notes_map[nid]
-                    # 若远端较新则更新
-                    if remote_note.updated_at > local_note.updated_at:
-                        local_note.title = remote_note.title
-                        local_note.content = remote_note.content
-                        local_note.updated_at = remote_note.updated_at
-                        local_note.pinned = remote_note.pinned
-                        added_notes += 1
-                else:
-                    notes_mgr.notes.append(remote_note)
-                    added_notes += 1
-            notes_mgr.save()
-            results["notes"] = added_notes
+        if notes is not None:
+            notes_mgr = sync_notes_manager()
+            results["notes"] = notes_mgr.apply_sync(notes, mode)
 
         return results
 
@@ -659,7 +680,10 @@ class RhodesHttpHandler(http.server.BaseHTTPRequestHandler):
 
         if path == "/api/sync/push":
             mode = payload.get("mode", "merge")
-            result = DataSyncEngine.apply_data(payload, mode=mode)
+            try:
+                result = DataSyncEngine.apply_data(payload, mode=mode)
+            except ValueError:
+                return self._send_json(400, {"error": "无效的同步数据，未应用"})
             if self.server_service.on_data_synced_callback:
                 try:
                     self.server_service.on_data_synced_callback(result)
@@ -985,6 +1009,12 @@ class RhodesSyncService:
             return status == 200, result.get("result") if status == 200 else result.get("error", "推送失败")
         except Exception as error:
             return False, _sync_failure_message(error, "加密推送")
+
+    def sync_merge(self, target_ip, target_port, token):
+        ok, result = self.sync_pull(target_ip, target_port, token)
+        if not ok:
+            return False, result
+        return self.sync_push(target_ip, target_port, token, mode="merge")
 
     def broadcast_status(self, event, data=None):
         for device in self.pair_manager.get_trusted_devices().values():

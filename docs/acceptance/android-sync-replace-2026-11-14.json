@@ -1,0 +1,139 @@
+{
+  "device": {
+    "model": "V2199A",
+    "manufacturer": "vivo",
+    "android": "14",
+    "sdk": "34",
+    "kind": "physical Android"
+  },
+  "transport": "USB ADB forwarded TCP (not Wi-Fi LAN)",
+  "checks": [
+    {
+      "name": "android_stop_releases_udp_listener",
+      "passed": true
+    },
+    {
+      "name": "legacy_pair_cannot_send",
+      "passed": true
+    },
+    {
+      "name": "wrong_secret_rejected",
+      "passed": true
+    },
+    {
+      "name": "android_to_pc_pair",
+      "passed": true
+    },
+    {
+      "name": "pull_from_pc",
+      "passed": true
+    },
+    {
+      "name": "course_fields_survive_pull",
+      "passed": true
+    },
+    {
+      "name": "exam_fields_survive_pull",
+      "passed": true
+    },
+    {
+      "name": "unicode_note_survives_pull",
+      "passed": true
+    },
+    {
+      "name": "android_to_pc_unicode_clipboard",
+      "passed": true
+    },
+    {
+      "name": "pc_to_android_unicode_clipboard",
+      "passed": true
+    },
+    {
+      "name": "android_push_and_pc_pull",
+      "passed": true
+    },
+    {
+      "name": "pc_push_and_repeat_merge_no_duplicates",
+      "passed": true
+    },
+    {
+      "name": "pc_service_restart_keeps_trust",
+      "passed": true
+    },
+    {
+      "name": "pc_outage_preserves_data_and_trust_then_recovers",
+      "passed": true
+    },
+    {
+      "name": "android_service_restart_keeps_trust",
+      "passed": true
+    },
+    {
+      "name": "receiver_rejects_pair_without_replacing_trust",
+      "passed": true
+    },
+    {
+      "name": "expired_invitation_rejected",
+      "passed": true
+    },
+    {
+      "name": "revoked_credentials_fail_closed",
+      "passed": true
+    },
+    {
+      "name": "repair_after_revocation",
+      "passed": true
+    },
+    {
+      "name": "replace_android_removes_old_records",
+      "passed": true
+    },
+    {
+      "name": "empty_replace_android_survives_reload",
+      "passed": true
+    },
+    {
+      "name": "replace_retains_distinct_exam_ids_with_same_title_and_time",
+      "passed": true
+    },
+    {
+      "name": "partial_replace_preserves_other_categories",
+      "passed": true
+    },
+    {
+      "name": "invalid_replace_does_not_partially_apply",
+      "passed": true
+    },
+    {
+      "name": "note_merge_keeps_newer_replace_uses_incoming",
+      "passed": true
+    },
+    {
+      "name": "empty_merge_android_preserves_data",
+      "passed": true
+    },
+    {
+      "name": "encrypted_pc_replace_clears_android",
+      "passed": true
+    },
+    {
+      "name": "encrypted_android_replace_clears_pc",
+      "passed": true
+    },
+    {
+      "name": "encrypted_invalid_replace_returns_400_without_changes",
+      "passed": true
+    },
+    {
+      "name": "two_way_merge_preserves_both_sides_and_is_idempotent",
+      "passed": true
+    },
+    {
+      "name": "wire_contains_no_test_secrets_or_plaintext",
+      "passed": true
+    }
+  ],
+  "passed": true,
+  "wifi_cycle_requested": false,
+  "wire_chunks_checked": 115
+}

@@ -100,7 +100,7 @@ def main():
                 return
         print("Installing " + package + "; confirm the phone prompt if shown", flush=True)
         try:
-            adb("install", "-r", "-t", str(apk), timeout=120)
+            adb("install", "--no-streaming", "-r", "-t", str(apk), timeout=120)
         except subprocess.TimeoutExpired:
             raise RuntimeError("Isolated APK installation timed out; unlock the phone and approve the installation") from None
     install_if_changed(args.app_apk, PACKAGE)
@@ -240,6 +240,22 @@ def main():
                     and all(contains(actual["notes"], n) for n in expected["notes"]))
                 return {"ok": ok}
             if name == "push_phone": return {"ok": service.sync_push(phone_ip, state["phone_port"], phone_token())[0]}
+            if name == "push_phone_replace": return {"ok": service.sync_push(phone_ip, state["phone_port"], phone_token(), "replace")[0]}
+            if name == "empty_pc":
+                sync.DataSyncEngine.apply_data({"schedule": {"courses": []}, "exams": [], "notes": []}, "replace")
+                return {"ok": True}
+            if name == "check_pc_empty":
+                data = sync.DataSyncEngine.pack_all_data()
+                return {"ok": not data["schedule"]["courses"] and not data["exams"] and not data["notes"]}
+            if name == "check_pc_counts":
+                data = sync.DataSyncEngine.pack_all_data()
+                return {"courses": len(data["schedule"]["courses"]), "exams": len(data["exams"]), "notes": len(data["notes"])}
+            if name in ("push_invalid_phone", "push_invalid_pc"):
+                token = phone_token()
+                record = service.pair_manager.get_trusted_devices()["acceptance-android"]
+                target_ip, port = (phone_ip, state["phone_port"]) if name == "push_invalid_phone" else ("127.0.0.1", service.http_port)
+                status, _ = service._secure_post(target_ip, port, "/api/sync/push", payload["payload"], record["sync_key"], token)
+                return {"ok": status == 400}
             if name == "restart_pc": service.stop(); service.start(); return {"ok": True}
             if name == "stop_pc": service.stop(); return {"ok": True}
             if name == "start_pc": service.start(); return {"ok": True}

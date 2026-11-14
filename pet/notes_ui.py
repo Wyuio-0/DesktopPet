@@ -75,6 +75,7 @@ class _TitleBar(QtWidgets.QWidget):
 
 class StickyNoteWindow(QtWidgets.QWidget):
     """悬浮便签窗口主类。"""
+    notes_synced = QtCore.pyqtSignal()
 
     def __init__(self, owner_window=None):
         super().__init__(None)  # Top-level window
@@ -100,6 +101,11 @@ class StickyNoteWindow(QtWidgets.QWidget):
 
         self._build_ui()
         self._load_active_note()
+        self.notes_synced.connect(self._on_notes_synced, QtCore.Qt.QueuedConnection)
+        callback = self.notes_synced.emit
+        self.mgr.sync_listeners.append(callback)
+        manager = self.mgr
+        self.destroyed.connect(lambda: manager.sync_listeners.remove(callback) if callback in manager.sync_listeners else None)
         self._restore_geometry()
 
     def _build_ui(self):
@@ -294,12 +300,21 @@ class StickyNoteWindow(QtWidgets.QWidget):
 
     def _load_active_note(self):
         """加载当前活跃便签内容到编辑器。"""
+        with self.mgr.sync_lock:
+            self._load_note_locked()
+
+    def _load_note_locked(self):
         note = self.mgr.get_active_note()
         self._refresh_combo()
         self.editor.blockSignals(True)
-        self.editor.setPlainText(note.content)
+        self.editor.setPlainText(note.content if note else "")
         self.editor.blockSignals(False)
+        self._loaded_revision = self.mgr.sync_revision
         self._update_status(saved=True)
+
+    def _on_notes_synced(self):
+        self._save_timer.stop()
+        self._load_active_note()
 
     def _on_note_selected(self, index):
         if index < 0:
@@ -318,8 +333,18 @@ class StickyNoteWindow(QtWidgets.QWidget):
 
     def _do_auto_save(self):
         """执行自动持久化。"""
+        with self.mgr.sync_lock:
+            self._save_note_locked()
+
+    def _save_note_locked(self):
+        if self._loaded_revision != self.mgr.sync_revision:
+            self._on_notes_synced()
+            return
         content = self.editor.toPlainText()
-        self.mgr.update_note(self.mgr.active_id, content=content)
+        if not self.mgr.get_active_note():
+            if content: self.mgr.create_note(content=content)
+        else:
+            self.mgr.update_note(self.mgr.active_id, content=content)
         self._refresh_combo()
         self._update_status(saved=True)
 
@@ -342,6 +367,7 @@ class StickyNoteWindow(QtWidgets.QWidget):
 
     def _on_delete_note(self):
         cur_note = self.mgr.get_active_note()
+        if cur_note is None: return
         if len(self.mgr.list_notes()) <= 1 and not cur_note.content.strip():
             return
         reply = QtWidgets.QMessageBox.question(
@@ -358,7 +384,7 @@ class StickyNoteWindow(QtWidgets.QWidget):
     def _toggle_pin(self):
         self.is_pinned = not self.is_pinned
         note = self.mgr.get_active_note()
-        self.mgr.update_note(note.id, pinned=self.is_pinned)
+        if note: self.mgr.update_note(note.id, pinned=self.is_pinned)
         self._refresh_combo()
 
         flags = self.windowFlags()

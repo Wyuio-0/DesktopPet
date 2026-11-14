@@ -6,13 +6,23 @@
 """
 
 import json
+import functools
 import os
+import threading
 import uuid
 from datetime import datetime
 
 from .settings import config_dir
 
 _CURRENT_MANAGER = None
+
+
+def _locked(operation):
+    @functools.wraps(operation)
+    def run(self, *args, **kwargs):
+        with self.sync_lock:
+            return operation(self, *args, **kwargs)
+    return run
 
 
 def notes_path():
@@ -73,8 +83,12 @@ class NotesManager:
         self.filepath = filepath or notes_path()
         self.notes = []
         self.active_id = ""
+        self.sync_revision = 0
+        self.sync_listeners = []
+        self.sync_lock = threading.RLock()
         self.load()
 
+    @_locked
     def load(self):
         """从 JSON 加载便签列表，自动容错。"""
         if not os.path.isfile(self.filepath):
@@ -89,6 +103,9 @@ class NotesManager:
                 self.active_id = str(data.get("active_id") or "")
             elif isinstance(data, list):
                 self.notes = [Note.from_dict(d) for d in data if isinstance(d, dict)]
+            if ((isinstance(data, dict) and data.get("notes") == []) or data == []):
+                self.active_id = ""
+                return
         except Exception:
             self.notes = []
 
@@ -108,6 +125,7 @@ class NotesManager:
         self.active_id = default_note.id
         self.save()
 
+    @_locked
     def save(self) -> bool:
         """原子写入 JSON 持久化存储。"""
         data = {
@@ -124,25 +142,59 @@ class NotesManager:
         except Exception:
             return False
 
+    @_locked
     def list_notes(self) -> list:
         return list(self.notes)
 
+    @_locked
     def get_note(self, note_id: str):
         for n in self.notes:
             if n.id == note_id:
                 return n
         return None
 
-    def get_active_note(self) -> Note:
+    @_locked
+    def get_active_note(self) -> Note | None:
         for n in self.notes:
             if n.id == self.active_id:
                 return n
         if self.notes:
             self.active_id = self.notes[0].id
             return self.notes[0]
-        self._init_default()
-        return self.notes[0]
+        return None
 
+    def notify_sync(self):
+        self.sync_revision += 1
+        for listener in list(self.sync_listeners):
+            try:
+                listener()
+            except Exception:
+                pass
+
+    def apply_sync(self, incoming, mode):
+        """Serialize synchronization with a pending editor debounce save."""
+        with self.sync_lock:
+            before = [n.to_dict() for n in self.notes]
+            if mode == "replace": self.notes = []
+            by_id = {n.id: n for n in self.notes}
+            changed = 0
+            for remote in incoming:
+                local = by_id.get(remote.id)
+                if local is None:
+                    self.notes.append(remote)
+                    by_id[remote.id] = remote
+                    changed += 1
+                elif remote.updated_at > local.updated_at:
+                    local.title, local.content = remote.title, remote.content
+                    local.updated_at, local.pinned = remote.updated_at, remote.pinned
+                    changed += 1
+            if not any(n.id == self.active_id for n in self.notes):
+                self.active_id = self.notes[0].id if self.notes else ""
+            self.save()
+            if before != [n.to_dict() for n in self.notes]: self.notify_sync()
+            return changed
+
+    @_locked
     def set_active_id(self, note_id: str) -> bool:
         if any(n.id == note_id for n in self.notes):
             self.active_id = note_id
@@ -150,6 +202,7 @@ class NotesManager:
             return True
         return False
 
+    @_locked
     def create_note(self, title="", content="", pinned=False) -> Note:
         new_note = Note(title=title or "未命名便签", content=content, pinned=pinned)
         if not title and content:
@@ -163,6 +216,7 @@ class NotesManager:
     def active_note_id(self) -> str:
         return self.active_id
 
+    @_locked
     def toggle_pinned(self, note_id: str) -> bool:
         target = self.get_note(note_id)
         if not target:
@@ -171,6 +225,7 @@ class NotesManager:
         self.save()
         return target.pinned
 
+    @_locked
     def update_note(self, note_id: str, content=None, title=None, pinned=None):
         target = self.get_note(note_id)
         if not target:
@@ -192,6 +247,7 @@ class NotesManager:
             self.save()
         return target
 
+    @_locked
     def delete_note(self, note_id: str) -> bool:
         idx = -1
         for i, n in enumerate(self.notes):
@@ -216,6 +272,14 @@ def get_notes_manager() -> NotesManager:
     if _CURRENT_MANAGER is None:
         _CURRENT_MANAGER = NotesManager()
     return _CURRENT_MANAGER
+
+
+def sync_notes_manager() -> NotesManager:
+    """Keep an open editor's manager coherent without reusing another profile's data."""
+    if (_CURRENT_MANAGER is not None
+            and os.path.abspath(_CURRENT_MANAGER.filepath) == os.path.abspath(notes_path())):
+        return _CURRENT_MANAGER
+    return NotesManager()
 
 
 def reload_notes_manager() -> NotesManager:

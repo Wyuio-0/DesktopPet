@@ -59,6 +59,13 @@ class SyncAcceptanceRunner : Instrumentation() {
     }
 
     private fun snapshot() = SyncManager.packAllData(app)
+    private fun dataOnly(data: JSONObject = snapshot()): List<String> =
+        listOf("schedule", "exams", "notes").map { data.get(it).toString() }
+    private fun assertEmpty(data: JSONObject = snapshot()) {
+        check(data.getJSONObject("schedule").getJSONArray("courses").length() == 0)
+        check(data.getJSONArray("exams").length() == 0)
+        check(data.getJSONArray("notes").length() == 0)
+    }
     private fun item(array: JSONArray, id: String): JSONObject? = (0 until array.length())
         .map { array.getJSONObject(it) }.firstOrNull { it.optString("id") == id }
 
@@ -275,6 +282,107 @@ class SyncAcceptanceRunner : Instrumentation() {
                     check(SyncManager.requestPairToRemote(app, host, pcPort, fresh).first)
                     control("phone_port", JSONObject().put("port", SyncManager.localHttpPort))
                     check(control("pull_phone").getBoolean("ok"))
+                }
+                val empty = JSONObject("""{"schedule":{"courses":[]},"exams":[],"notes":[]}""")
+                val alternative = JSONObject(expected.toString()).apply {
+                    getJSONObject("schedule").getJSONArray("courses").getJSONObject(0)
+                        .put("id", "android-course").put("name", "本地课程")
+                    getJSONArray("exams").getJSONObject(0).put("id", "android-exam").put("title", "本地考试")
+                    getJSONArray("notes").getJSONObject(0).put("id", "android-note")
+                }
+                case("replace_android_removes_old_records") {
+                    check(SyncManager.applyReceivedData(app, expected, "replace").success)
+                    check(SyncManager.applyReceivedData(app, alternative, "replace").success)
+                    val actual = snapshot()
+                    check(actual.getJSONObject("schedule").getJSONArray("courses").length() == 1)
+                    check(actual.getJSONArray("exams").length() == 1 && actual.getJSONArray("notes").length() == 1)
+                    check(actual.getJSONArray("exams").getJSONObject(0).getString("id") == "android-exam")
+                    check(actual.getJSONArray("notes").getJSONObject(0).getString("id") == "android-note")
+                }
+                case("empty_replace_android_survives_reload") {
+                    check(SyncManager.applyReceivedData(app, empty, "replace").success)
+                    com.amiya.pet.core.notes.NotesManager.getInstance(app).loadNotes()
+                    assertEmpty()
+                    check(JSONArray(java.io.File(app.filesDir, "exams.json").readText()).length() == 0)
+                }
+                case("replace_retains_distinct_exam_ids_with_same_title_and_time") {
+                    val first = JSONObject(expected.getJSONArray("exams").getJSONObject(0).toString())
+                    val second = JSONObject(first.toString()).put("id", "second-exam").put("location", "第二考场")
+                    check(SyncManager.applyReceivedData(app, JSONObject().put("exams", JSONArray().put(first).put(second)), "replace").success)
+                    check(snapshot().getJSONArray("exams").length() == 2)
+                }
+                case("partial_replace_preserves_other_categories") {
+                    check(SyncManager.applyReceivedData(app, expected, "replace").success)
+                    check(SyncManager.applyReceivedData(app, JSONObject().put("notes", JSONArray()), "replace").success)
+                    val actual = snapshot()
+                    check(actual.getJSONObject("schedule").getJSONArray("courses").length() == 1)
+                    check(actual.getJSONArray("exams").length() == 1 && actual.getJSONArray("notes").length() == 0)
+                    val before = dataOnly()
+                    check(SyncManager.applyReceivedData(app, JSONObject("""{"schedule":{"term_start":"2026-09-01"}}"""), "replace").success)
+                    check(dataOnly() == before)
+                }
+                case("invalid_replace_does_not_partially_apply") {
+                    check(SyncManager.applyReceivedData(app, expected, "replace").success)
+                    val before = dataOnly()
+                    for (bad in listOf("""{"schedule":{"courses":[]},"exams":null,"notes":[]}""",
+                        """{"schedule":{"courses":[]},"exams":[{}],"notes":[]}""",
+                        """{"notes":[{}]}""")) {
+                        check(!SyncManager.applyReceivedData(app, JSONObject(bad), "replace").success)
+                        check(dataOnly() == before)
+                    }
+                    check(!SyncManager.applyReceivedData(app, empty, "unknown").success)
+                    check(dataOnly() == before)
+                }
+                case("note_merge_keeps_newer_replace_uses_incoming") {
+                    val manager = com.amiya.pet.core.notes.NotesManager.getInstance(app)
+                    val staleEditorNote = manager.notes.first()
+                    val incoming = JSONObject().put("notes", JSONArray().put(JSONObject(expected.getJSONArray("notes").getJSONObject(0).toString())
+                        .put("content", "较旧便签正文").put("updated_at", "2020-01-01 00:00")))
+                    check(SyncManager.applyReceivedData(app, incoming, "merge").success)
+                    check(snapshot().getJSONArray("notes").getJSONObject(0).getString("content") != "较旧便签正文")
+                    check(SyncManager.applyReceivedData(app, incoming, "replace").success)
+                    check(manager.updateNote(staleEditorNote.id, "旧编辑器延迟写回", expected = staleEditorNote) == null)
+                    check(snapshot().getJSONArray("notes").getJSONObject(0).getString("content") == "较旧便签正文")
+                }
+                case("empty_merge_android_preserves_data") {
+                    val before = dataOnly()
+                    check(SyncManager.applyReceivedData(app, empty, "merge").success)
+                    check(dataOnly() == before)
+                }
+                case("encrypted_pc_replace_clears_android") {
+                    check(control("empty_pc").getBoolean("ok"))
+                    check(control("push_phone_replace").getBoolean("ok"))
+                    assertEmpty()
+                }
+                case("encrypted_android_replace_clears_pc") {
+                    control("seed")
+                    check(SyncManager.syncPush(app, host, pcPort, token(), "replace").success)
+                    check(control("check_pc_empty").getBoolean("ok"))
+                }
+                case("encrypted_invalid_replace_returns_400_without_changes") {
+                    control("seed")
+                    check(SyncManager.applyReceivedData(app, expected, "replace").success)
+                    val before = dataOnly()
+                    for (invalid in listOf("""{"mode":"replace","schedule":{"courses":[]},"exams":null,"notes":[]}""",
+                        """{"mode":null,"schedule":{"courses":[]},"exams":[],"notes":[]}""")) {
+                        val bad = JSONObject(invalid)
+                        check(control("push_invalid_phone", JSONObject().put("payload", bad)).getBoolean("ok"))
+                        check(dataOnly() == before)
+                        check(control("push_invalid_pc", JSONObject().put("payload", bad)).getBoolean("ok"))
+                        check(control("check_pc_data").getBoolean("ok"))
+                    }
+                }
+                case("two_way_merge_preserves_both_sides_and_is_idempotent") {
+                    control("seed")
+                    check(SyncManager.applyReceivedData(app, alternative, "replace").success)
+                    repeat(2) {
+                        check(SyncManager.syncMerge(app, host, pcPort, token()).success)
+                        val actual = snapshot()
+                        check(actual.getJSONObject("schedule").getJSONArray("courses").length() == 2)
+                        check(actual.getJSONArray("exams").length() == 2 && actual.getJSONArray("notes").length() == 2)
+                        val pc = control("check_pc_counts")
+                        check(pc.getInt("courses") == 2 && pc.getInt("exams") == 2 && pc.getInt("notes") == 2)
+                    }
                 }
             }
             summary.put("checks", checks).put("passed", (0 until checks.length()).all { checks.getJSONObject(it).optBoolean("passed") })
