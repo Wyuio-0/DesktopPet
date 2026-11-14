@@ -265,6 +265,7 @@ class DataSyncEngine:
             "remind_minutes": sched.remind_minutes,
             "courses": [
                 {
+                    "id": c.id,
                     "name": c.name,
                     "weekday": c.weekday,
                     "sec_start": c.sec_start,
@@ -276,6 +277,7 @@ class DataSyncEngine:
                     "teacher": c.teacher,
                     "campus": c.campus,
                     "note": c.note,
+                    "custom_time": c.custom_time,
                 }
                 for c in sched.courses
             ],
@@ -288,18 +290,19 @@ class DataSyncEngine:
         for t in tasks_mgr.items:
             if t.kind == "exam":
                 try:
-                    exam_time_ms = int(t.due.timestamp() * 1000)
+                    exam_time_ms = round(t.due.timestamp() * 1000)
                 except Exception:
                     exam_time_ms = int(time.time() * 1000)
                 exams_list.append({
                     "id": t.id,
                     "title": t.title,
                     "examTimeMillis": exam_time_ms,
-                    "durationMinutes": 120,
+                    "durationMinutes": t.exam_details.get("durationMinutes", 120),
                     "location": t.course or "",
-                    "seatNumber": "",
-                    "examType": "闭卷",
-                    "note": "",
+                    "seatNumber": t.exam_details.get("seatNumber", ""),
+                    "examType": t.exam_details.get("examType", "闭卷"),
+                    "note": t.exam_details.get("note", ""),
+                    **({"relatedCourseId": t.exam_details["relatedCourseId"]} if "relatedCourseId" in t.exam_details else {}),
                 })
 
         # 3. 便签
@@ -332,7 +335,8 @@ class DataSyncEngine:
                         week_start=c["week_start"], week_end=c["week_end"],
                         parity=c.get("parity", "all"),
                         room=c.get("room", ""), teacher=c.get("teacher", ""),
-                        campus=c.get("campus", ""), note=c.get("note", "")))
+                        campus=c.get("campus", ""), note=c.get("note", ""),
+                        id=c.get("id"), custom_time=c.get("custom_time", "")))
                 except Exception:
                     continue
             
@@ -354,11 +358,18 @@ class DataSyncEngine:
                     sections=sched_data.get("sections", sched.sections)
                 )
             else:
-                # 合并模式：按名称+星期+节次去重
-                existing_keys = {(c.name, c.weekday, c.sec_start) for c in sched.courses}
+                # Stable IDs carry edits; the full placement also recognizes legacy imports.
+                def placement(c):
+                    return (c.name, c.weekday, c.sec_start, c.sec_end, c.week_start,
+                            c.week_end, c.parity, c.custom_time)
                 for c in courses:
-                    if (c.name, c.weekday, c.sec_start) not in existing_keys:
+                    index = next((i for i, old in enumerate(sched.courses) if old.id == c.id), None)
+                    if index is None:
+                        index = next((i for i, old in enumerate(sched.courses) if placement(old) == placement(c)), None)
+                    if index is None:
                         sched.courses.append(c)
+                    else:
+                        sched.courses[index] = c
                 sched.save(
                     term=sched_data.get("term") or sched.term,
                     term_start=term_start or sched.term_start,
@@ -371,26 +382,34 @@ class DataSyncEngine:
         exams_data = payload.get("exams", [])
         if isinstance(exams_data, list) and exams_data:
             tasks_mgr = Tasks()
-            existing_exam_titles = {t.title for t in tasks_mgr.items if t.kind == "exam"}
             added_count = 0
             for e in exams_data:
                 title = e.get("title", "未命名考试")
-                if mode == "merge" and title in existing_exam_titles:
-                    continue
                 try:
                     ms = e.get("examTimeMillis", 0)
                     due_dt = datetime.fromtimestamp(ms / 1000.0) if ms > 0 else datetime.now()
                 except Exception:
                     due_dt = datetime.now()
                 location = e.get("location", "")
-                tasks_mgr.add(
+                existing = next((t for t in tasks_mgr.items if t.kind == "exam" and t.id == e.get("id")), None)
+                if existing is None:
+                    existing = next((t for t in tasks_mgr.items if t.kind == "exam" and t.title == title and t.due == due_dt), None)
+                task = Task(
                     title=title,
                     kind="exam",
                     due=due_dt,
                     course=location,
-                    remind_min=1440
+                    remind_min=existing.remind_min if existing else 1440,
+                    task_id=e.get("id") or (existing.id if existing else None),
+                    done=existing.done if existing else False,
+                    exam_details=e
                 )
+                if existing:
+                    tasks_mgr.items[tasks_mgr.items.index(existing)] = task
+                else:
+                    tasks_mgr.items.append(task)
                 added_count += 1
+            tasks_mgr.save()
             results["exams"] = added_count
 
         # 3. 应用便签
