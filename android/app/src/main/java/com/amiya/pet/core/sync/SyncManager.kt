@@ -41,12 +41,13 @@ object SyncManager {
     var localHttpPort = DEFAULT_HTTP_PORT
         private set
 
-    var isServerRunning = false
+    @Volatile var isServerRunning = false
         private set
 
     private var serverSocket: ServerSocket? = null
     private var serverJob: Job? = null
     private var udpJob: Job? = null
+    private var udpSocket: DatagramSocket? = null
     private val mainScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     private val ioScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val connectionSlots = Semaphore(16)
@@ -70,24 +71,19 @@ object SyncManager {
     /**
      * 启动局域网互联服务（HTTP Server 与 UDP 监听）
      */
-    fun start(context: Context) {
+    @Synchronized fun start(context: Context) {
         if (isServerRunning) return
-        isServerRunning = true
         secure = SyncCrypto.Server()
 
-        // 1. 启动轻量 HTTP 服务端
-        serverJob = ioScope.launch {
-            for (port in DEFAULT_HTTP_PORT..(DEFAULT_HTTP_PORT + 10)) {
-                try {
-                    serverSocket = ServerSocket(port)
-                    localHttpPort = port
-                    break
-                } catch (e: Exception) {
-                    continue
-                }
-            }
+        // Bind while holding the lifecycle lock; stop/start cannot publish stale sockets.
+        val socket = (DEFAULT_HTTP_PORT..(DEFAULT_HTTP_PORT + 10)).firstNotNullOfOrNull { port ->
+            try { ServerSocket(port) } catch (_: java.io.IOException) { null }
+        } ?: return
+        serverSocket = socket
+        localHttpPort = socket.localPort
+        isServerRunning = true
 
-            val socket = serverSocket ?: return@launch
+        serverJob = ioScope.launch {
             while (isActive && !socket.isClosed) {
                 try {
                     val client = socket.accept()
@@ -106,17 +102,22 @@ object SyncManager {
         }
 
         // 2. 启动 UDP 发现监听
-        udpJob = ioScope.launch {
-            var udpSocket: DatagramSocket? = null
+        val discoverySocket = try {
+            DatagramSocket(null).also { candidate ->
+                try {
+                    candidate.reuseAddress = true
+                    candidate.bind(InetSocketAddress(DEFAULT_UDP_PORT))
+                } catch (error: Exception) { candidate.close(); throw error }
+            }
+        } catch (_: Exception) { null }
+        udpSocket = discoverySocket
+        udpJob = discoverySocket?.let { discovery -> ioScope.launch {
             try {
-                udpSocket = DatagramSocket(null).apply {
-                    reuseAddress = true
-                    bind(InetSocketAddress(DEFAULT_UDP_PORT))
-                }
                 val buffer = ByteArray(2048)
-                while (isActive && !udpSocket.isClosed) {
+                while (isActive && !discovery.isClosed) {
                     val packet = DatagramPacket(buffer, buffer.size)
-                    udpSocket.receive(packet)
+                    discovery.receive(packet)
+                    if (!isActive) break
                     val dataStr = String(packet.data, 0, packet.length, Charsets.UTF_8)
                     try {
                         val json = JSONObject(dataStr)
@@ -131,24 +132,27 @@ object SyncManager {
                             }
                             val replyBytes = replyJson.toString().toByteArray(Charsets.UTF_8)
                             val replyPacket = DatagramPacket(replyBytes, replyBytes.size, packet.address, packet.port)
-                            udpSocket.send(replyPacket)
+                            discovery.send(replyPacket)
                         }
                     } catch (_: Exception) {}
                 }
             } catch (_: Exception) {
             } finally {
-                try { udpSocket?.close() } catch (_: Exception) {}
+                discovery.close()
             }
-        }
+        } }
     }
 
     /**
      * 停止服务
      */
-    fun stop() {
+    @Synchronized fun stop() {
         isServerRunning = false
         serverJob?.cancel()
         udpJob?.cancel()
+        // Cancelling a coroutine does not interrupt DatagramSocket.receive().
+        udpSocket?.close()
+        udpSocket = null
         try { serverSocket?.close() } catch (_: Exception) {}
         serverSocket = null
         pendingPairRequests.values.forEach { it.complete(false) }
@@ -552,6 +556,14 @@ object SyncManager {
             status to JSONObject(String(plain, Charsets.UTF_8))
         } finally { conn.disconnect() }
     }
+    private fun syncFailure(error: Exception, operation: String): String {
+        if (error is CancellationException) throw error
+        return if (error is java.io.IOException) {
+            "$operation 失败：无法连接设备，请检查两端 Wi-Fi、设备互访或防火墙设置，网络恢复后重试。已有配对已保留。"
+        } else {
+            "$operation 失败：请确认两端已升级、配对密钥有效，必要时重新配对。"
+        }
+    }
     suspend fun requestPairToRemote(context: Context, ip: String, port: Int = 23333, pairingSecret: String = ""): Pair<Boolean, String> = withContext(Dispatchers.IO) {
         try {
             SyncCrypto.keyId(pairingSecret)
@@ -565,7 +577,10 @@ object SyncManager {
             require(token.isNotEmpty() && id.isNotEmpty())
             saveTrustedDevice(context, id, result.optString("device_name", ip), ip, port, token, pairingSecret)
             true to "加密配对成功"
-        } catch (_: Exception) { false to "加密配对失败：请确认配对密钥正确、未过期，并在目标设备确认。" }
+        } catch (error: Exception) {
+            if (error is java.io.IOException || error is CancellationException) false to syncFailure(error, "配对")
+            else false to "加密配对失败：请确认配对密钥正确、未过期，并在目标设备确认。"
+        }
     }
     suspend fun syncPull(context: Context, ip: String, port: Int, token: String): SyncReport = withContext(Dispatchers.IO) {
         try {
@@ -574,13 +589,13 @@ object SyncManager {
             val report = applyReceivedData(context, payload, "merge")
             withContext(Dispatchers.Main) { ScheduleWidgetProvider.sendUpdateBroadcast(context) }
             report
-        } catch (_: Exception) { SyncReport(false, "加密拉取失败，请升级并重新配对") }
+        } catch (error: Exception) { SyncReport(false, syncFailure(error, "加密拉取")) }
     }
     suspend fun syncPush(context: Context, ip: String, port: Int, token: String, mode: String = "replace"): SyncReport = withContext(Dispatchers.IO) {
         try {
             val (status, _) = exchange(ip, port, "/api/sync/push", packAllData(context).put("mode", mode), keyForToken(context, token), token)
             SyncReport(status == 200, if (status == 200) "加密推送成功" else "推送被拒绝")
-        } catch (_: Exception) { SyncReport(false, "加密推送失败，请升级并重新配对") }
+        } catch (error: Exception) { SyncReport(false, syncFailure(error, "加密推送")) }
     }
     suspend fun sendClipboard(context: Context, ip: String, port: Int, token: String, text: String): Boolean = withContext(Dispatchers.IO) {
         try {

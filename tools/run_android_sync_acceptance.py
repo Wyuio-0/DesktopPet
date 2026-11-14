@@ -1,17 +1,20 @@
 """Run native PC/Android acceptance on one authorized device, using isolated app data.
 
 Build with -PsyncAcceptance=true assembleDebug assembleDebugAndroidTest first.
-USB ADB tunnels exercise real device code; they do not establish Wi-Fi discovery coverage.
+Use --transport lan for direct LAN sync; ADB then carries only the isolated test control channel.
 """
 import argparse
 import copy
 import hmac
+import hashlib
 import http.server
+import ipaddress
 import json
 import os
 from pathlib import Path
 import re
 import secrets
+import socket
 import subprocess
 import sys
 import tempfile
@@ -38,10 +41,25 @@ def main():
     parser.add_argument("--adb", required=True, type=Path)
     parser.add_argument("--serial")
     parser.add_argument("--aapt", required=True, type=Path)
+    parser.add_argument("--transport", choices=("usb", "lan"), default="usb")
+    parser.add_argument("--pc-address", help="PC LAN IPv4 used by Android (required for LAN)")
+    parser.add_argument("--phone-address", help="Phone LAN IPv4 used by PC (required for LAN)")
+    parser.add_argument("--cycle-wifi", action="store_true", help="Briefly disable then restore phone Wi-Fi during LAN tests")
     parser.add_argument("--app-apk", type=Path, default=ROOT / "android/app/build/outputs/apk/debug/app-debug.apk")
     parser.add_argument("--test-apk", type=Path, default=ROOT / "android/app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk")
     parser.add_argument("--report", type=Path, default=ROOT / "scratch/android-sync-acceptance.json")
     args = parser.parse_args()
+    lan = args.transport == "lan"
+    if args.cycle_wifi and not lan:
+        parser.error("--cycle-wifi requires --transport lan")
+    if lan:
+        for address in (args.pc_address, args.phone_address):
+            try:
+                parsed = ipaddress.IPv4Address(address)
+                if parsed.is_loopback or parsed.is_unspecified or parsed.is_multicast:
+                    raise ValueError("Not a LAN address")
+            except (ValueError, ipaddress.AddressValueError):
+                parser.error("LAN mode requires non-loopback --pc-address and --phone-address IPv4 addresses")
 
     def run(command, timeout=30):
         result = subprocess.run(list(map(str, command)), capture_output=True, timeout=timeout)
@@ -54,6 +72,9 @@ def main():
     if not re.search(r"package: name='" + re.escape(PACKAGE) + r"'", app_info):
         raise RuntimeError("App APK is not the isolated syncacceptance variant")
     test_info = run([args.aapt, "dump", "xmltree", args.test_apk, "AndroidManifest.xml"])
+    test_package = re.search(r'\bpackage="([^"]+)"', test_info)
+    if not test_package or test_package.group(1) != PACKAGE + ".test":
+        raise RuntimeError("Test APK is not the isolated syncacceptance.test package")
     target = re.search(r'android:targetPackage[^=]*="([^"]+)"', test_info)
     if not target or target.group(1) != PACKAGE:
         raise RuntimeError("Instrumentation does not target the isolated app")
@@ -70,14 +91,27 @@ def main():
                ("android", "ro.build.version.release"), ("sdk", "ro.build.version.sdk"))}
     device["kind"] = "emulator" if adb("shell", "getprop", "ro.kernel.qemu") == "1" or serial.startswith("emulator-") else "physical Android"
     print("Device: " + json.dumps(device, ensure_ascii=True), flush=True)
-    adb("install", "-r", "-t", str(args.app_apk), timeout=120)
-    adb("install", "-r", "-t", str(args.test_apk), timeout=120)
+    def install_if_changed(apk, package):
+        paths = adb("shell", "pm", "path", package).splitlines()
+        if len(paths) == 1 and re.fullmatch(r"package:/data/app/[A-Za-z0-9_/~+=.-]+\.apk", paths[0]):
+            digest = adb("shell", "toybox", "sha256sum", paths[0].split(":", 1)[1]).split()[0]
+            if hmac.compare_digest(digest, hashlib.sha256(apk.read_bytes()).hexdigest()):
+                print("Verified installed " + package, flush=True)
+                return
+        print("Installing " + package + "; confirm the phone prompt if shown", flush=True)
+        try:
+            adb("install", "-r", "-t", str(apk), timeout=120)
+        except subprocess.TimeoutExpired:
+            raise RuntimeError("Isolated APK installation timed out; unlock the phone and approve the installation") from None
+    install_if_changed(args.app_apk, PACKAGE)
+    install_if_changed(args.test_apk, PACKAGE + ".test")
     # Reset only this fixed, independently verified package to make reruns deterministic.
     if adb("shell", "pm", "clear", PACKAGE) != "Success":
         raise RuntimeError("Could not reset the isolated acceptance application")
 
     args.report.parent.mkdir(parents=True, exist_ok=True)
-    report = {"device": device, "transport": "USB ADB forwarded TCP (not Wi-Fi LAN)", "checks": [], "passed": False}
+    report = {"device": device, "transport": "Direct LAN TCP and UDP; USB test control only" if lan else "USB ADB forwarded TCP (not Wi-Fi LAN)",
+              "checks": [], "passed": False, "wifi_cycle_requested": args.cycle_wifi}
     forwards, reverses = [], []
     control_server = service = None
     with tempfile.TemporaryDirectory(prefix="amiya-device-acceptance-") as data_dir:
@@ -91,7 +125,8 @@ def main():
         from pet import sync_crypto
         captured = []
         sensitive = []
-        state = {"phone_port": None, "clipboard": []}
+        state = {"phone_port": None, "clipboard": [], "wifi_disabled": False}
+        phone_ip = args.phone_address if lan else "127.0.0.1"
 
         class RecordingReader:
             def __init__(self, reader): self.reader = reader
@@ -111,6 +146,7 @@ def main():
                 super().setup()
                 self.wfile = RecordingWriter(self.wfile)
             def do_POST(self):
+                state["private_wire_requests"] = state.get("private_wire_requests", 0) + 1
                 self.rfile = RecordingReader(self.rfile)
                 if "Authorization" in self.headers:
                     state["plaintext_authorization"] = True
@@ -120,6 +156,7 @@ def main():
         original_open = sync._open_sync_request
         def capture_open(request, timeout):
             if request.data:
+                state["private_wire_requests"] = state.get("private_wire_requests", 0) + 1
                 captured.append(request.data)
                 if request.get_header("Authorization"):
                     state["plaintext_authorization"] = True
@@ -133,7 +170,7 @@ def main():
                 return data
             return recorded_read
         sync._open_sync_request = capture_open
-        service = sync.RhodesSyncService("Acceptance PC", http_port=0, udp_port=0)
+        service = sync.RhodesSyncService("Acceptance PC", http_port=0, udp_port=sync.DEFAULT_UDP_PORT if lan else 0)
         service.device_id = "acceptance-pc"
         service.on_pair_request_callback = lambda request: (service.pair_manager.accept_request(request.request_id)
             if request.client_id == "acceptance-android" else service.pair_manager.reject_request(request.request_id))
@@ -153,15 +190,16 @@ def main():
             if name == "phone_port":
                 port = payload.get("port")
                 if type(port) is not int or not 1 <= port <= 65535: raise ValueError("Invalid phone port")
-                if state["phone_port"] is not None:
+                if not lan and state["phone_port"] is not None:
                     adb("forward", "--remove", "tcp:" + str(state["phone_port"]))
                     forwards.remove(state["phone_port"])
-                forwarded = int(adb("forward", "tcp:0", "tcp:" + str(port)))
-                state["phone_port"] = forwarded; forwards.append(forwarded)
+                forwarded = port if lan else int(adb("forward", "tcp:0", "tcp:" + str(port)))
+                state["phone_port"] = forwarded
+                if not lan: forwards.append(forwarded)
                 with service.pair_manager.lock:
                     record = service.pair_manager.paired_devices.get("acceptance-android")
                     if record:
-                        record["ip"] = "127.0.0.1"; record["port"] = forwarded
+                        record["ip"] = phone_ip; record["port"] = forwarded
                         service.pair_manager.save()
                 return {"ok": True}
             if name == "seed":
@@ -169,8 +207,29 @@ def main():
                 sync.DataSyncEngine.apply_data(copy.deepcopy(expected), "replace")
                 return {"expected": expected}
             if name == "check_clipboard": return {"ok": state["clipboard"] == ["Android 真机中文快传 😀"]}
-            if name == "send_clipboard": return {"ok": service.send_clipboard("127.0.0.1", state["phone_port"], phone_token(), "PC 中文快传到真机 😀")}
-            if name == "pull_phone": return {"ok": service.sync_pull("127.0.0.1", state["phone_port"], phone_token())[0]}
+            if name == "probe_phone":
+                info = service.probe_device(phone_ip, state["phone_port"])
+                diagnostic = "HTTP identity mismatch"
+                if not info:
+                    try:
+                        with socket.create_connection((phone_ip, state["phone_port"]), timeout=3):
+                            diagnostic = "TCP reachable; HTTP probe failed"
+                    except OSError as exc: diagnostic = type(exc).__name__
+                return {"ok": bool(info and info.get("device_id") == "acceptance-android"), "diagnostic": diagnostic}
+            if name == "probe_pc_loopback":
+                info = service.probe_device("127.0.0.1", service.http_port)
+                return {"ok": bool(info and info.get("device_id") == "acceptance-pc")}
+            if name == "scan_phone":
+                found = [d for d in service.scan_lan_devices(timeout=2) if d.get("device_id") == "acceptance-android"]
+                return {"ok": len(found) == 1 and found[0].get("ip") == phone_ip and found[0].get("http_port") == state["phone_port"]}
+            if name in ("wifi_off", "wifi_on"):
+                if not args.cycle_wifi: raise ValueError("Wi-Fi cycling was not enabled")
+                if name == "wifi_off": state["wifi_disabled"] = True
+                adb("shell", "svc", "wifi", "disable" if name == "wifi_off" else "enable")
+                if name == "wifi_on": state["wifi_disabled"] = False
+                return {"ok": True}
+            if name == "send_clipboard": return {"ok": service.send_clipboard(phone_ip, state["phone_port"], phone_token(), "PC 中文快传到真机 😀")}
+            if name == "pull_phone": return {"ok": service.sync_pull(phone_ip, state["phone_port"], phone_token())[0]}
             if name == "check_pc_data":
                 actual, expected = sync.DataSyncEngine.pack_all_data(), fixture()
                 def contains(items, wanted):
@@ -180,11 +239,13 @@ def main():
                     and all(contains(actual["exams"], e) for e in expected["exams"])
                     and all(contains(actual["notes"], n) for n in expected["notes"]))
                 return {"ok": ok}
-            if name == "push_phone": return {"ok": service.sync_push("127.0.0.1", state["phone_port"], phone_token())[0]}
+            if name == "push_phone": return {"ok": service.sync_push(phone_ip, state["phone_port"], phone_token())[0]}
             if name == "restart_pc": service.stop(); service.start(); return {"ok": True}
+            if name == "stop_pc": service.stop(); return {"ok": True}
+            if name == "start_pc": service.start(); return {"ok": True}
             if name == "pair_phone":
                 invitation = payload.get("secret"); sensitive.append(invitation.encode())
-                return {"ok": service.request_pair("127.0.0.1", state["phone_port"], pairing_secret=invitation)[0]}
+                return {"ok": service.request_pair(phone_ip, state["phone_port"], pairing_secret=invitation)[0]}
             if name in ("new_invite", "expired_invite"):
                 invitation = service.create_pairing_invite(); sensitive.append(invitation.encode())
                 if name == "expired_invite": service.secure.invite = (invitation, time.monotonic() - 1)
@@ -210,18 +271,22 @@ def main():
         try:
             control_server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Control)
             threading.Thread(target=control_server.serve_forever, daemon=True).start()
-            for port in (service.http_port, control_server.server_port):
+            for port in ((control_server.server_port,) if lan else (service.http_port, control_server.server_port)):
                 adb("reverse", "tcp:" + str(port), "tcp:" + str(port)); reverses.append(port)
-            output = adb("shell", "am", "instrument", "-w", "-r", "-e", "host", "127.0.0.1",
+            output = adb("shell", "am", "instrument", "-w", "-r", "-e", "host", args.pc_address if lan else "127.0.0.1",
+                "-e", "transport", args.transport, "-e", "cycle_wifi", str(args.cycle_wifi).lower(),
                 "-e", "pc_port", str(service.http_port), "-e", "control_port", str(control_server.server_port),
-                "-e", "control_token", control_token, "-e", "pairing_secret", secret, PACKAGE + ".test/" + RUNNER, timeout=240)
+                "-e", "control_token", control_token, "-e", "pairing_secret", secret, PACKAGE + ".test/" + RUNNER, timeout=420 if lan else 240)
             summary_line = next((line.split("summary=", 1)[1] for line in output.splitlines() if line.startswith("INSTRUMENTATION_RESULT: summary=")), None)
             if not summary_line: raise RuntimeError("Instrumentation did not return a summary")
             summary = json.loads(summary_line)
             report.update(summary)
             markers = ["Android 真机中文快传 😀".encode(), "PC 中文快传到真机 😀".encode(), "跨设备中文与 emoji 😀".encode()]
-            wire_ok = bool(captured) and not state.get("plaintext_authorization") and not any(needle in body for body in captured for needle in sensitive + markers)
-            report["checks"].append({"name": "wire_contains_no_test_secrets_or_plaintext", "passed": wire_ok})
+            has_private_wire = bool(state.get("private_wire_requests"))
+            wire_ok = has_private_wire and not state.get("plaintext_authorization") and not any(needle in body for body in captured for needle in sensitive + markers)
+            wire_check = {"name": "wire_contains_no_test_secrets_or_plaintext", "passed": wire_ok}
+            if not has_private_wire: wire_check.update(skipped=True, reason="No private sync requests; transport precondition failed")
+            report["checks"].append(wire_check)
             report["passed"] = bool(summary.get("passed")) and wire_ok
             report["wire_chunks_checked"] = len(captured)
             if state.get("control_error"): report["control_error"] = state["control_error"]
@@ -230,6 +295,9 @@ def main():
                                else type(exc).__name__ + ": " + str(exc)[:180])
             report["passed"] = False
         finally:
+            if state["wifi_disabled"]:
+                try: adb("shell", "svc", "wifi", "enable")
+                except Exception: report["wifi_restore_failed"] = True
             for port in forwards:
                 try: adb("forward", "--remove", "tcp:" + str(port))
                 except Exception: pass
