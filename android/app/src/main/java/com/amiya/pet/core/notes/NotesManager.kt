@@ -1,6 +1,7 @@
 package com.amiya.pet.core.notes
 
 import android.content.Context
+import androidx.compose.runtime.mutableStateListOf
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -56,15 +57,15 @@ class NotesManager private constructor(private val context: Context) {
     private val notesFile: File
         get() = File(context.filesDir, "notes.json")
 
-    private val _notes = mutableListOf<Note>()
+    private val _notes = mutableStateListOf<Note>()
     val notes: List<Note>
-        get() = _notes.sortedWith(compareByDescending<Note> { it.pinned }.thenByDescending { it.updatedAt })
+        get() = synchronized(this) { _notes.sortedWith(compareByDescending<Note> { it.pinned }.thenByDescending { it.updatedAt }) }
 
     init {
         loadNotes()
     }
 
-    fun loadNotes() {
+    @Synchronized fun loadNotes() {
         _notes.clear()
         val file = notesFile
         if (!file.exists()) {
@@ -87,17 +88,13 @@ class NotesManager private constructor(private val context: Context) {
                 val item = arr.getJSONObject(i)
                 _notes.add(Note.fromJsonObject(item))
             }
-            if (_notes.isEmpty()) {
-                _notes.add(Note(title = "灵感随记", content = ""))
-                saveNotes()
-            }
         } catch (e: Exception) {
             e.printStackTrace()
             _notes.add(Note(title = "灵感随记", content = ""))
         }
     }
 
-    fun saveNotes() {
+    @Synchronized fun saveNotes() {
         try {
             val root = JSONObject()
             val arr = JSONArray()
@@ -116,20 +113,29 @@ class NotesManager private constructor(private val context: Context) {
         }
     }
 
-    fun createNote(title: String = "新便签", content: String = ""): Note {
+    @Synchronized fun createNote(title: String = "新便签", content: String = ""): Note {
         val note = Note(title = title, content = content)
         _notes.add(0, note)
         saveNotes()
         return note
     }
 
-    fun addNote(note: Note) {
+    @Synchronized fun addNote(note: Note) {
         _notes.add(0, note)
         saveNotes()
     }
 
-    fun updateNote(id: String, content: String, title: String? = null, pinned: Boolean? = null): Note? {
-        val note = _notes.find { it.id == id } ?: return null
+    @Synchronized fun replaceNotes(notes: List<Note>) {
+        _notes.clear()
+        _notes.addAll(notes)
+        saveNotes()
+    }
+
+    @Synchronized fun updateNote(id: String, content: String, title: String? = null, pinned: Boolean? = null, expected: Note? = null): Note? {
+        val index = _notes.indexOfFirst { it.id == id }
+        if (index < 0) return null
+        if (expected != null && _notes[index] != expected) return null
+        val note = _notes[index].copy()
         note.content = content
         if (title != null) {
             note.title = title
@@ -140,11 +146,12 @@ class NotesManager private constructor(private val context: Context) {
             note.pinned = pinned
         }
         note.updatedAt = Note.currentTimestamp()
+        _notes[index] = note
         saveNotes()
         return note
     }
 
-    fun deleteNote(id: String): Boolean {
+    @Synchronized fun deleteNote(id: String): Boolean {
         val removed = _notes.removeAll { it.id == id }
         if (_notes.isEmpty()) {
             _notes.add(Note(title = "新便签", content = ""))
@@ -155,10 +162,11 @@ class NotesManager private constructor(private val context: Context) {
         return removed
     }
 
-    fun togglePin(id: String): Boolean {
-        val note = _notes.find { it.id == id } ?: return false
-        note.pinned = !note.pinned
-        note.updatedAt = Note.currentTimestamp()
+    @Synchronized fun togglePin(id: String): Boolean {
+        val index = _notes.indexOfFirst { it.id == id }
+        if (index < 0) return false
+        val note = _notes[index].copy(pinned = !_notes[index].pinned, updatedAt = Note.currentTimestamp())
+        _notes[index] = note
         saveNotes()
         return note.pinned
     }

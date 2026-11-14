@@ -56,6 +56,7 @@ fun SyncDialog(
     var localInvite by remember { mutableStateOf("") }
     var syncStatusText by remember { mutableStateOf("就绪。") }
     var isOperating by remember { mutableStateOf(false) }
+    var pendingOverwrite by remember { mutableStateOf<DeviceInfo?>(null) }
 
     // 已配对设备
     var trustedDevices by remember { mutableStateOf(SyncManager.getTrustedDevices(context)) }
@@ -89,6 +90,25 @@ fun SyncDialog(
             SyncManager.onPairRequestedListener = null
             SyncManager.onDevicesChangedListener = null
         }
+    }
+
+    pendingOverwrite?.let { device ->
+        AlertDialog(onDismissRequest = { pendingOverwrite = null },
+            title = { Text("确认覆盖电脑数据") },
+            text = { Text("将用手机当前的课表、考试和便签替换「${device.deviceName}」的数据。目标独有内容会被删除，空列表会清空对应类别。") },
+            confirmButton = { TextButton(onClick = {
+                pendingOverwrite = null
+                scope.launch {
+                    isOperating = true
+                    try {
+                        val report = SyncManager.syncPush(context, device.ip, device.httpPort,
+                            SyncManager.getDeviceToken(context, device.deviceId), "replace")
+                        syncStatusText = report.message
+                        refreshStats()
+                    } finally { isOperating = false }
+                }
+            }) { Text("确认覆盖") } },
+            dismissButton = { TextButton(onClick = { pendingOverwrite = null }) { Text("取消") } })
     }
 
     // ── 1. 收到配对请求时的专属认证弹窗（必须博士亲自核验确认）─────────────
@@ -481,17 +501,14 @@ fun SyncDialog(
                                         scope.launch {
                                             isOperating = true
                                             syncStatusText = "正在双向合并同步..."
-                                            // 1. Pull from PC
-                                            val pullReport = SyncManager.syncPull(context, firstDev.ip, firstDev.httpPort, token)
-                                            // 2. Push merged to PC
-                                            val pushReport = SyncManager.syncPush(context, firstDev.ip, firstDev.httpPort, token, "replace")
+                                            val report = SyncManager.syncMerge(context, firstDev.ip, firstDev.httpPort, token)
                                             isOperating = false
                                             refreshStats()
-                                            if (pullReport.success && pushReport.success) {
+                                            if (report.success) {
                                                 syncStatusText = "🎉 双向全量同步已完成！"
                                                 Toast.makeText(context, "学业数据同步成功！", Toast.LENGTH_SHORT).show()
                                             } else {
-                                                syncStatusText = "同步未完全成功: ${pullReport.message}"
+                                                syncStatusText = "同步未完全成功: ${report.message}"
                                             }
                                         }
                                     },
@@ -531,20 +548,11 @@ fun SyncDialog(
                                             return@OutlinedButton
                                         }
                                         val firstDev = trustedDevices.values.first()
-                                        val token = SyncManager.getDeviceToken(context, firstDev.deviceId)
-                                        scope.launch {
-                                            isOperating = true
-                                            syncStatusText = "正在推送到电脑..."
-                                            val report = SyncManager.syncPush(context, firstDev.ip, firstDev.httpPort, token, "replace")
-                                            isOperating = false
-                                            refreshStats()
-                                            syncStatusText = report.message
-                                            Toast.makeText(context, report.message, Toast.LENGTH_SHORT).show()
-                                        }
+                                        pendingOverwrite = firstDev
                                     },
                                     enabled = !isOperating && trustedDevices.isNotEmpty()
                                 ) {
-                                    Text("📤 推送到电脑", fontSize = 12.sp)
+                                    Text("📤 覆盖电脑数据…", fontSize = 12.sp)
                                 }
                             }
 

@@ -156,6 +156,23 @@ class DummyWindow:
 
 
 class TestStickyNoteWindowUI:
+    def test_sync_clear_does_not_resurrect_pending_editor_content(self, tmp_notes):
+        from pet.sync_service import DataSyncEngine
+        win = StickyNoteWindow(owner_window=None)
+        win.editor.setPlainText("同步覆盖前尚未保存的旧正文")
+        DataSyncEngine.apply_data({"notes": []}, "replace")
+        win._do_auto_save()  # An already queued debounce must not recreate deleted notes.
+        app.processEvents()
+        assert tmp_notes.notes == []
+        assert win.editor.toPlainText() == ""
+        assert win.combo_notes.count() == 0
+        assert NotesManager(filepath=tmp_notes.filepath).notes == []
+        win.editor.setPlainText("清空后新写的正文")
+        win._do_auto_save()
+        assert len(tmp_notes.notes) == 1
+        assert tmp_notes.notes[0].content == "清空后新写的正文"
+        win.close()
+
     def test_window_lifecycle(self, tmp_notes):
         win = StickyNoteWindow(owner_window=None)
         assert win.isVisible() is False

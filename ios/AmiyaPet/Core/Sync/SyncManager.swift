@@ -1,9 +1,12 @@
 import Foundation
+import CoreFoundation
 import Network
 import Combine
 import UIKit
 import Security
 import Darwin
+
+private enum SyncDataFailure: Error { case invalid }
 
 public final class SyncManager: ObservableObject {
     public static let shared = SyncManager()
@@ -204,7 +207,10 @@ public final class SyncManager: ObservableObject {
                     if payload["device_id"] as? String == record?.device.deviceId, let id = record?.device.deviceId {
                         try removePeer(id); result = ["status": "unpaired"]
                     } else { status = 403; result = ["error": "只能解除自身设备的配对"] }
-                } else { result = try onMain { try self.apply(path, payload) } }
+                } else {
+                    do { result = try onMain { try self.apply(path, payload) } }
+                    catch is SyncDataFailure { status = 400; result = ["error": "同步数据格式无效，未应用"] }
+                }
             }
             let bytes = try JSONSerialization.data(withJSONObject: result)
             let reply = try SyncCrypto.seal(secret, path, bytes, envelope, "response", status)
@@ -369,12 +375,37 @@ public final class SyncManager: ObservableObject {
             onTacticalDropReceived?(text, title); return ["status": "ok"]
         }
         guard path == "/api/sync/push" else { throw SyncCrypto.Failure.invalid }
-        let replace = payload["mode"] as? String == "replace"
-        var incomingCourses: [Course]?; var incomingExams: [ExamItem]?; var incomingNotes: [Note]?
+        let mode = payload["mode"] ?? "merge"
+        guard let mode = mode as? String, mode == "merge" || mode == "replace" else { throw SyncDataFailure.invalid }
+        let replace = mode == "replace"
+        if let value = payload["schedule"], !(value is [String: Any]) { throw SyncDataFailure.invalid }
         if let schedule = payload["schedule"] as? [String: Any] {
-            guard let rows = schedule["courses"] as? [[String: Any]] else { throw SyncCrypto.Failure.invalid }
+            if let value = schedule["courses"], !(value is [[String: Any]]) { throw SyncDataFailure.invalid }
+            if let value = schedule["sections"], !(value is [String: String]) { throw SyncDataFailure.invalid }
+            if let value = schedule["term_start"] {
+                guard let text = value as? String else { throw SyncDataFailure.invalid }
+                if !text.isEmpty {
+                    let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"; f.isLenient = false
+                    guard let date = f.date(from: text), f.string(from: date) == text else { throw SyncDataFailure.invalid }
+                }
+            }
+        }
+        for key in ["exams", "notes"] {
+            if let value = payload[key], !(value is [[String: Any]]) { throw SyncDataFailure.invalid }
+        }
+        for rows in [(payload["schedule"] as? [String: Any])?["courses"], payload["exams"], payload["notes"]] {
+            if let rows = rows as? [[String: Any]] {
+                var ids = Set<String>()
+                for row in rows where row["id"] != nil {
+                    guard let id = row["id"] as? String, !id.isEmpty, ids.insert(id).inserted else { throw SyncDataFailure.invalid }
+                }
+            }
+        }
+        var incomingCourses: [Course]?; var incomingExams: [ExamItem]?; var incomingNotes: [Note]?
+        if let schedule = payload["schedule"] as? [String: Any], let rows = schedule["courses"] as? [[String: Any]] {
             incomingCourses = try rows.map { row in
-                guard let name = row["name"] as? String, !name.isEmpty, let day = row["weekday"] as? Int, (1...7).contains(day) else { throw SyncCrypto.Failure.invalid }
+                guard let name = row["name"] as? String, !name.isEmpty, let day = row["weekday"] as? Int, (1...7).contains(day),
+                      row["sec_start"] is Int, row["sec_end"] is Int else { throw SyncDataFailure.invalid }
                 return Course(id: row["id"] as? String ?? UUID().uuidString, name: name, weekday: day,
                     secStart: row["sec_start"] as? Int ?? 1, secEnd: row["sec_end"] as? Int ?? 1,
                     weekStart: row["week_start"] as? Int ?? 1, weekEnd: row["week_end"] as? Int ?? 20,
@@ -384,22 +415,30 @@ public final class SyncManager: ObservableObject {
         }
         if let rows = payload["exams"] as? [[String: Any]] {
             incomingExams = try rows.map { row in
-                guard let title = row["title"] as? String, let stamp = row["examTimeMillis"] as? NSNumber else { throw SyncCrypto.Failure.invalid }
+                guard let title = row["title"] as? String, !title.isEmpty, let stamp = row["examTimeMillis"] as? NSNumber,
+                      CFGetTypeID(stamp) != CFBooleanGetTypeID(), stamp.doubleValue.isFinite, stamp.doubleValue >= 0 else { throw SyncDataFailure.invalid }
                 return ExamItem(id: row["id"] as? String ?? UUID().uuidString, title: title, examTimeMillis: stamp.int64Value,
                     durationMinutes: row["durationMinutes"] as? Int ?? 120, location: row["location"] as? String ?? "",
                     seatNumber: row["seatNumber"] as? String ?? "", examType: row["examType"] as? String ?? "闭卷", note: row["note"] as? String ?? "")
             }
         }
-        if let rows = payload["notes"] { incomingNotes = try JSONDecoder().decode([Note].self, from: JSONSerialization.data(withJSONObject: rows)) }
+        if let rows = payload["notes"] {
+            do { incomingNotes = try JSONDecoder().decode([Note].self, from: JSONSerialization.data(withJSONObject: rows)) }
+            catch { throw SyncDataFailure.invalid }
+        }
         let sched = ScheduleManager.shared
         if let courses = incomingCourses {
             if replace { sched.courses = courses } else {
-                for course in courses { if !sched.courses.contains(where: { $0.name == course.name && $0.weekday == course.weekday && $0.secStart == course.secStart && $0.secEnd == course.secEnd && $0.weekStart == course.weekStart && $0.weekEnd == course.weekEnd && $0.parity == course.parity }) { sched.courses.append(course) } }
+                for course in courses {
+                    let byId = sched.courses.firstIndex(where: { $0.id == course.id })
+                    let index = byId ?? sched.courses.firstIndex(where: { $0.name == course.name && $0.weekday == course.weekday && $0.secStart == course.secStart && $0.secEnd == course.secEnd && $0.weekStart == course.weekStart && $0.weekEnd == course.weekEnd && $0.parity == course.parity && $0.customTime == course.customTime })
+                    if let i = index { sched.courses[i] = course } else { sched.courses.append(course) }
+                }
             }
-            if let settings = payload["schedule"] as? [String: Any] {
+        }
+        if let settings = payload["schedule"] as? [String: Any] {
                 if let sections = settings["sections"] as? [String: String] { sched.sections = sections }
-                if let text = settings["term_start"] as? String { let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"; if let date = f.date(from: text) { sched.termStart = date } }
-            }
+                if let text = settings["term_start"] as? String { let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"; sched.termStart = text.isEmpty ? nil : f.date(from: text) }
             sched.coursesVersion += 1; sched.save()
         }
         if let exams = incomingExams {

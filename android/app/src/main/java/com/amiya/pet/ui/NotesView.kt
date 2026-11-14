@@ -27,11 +27,13 @@ import kotlinx.coroutines.delay
 fun NotesScreen() {
     val context = LocalContext.current
     val notesManager = remember { NotesManager.getInstance(context) }
-    var notesList by remember { mutableStateOf(notesManager.notes) }
+    val notesList = notesManager.notes
     var currentEditingNote by remember { mutableStateOf<Note?>(null) }
 
-    fun refresh() {
-        notesList = notesManager.notes
+    LaunchedEffect(notesList) {
+        if (currentEditingNote != null && notesList.firstOrNull { it.id == currentEditingNote?.id } != currentEditingNote) {
+            currentEditingNote = null
+        }
     }
 
     if (currentEditingNote != null) {
@@ -39,16 +41,15 @@ fun NotesScreen() {
             note = currentEditingNote!!,
             onBack = {
                 currentEditingNote = null
-                refresh()
             },
             onSave = { updatedContent ->
-                notesManager.updateNote(currentEditingNote!!.id, updatedContent)
-                refresh()
+                currentEditingNote?.let { active ->
+                    notesManager.updateNote(active.id, updatedContent, expected = active)?.let { currentEditingNote = it }
+                }
             },
             onDelete = {
                 notesManager.deleteNote(currentEditingNote!!.id)
                 currentEditingNote = null
-                refresh()
             }
         )
     } else {
@@ -58,7 +59,6 @@ fun NotesScreen() {
                     onClick = {
                         val newNote = notesManager.createNote(title = "灵感随记", content = "")
                         currentEditingNote = newNote
-                        refresh()
                     },
                     containerColor = MaterialTheme.colorScheme.primary,
                     contentColor = Color.Black
@@ -105,7 +105,6 @@ fun NotesScreen() {
                                 onClick = { currentEditingNote = note },
                                 onTogglePin = {
                                     notesManager.togglePin(note.id)
-                                    refresh()
                                 }
                             )
                         }
