@@ -608,6 +608,7 @@ object SyncManager {
                 put("campus", c.campus)
                 put("note", c.note)
                 put("id", c.id)
+                put("custom_time", c.customTime)
             })
         }
         val termStartStr = ScheduleManager.termStart?.let {
@@ -669,19 +670,21 @@ object SyncManager {
                     teacher = c.optString("teacher", ""),
                     campus = c.optString("campus", ""),
                     note = c.optString("note", ""),
-                    id = c.optString("id", UUID.randomUUID().toString())
+                    id = c.optString("id", UUID.randomUUID().toString()),
+                    customTime = c.optString("custom_time", "")
                 ))
             }
 
             if (mode == "replace" || ScheduleManager.courses.isEmpty()) {
                 ScheduleManager.courses = newCourses
             } else {
-                val existingKeys = ScheduleManager.courses.map { Triple(it.name, it.weekday, it.secStart) }.toSet()
                 val merged = ScheduleManager.courses.toMutableList()
+                fun placement(c: Course) = listOf(c.name, c.weekday, c.secStart, c.secEnd,
+                    c.weekStart, c.weekEnd, c.parity, c.customTime)
                 for (c in newCourses) {
-                    if (Triple(c.name, c.weekday, c.secStart) !in existingKeys) {
-                        merged.add(c)
-                    }
+                    val byId = merged.indexOfFirst { it.id == c.id }
+                    val index = if (byId >= 0) byId else merged.indexOfFirst { placement(it) == placement(c) }
+                    if (index < 0) merged.add(c) else merged[index] = c
                 }
                 ScheduleManager.courses = merged
             }
@@ -692,6 +695,10 @@ object SyncManager {
                     ScheduleManager.termStart = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).parse(termStartStr)
                 } catch (_: Exception) {}
             }
+            schedObj.optJSONObject("sections")?.let { sections ->
+                val times = sections.keys().asSequence().associateWith { sections.getString(it) }
+                ScheduleManager.sections = times
+            }
             ScheduleManager.save(context)
             courseCount = ScheduleManager.courses.size
         }
@@ -700,13 +707,14 @@ object SyncManager {
         val examsArr = payload.optJSONArray("exams")
         if (examsArr != null) {
             ExamManager.load(context)
-            val existingTitles = ExamManager.exams.map { it.title }.toSet()
             var addedExams = 0
             for (i in 0 until examsArr.length()) {
                 val item = examsArr.getJSONObject(i)
                 val exam = ExamItem.fromJson(item)
-                if (mode == "merge" && exam.title in existingTitles) continue
-                ExamManager.exams.add(exam)
+                val byId = ExamManager.exams.indexOfFirst { it.id == exam.id }
+                val index = if (byId >= 0) byId else ExamManager.exams.indexOfFirst {
+                    it.title == exam.title && it.examTimeMillis == exam.examTimeMillis }
+                if (index < 0) ExamManager.exams.add(exam) else ExamManager.exams[index] = exam
                 addedExams++
             }
             ExamManager.save(context)

@@ -33,6 +33,6 @@ GCM 随机 nonce 不复用；请求 ID 防重放记录保留 241 秒，允许时
 
 解密后的普通消息上限 4 MiB、配对上限 4 KiB、剪贴板上限 256 KiB；外层允许 base64 开销并在解密后再次检查。每端最多处理 16 个入站连接，读取超时 5 秒，完整连接亦有超时保护。配对等待 30 秒，按来源限流。
 
-`tests/fixtures/sync_v2_vectors.tsv` 是公开的人工测试密钥与固定 nonce 向量，仅用于测试，不能用于实际配对。Python、JCA 和 CryptoKit 分别解密相同向量，并检查篡改、反射、请求／响应绑定、重放及服务重启。Python 另有真实 HTTP 双向加密测试；Android、iOS 分别通过原生构建检查。物理设备互联仍需按上述使用步骤验收。
+`tests/fixtures/sync_v2_vectors.tsv` 是公开的人工测试密钥与固定 nonce 向量，仅用于测试，不能用于实际配对。Python、JCA 和 CryptoKit 分别解密相同向量，并检查篡改、反射、请求／响应绑定、重放及服务重启。Python 另有真实 HTTP 双向加密测试；Android、iOS 分别通过原生构建检查。2026-11-14 已完成 [PC ↔ Android 真机 USB 通道验收](android-sync-acceptance.md)；Wi-Fi 自动发现和 iOS 真机互联仍需单独验收。
 
 相关实现依据：[cryptography AEAD](https://cryptography.io/en/latest/hazmat/primitives/aead/)、[Apple AES.GCM](https://developer.apple.com/documentation/cryptokit/aes/gcm)。

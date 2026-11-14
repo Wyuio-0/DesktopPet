@@ -130,10 +130,10 @@ def parse_datetime(text, now=None):
 
 class Task:
     __slots__ = ("id", "title", "kind", "course", "due", "remind_min",
-                 "done", "created")
+                 "done", "created", "exam_details")
 
     def __init__(self, title, kind, due, course="", remind_min=60 * 24,
-                 done=False, task_id=None, created=None):
+                 done=False, task_id=None, created=None, exam_details=None):
         self.id = task_id or uuid.uuid4().hex[:12]
         self.title = title
         self.kind = kind            # 'homework' | 'exam'
@@ -142,6 +142,8 @@ class Task:
         self.remind_min = int(remind_min)   # 到期前多少分钟提醒
         self.done = bool(done)
         self.created = created or datetime.now()
+        self.exam_details = {k: v for k, v in (exam_details or {}).items()
+                             if k in ("durationMinutes", "seatNumber", "examType", "note", "relatedCourseId")}
 
     @property
     def remaining(self):
@@ -157,10 +159,15 @@ class Task:
         return self.due < now and not self.done
 
     def to_dict(self):
-        return {"id": self.id, "title": self.title, "kind": self.kind,
-                "course": self.course, "due": self.due.strftime("%Y-%m-%d %H:%M"),
+        due = (self.due.isoformat(sep=" ", timespec="microseconds" if self.due.microsecond else "seconds")
+               if self.due.second or self.due.microsecond else self.due.strftime("%Y-%m-%d %H:%M"))
+        data = {"id": self.id, "title": self.title, "kind": self.kind,
+                "course": self.course, "due": due,
                 "remind_min": self.remind_min, "done": self.done,
                 "created": self.created.strftime("%Y-%m-%d %H:%M")}
+        if self.exam_details:
+            data["exam_details"] = self.exam_details
+        return data
 
     @classmethod
     def from_dict(cls, d):
@@ -168,9 +175,10 @@ class Task:
             return None
         return cls(
             title=d.get("title", ""), kind=d.get("kind", "homework"),
-            due=datetime.strptime(d["due"], "%Y-%m-%d %H:%M"),
+            due=datetime.fromisoformat(d["due"]),
             course=d.get("course", ""), remind_min=d.get("remind_min", 1440),
-            done=d.get("done", False), task_id=d.get("id"))
+            done=d.get("done", False), task_id=d.get("id"),
+            exam_details=d.get("exam_details") if isinstance(d.get("exam_details"), dict) else None)
 
 
 class Tasks:
