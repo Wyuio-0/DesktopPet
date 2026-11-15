@@ -18,6 +18,7 @@ import Foundation
         fails { _ = try store.create(["data": ["settings": [String: Any]()], "local": ["settings": [String: Any]()]]) }
         for _ in 0..<12 { try store.create(payload) }
         let retained = try store.list()
+        print("Retained backup count: \(retained.count)")
         precondition(retained.count == SyncBackupStore.keep); checks += 1
         let recovery = try store.create(payload, reason: "before_restore")
         let recoveryEntries = try store.list()

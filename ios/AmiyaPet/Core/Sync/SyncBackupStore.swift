@@ -84,7 +84,9 @@ final class SyncBackupStore {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
             try bytes.write(to: url, options: .atomic)
             _ = try read(id)
-            for old in try files().filter({ $0 != url }).dropFirst(Self.keep - 1) { try FileManager.default.removeItem(at: old) }
+            // Directory enumeration can produce a differently based URL for the
+            // same file. Protect the new snapshot by its validated filename.
+            for old in try files().filter({ $0.lastPathComponent != id + ".json" }).dropFirst(Self.keep - 1) { try FileManager.default.removeItem(at: old) }
             return id
         } catch { throw StudyBackupFailure.backupFailed }
     }
