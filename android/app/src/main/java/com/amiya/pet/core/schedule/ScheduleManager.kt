@@ -207,7 +207,7 @@ object ScheduleManager {
         }
     }
 
-    fun save(context: Context) {
+    fun save(context: Context): Boolean {
         try {
             val data = JSONObject()
             
@@ -268,8 +268,10 @@ object ScheduleManager {
 
             getScheduleFile(context).writeText(data.toString(2))
             ScheduleWidgetProvider.sendUpdateBroadcast(context)
+            return true
         } catch (e: Exception) {
             e.printStackTrace()
+            return false
         }
     }
 

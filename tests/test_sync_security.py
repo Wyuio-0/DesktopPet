@@ -190,6 +190,15 @@ def test_legacy_pull_is_blocked_and_encrypted_pull_works(service):
     assert "schedule" in result
 
 
+def test_backup_failure_returns_authenticated_storage_error(service, monkeypatch):
+    def fail(*args, **kwargs):
+        raise sync.BackupError("无法安全保存备份，覆盖已取消")
+    monkeypatch.setattr(sync.DataSyncEngine, "apply_data", fail)
+    status, result = secure_call(service, "/api/sync/push", {"mode": "replace", "notes": []})
+    assert status == 507
+    assert "覆盖已取消" in result["error"]
+
+
 def test_unknown_key_rejected_and_cannot_unpair_other_devices(service):
     assert call(service, "POST", "/api/sync/push", body=b"{}", headers={"Content-Type": "application/json"})[0] == 401
     assert secure_call(service, "/api/pair/unpair", {"device_id": "other"})[0] == 403

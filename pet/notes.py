@@ -190,7 +190,7 @@ class NotesManager:
                     changed += 1
             if not any(n.id == self.active_id for n in self.notes):
                 self.active_id = self.notes[0].id if self.notes else ""
-            self.save()
+            if not self.save(): raise OSError("便签写入失败")
             if before != [n.to_dict() for n in self.notes]: self.notify_sync()
             return changed
 

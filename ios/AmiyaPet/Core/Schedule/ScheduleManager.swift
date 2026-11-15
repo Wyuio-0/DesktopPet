@@ -111,7 +111,7 @@ public class ScheduleManager: ObservableObject {
         }
     }
 
-    public func save() {
+    @discardableResult public func save() -> Bool {
         var dict: [String: Any] = [:]
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd"
@@ -126,22 +126,17 @@ public class ScheduleManager: ObservableObject {
         dict["week_start_day"] = weekStartDay
         dict["notes"] = notes
 
-        if let courseData = try? JSONEncoder().encode(courses),
-           let courseObj = try? JSONSerialization.jsonObject(with: courseData) {
-            dict["courses"] = courseObj
-        }
-        if let adjData = try? JSONEncoder().encode(adjustments),
-           let adjObj = try? JSONSerialization.jsonObject(with: adjData) {
-            dict["adjustments"] = adjObj
-        }
-
         do {
+            dict["courses"] = try JSONSerialization.jsonObject(with: JSONEncoder().encode(courses))
+            dict["adjustments"] = try JSONSerialization.jsonObject(with: JSONEncoder().encode(adjustments))
             let data = try JSONSerialization.data(withJSONObject: dict, options: .prettyPrinted)
-            try data.write(to: fileURL)
+            try data.write(to: fileURL, options: .atomic)
             coursesVersion += 1
             NotificationCenter.default.post(name: NSNotification.Name("AmiyaScheduleUpdated"), object: nil)
+            return true
         } catch {
             print("Failed to save schedule.json: \(error)")
+            return false
         }
     }
 

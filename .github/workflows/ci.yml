@@ -151,6 +151,10 @@ jobs:
         run: |
           swiftc ios/AmiyaPet/Core/Sync/SyncCrypto.swift ios/tools/SyncCryptoCheck.swift -o /tmp/amiya-sync-crypto-check
           /tmp/amiya-sync-crypto-check tests/fixtures/sync_v2_vectors.tsv
+      - name: Check Apple local backup integrity and retention
+        run: |
+          swiftc ios/AmiyaPet/Core/Sync/SyncBackupStore.swift ios/tools/SyncBackupCheck.swift -o /tmp/amiya-sync-backup-check
+          /tmp/amiya-sync-backup-check
       - name: Build iOS App (.app and .ipa)
         env:
           MY_APP_VERSION: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'dev' }}

@@ -12,6 +12,7 @@ import com.amiya.pet.core.schedule.Course
 import com.amiya.pet.core.schedule.ExamItem
 import com.amiya.pet.core.schedule.ExamManager
 import com.amiya.pet.core.schedule.ScheduleManager
+import com.amiya.pet.core.schedule.ScheduleAdjustment
 import com.amiya.pet.floating.FloatingPetManager
 import com.amiya.pet.widget.ScheduleWidgetProvider
 import kotlinx.coroutines.*
@@ -266,7 +267,7 @@ object SyncManager {
             val payload = try { JSONObject(body) } catch (_: Exception) { JSONObject() }
             val mode = payload.optString("mode", "merge")
             val report = applyReceivedData(context, payload, mode)
-            if (!report.success) return makeHttpResponse(400, "Bad Request", JSONObject().put("error", report.message).toString())
+            if (!report.success) return makeHttpResponse(report.failureStatus, if (report.failureStatus == 507) "Insufficient Storage" else "Bad Request", JSONObject().put("error", report.message).toString())
             withContext(Dispatchers.Main) {
                 onDataSyncedListener?.invoke(report)
             }
@@ -594,8 +595,8 @@ object SyncManager {
     }
     suspend fun syncPush(context: Context, ip: String, port: Int, token: String, mode: String = "merge"): SyncReport = withContext(Dispatchers.IO) {
         try {
-            val (status, _) = exchange(ip, port, "/api/sync/push", packAllData(context).put("mode", mode), keyForToken(context, token), token)
-            SyncReport(status == 200, if (status == 200) "加密推送成功" else "推送被拒绝")
+            val (status, response) = exchange(ip, port, "/api/sync/push", packAllData(context).put("mode", mode), keyForToken(context, token), token)
+            SyncReport(status == 200, if (status == 200) "加密推送成功" else response.optString("error", "推送被拒绝"))
         } catch (error: Exception) { SyncReport(false, syncFailure(error, "加密推送")) }
     }
     suspend fun syncMerge(context: Context, ip: String, port: Int, token: String): SyncReport {
@@ -611,7 +612,7 @@ object SyncManager {
 
     // ── 数据打包与应用引擎 ───────────────────────────────────────────
 
-    fun packAllData(context: Context): JSONObject {
+    @Synchronized fun packAllData(context: Context): JSONObject {
         // 1. 课表
         ScheduleManager.load(context)
         val coursesArr = JSONArray()
@@ -721,9 +722,14 @@ object SyncManager {
         return SyncInput(schedule, courses, exams, notes)
     }
 
-    fun applyReceivedData(context: Context, payload: JSONObject, mode: String = "merge"): SyncReport {
+    @Synchronized fun applyReceivedData(context: Context, payload: JSONObject, mode: String = "merge", backupReason: String = "before_replace"): SyncReport {
         val input = try { parseSyncInput(payload, mode) }
             catch (_: Exception) { return SyncReport(false, "同步数据格式无效，未应用。") }
+        val categories = listOf("schedule", "exams", "notes").filter { payload.has(it) }
+        if (mode == "replace" && categories.isNotEmpty()) {
+            try { SyncBackupStore.create(context, backupState(context, categories), backupReason) }
+            catch (_: Exception) { return SyncReport(false, "无法安全保存备份，覆盖已取消。请检查本机存储。", failureStatus = 507) }
+        }
         var courseCount = 0
         var examCount = 0
         var noteCount = 0
@@ -760,7 +766,7 @@ object SyncManager {
                 val times = sections.keys().asSequence().associateWith { sections.getString(it) }
                 ScheduleManager.sections = times
             }
-            ScheduleManager.save(context)
+            if (!ScheduleManager.save(context)) return SyncReport(false, "课表写入失败，请检查本机存储。", failureStatus = 507)
             courseCount = ScheduleManager.courses.size
         }
 
@@ -779,7 +785,7 @@ object SyncManager {
                 if (index < 0) ExamManager.exams.add(exam) else ExamManager.exams[index] = exam
                 addedExams++
             }
-            ExamManager.save(context)
+            if (!ExamManager.save(context)) return SyncReport(false, "考试写入失败，请检查本机存储。", failureStatus = 507)
             examCount = if (mode == "replace") input.exams.size else addedExams
         }
 
@@ -801,7 +807,7 @@ object SyncManager {
                     addedNotes++
                 }
             }
-            notesMgr.replaceNotes(if (mode == "replace") input.notes else mergedNotes)
+            if (!notesMgr.replaceNotes(if (mode == "replace") input.notes else mergedNotes)) return SyncReport(false, "便签写入失败，请检查本机存储。", failureStatus = 507)
             noteCount = if (mode == "replace") input.notes.size else addedNotes
         }
 
@@ -815,6 +821,65 @@ object SyncManager {
     }
 
     // ── 受信任设备管理 ───────────────────────────────────────────────
+    private fun backupState(context: Context, categories: List<String>): JSONObject {
+        val all = packAllData(context)
+        val data = JSONObject(); val local = JSONObject()
+        for (category in categories) { data.put(category, all.get(category)); local.put(category, JSONObject()) }
+        if ("schedule" in categories) {
+            val adjustments = JSONArray()
+            for (a in ScheduleManager.adjustments) adjustments.put(JSONObject().put("id", a.id).put("date", a.date)
+                .put("type", a.type).put("target_week", a.targetWeek).put("target_weekday", a.targetWeekday).put("reason", a.reason))
+            local.put("schedule", JSONObject().put("remind_enabled", ScheduleManager.remindEnabled)
+                .put("dismiss_remind_enabled", ScheduleManager.dismissRemindEnabled).put("live_class_enabled", ScheduleManager.liveClassEnabled)
+                .put("remind_minutes", ScheduleManager.remindMinutes).put("week_start_day", ScheduleManager.weekStartDay)
+                .put("notes", JSONArray(ScheduleManager.notes)).put("adjustments", adjustments))
+        }
+        return JSONObject().put("data", data).put("local", local)
+    }
+
+    @Synchronized fun restoreBackup(context: Context, id: String): SyncReport {
+        val data: JSONObject; val options: JSONObject?; val adjustments: List<ScheduleAdjustment>
+        try {
+            val snapshot = SyncBackupStore.load(context, id)
+            data = snapshot.getJSONObject("data")
+            parseSyncInput(data, "replace")
+            val local = snapshot.getJSONObject("local")
+            for (key in listOf("exams", "notes")) if (data.has(key)) require(local.getJSONObject(key).length() == 0)
+            options = if (data.has("schedule")) local.getJSONObject("schedule") else null
+            if (options != null) {
+                require(options.keys().asSequence().toSet() == setOf("remind_enabled", "dismiss_remind_enabled", "live_class_enabled", "remind_minutes", "week_start_day", "notes", "adjustments"))
+                for (key in listOf("remind_enabled", "dismiss_remind_enabled", "live_class_enabled")) require(options.get(key) is Boolean)
+                require(options.get("remind_minutes") is Number && options.getInt("remind_minutes") >= 0)
+                require(options.getString("week_start_day") in setOf("sunday", "monday"))
+                val rows = options.getJSONArray("notes")
+                require((0 until rows.length()).all { rows.get(it) is String })
+            }
+            val rows = options?.getJSONArray("adjustments") ?: JSONArray()
+            adjustments = (0 until rows.length()).map {
+                val a = rows.getJSONObject(it)
+                ScheduleAdjustment(id = a.getString("id"), date = a.getString("date"), type = a.getString("type"),
+                    targetWeek = if (a.has("target_week") && !a.isNull("target_week")) a.getInt("target_week") else null,
+                    targetWeekday = if (a.has("target_weekday") && !a.isNull("target_weekday")) a.getInt("target_weekday") else null,
+                    reason = a.getString("reason"))
+            }
+        } catch (_: Exception) { return SyncReport(false, "备份损坏、已丢失或不兼容，未恢复。") }
+        val result = applyReceivedData(context, data, "replace", "before_restore")
+        if (!result.success) return result
+        if (options != null) {
+            ScheduleManager.remindEnabled = options.getBoolean("remind_enabled")
+            ScheduleManager.dismissRemindEnabled = options.getBoolean("dismiss_remind_enabled")
+            ScheduleManager.liveClassEnabled = options.getBoolean("live_class_enabled")
+            ScheduleManager.remindMinutes = options.getInt("remind_minutes")
+            ScheduleManager.weekStartDay = options.getString("week_start_day")
+            val notes = options.getJSONArray("notes")
+            ScheduleManager.notes = (0 until notes.length()).map { notes.getString(it) }
+            ScheduleManager.adjustments = adjustments
+            if (!ScheduleManager.save(context)) return SyncReport(false, "恢复写入失败，恢复前备份已保留。")
+        }
+        ScheduleWidgetProvider.sendUpdateBroadcast(context)
+        return result.copy(message = "恢复完成，恢复前状态也已备份。")
+    }
+
 
     fun getTrustedDevices(context: Context): Map<String, DeviceInfo> {
         val prefs = context.getSharedPreferences(PREFS_SYNC, Context.MODE_PRIVATE)

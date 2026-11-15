@@ -70,5 +70,6 @@ data class SyncReport(
     val message: String,
     val courseCount: Int = 0,
     val examCount: Int = 0,
-    val noteCount: Int = 0
+    val noteCount: Int = 0,
+    val failureStatus: Int = 400
 )

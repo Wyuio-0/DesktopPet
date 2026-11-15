@@ -122,14 +122,16 @@ object ExamManager {
         isLoaded = true
     }
 
-    fun save(context: Context) {
+    fun save(context: Context): Boolean {
         try {
             val array = JSONArray()
             exams.forEach { array.put(it.toJson()) }
             val file = File(context.filesDir, FILE_NAME)
             file.writeText(array.toString(2))
+            return true
         } catch (e: Exception) {
             e.printStackTrace()
+            return false
         }
     }
 
