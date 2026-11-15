@@ -34,6 +34,9 @@ import com.amiya.pet.core.schedule.ScheduleManager
 import com.amiya.pet.core.sync.DeviceInfo
 import com.amiya.pet.core.sync.PairRequest
 import com.amiya.pet.core.sync.SyncManager
+import com.amiya.pet.core.sync.SyncBackupStore
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
 
 /**
@@ -57,6 +60,19 @@ fun SyncDialog(
     var syncStatusText by remember { mutableStateOf("就绪。") }
     var isOperating by remember { mutableStateOf(false) }
     var pendingOverwrite by remember { mutableStateOf<DeviceInfo?>(null) }
+    var showBackups by remember { mutableStateOf(false) }
+    var backupEntries by remember { mutableStateOf<List<SyncBackupStore.Entry>>(emptyList()) }
+    var selectedBackup by remember { mutableStateOf<SyncBackupStore.Entry?>(null) }
+    var backupStatus by remember { mutableStateOf("") }
+    LaunchedEffect(showBackups) {
+        if (showBackups) {
+            backupStatus = "正在读取备份…"
+            try {
+                backupEntries = withContext(Dispatchers.IO) { SyncBackupStore.list(context) }
+                backupStatus = if (backupEntries.isEmpty()) "尚无备份，收到覆盖同步前会自动创建。" else "保留最近 10 份，仅恢复列出的类别。"
+            } catch (_: Exception) { backupStatus = "无法读取本机备份目录。" }
+        }
+    }
 
     // 已配对设备
     var trustedDevices by remember { mutableStateOf(SyncManager.getTrustedDevices(context)) }
@@ -109,6 +125,33 @@ fun SyncDialog(
                 }
             }) { Text("确认覆盖") } },
             dismissButton = { TextButton(onClick = { pendingOverwrite = null }) { Text("取消") } })
+    }
+    if (showBackups && selectedBackup == null) {
+        AlertDialog(onDismissRequest = { showBackups = false }, title = { Text("本机备份与恢复") },
+            text = { Column(Modifier.heightIn(max = 400.dp).verticalScroll(rememberScrollState())) {
+                Text(backupStatus)
+                for (entry in backupEntries) {
+                    val date = if (entry.valid) java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date(entry.createdMillis)) else "损坏或不兼容"
+                    val categories = entry.categories.joinToString("、") { when(it) { "schedule" -> "课表"; "exams" -> "考试"; else -> "便签" } }
+                    TextButton(onClick = { selectedBackup = entry }, enabled = entry.valid) {
+                        Text("$date\n${if (entry.reason == "before_restore") "恢复前" else "覆盖前"} · $categories${if (!entry.valid) "（不能恢复）" else " · 恢复…"}")
+                    }
+                }
+            } }, confirmButton = { TextButton(onClick = { showBackups = false }) { Text("关闭") } })
+    }
+    selectedBackup?.let { entry ->
+        AlertDialog(onDismissRequest = { selectedBackup = null }, title = { Text("确认恢复备份") },
+            text = { Text("将把备份中列出的类别恢复到该时间点，其他类别保持不变。恢复前会先备份当前状态。是否继续？") },
+            confirmButton = { TextButton(onClick = {
+                selectedBackup = null; showBackups = false
+                scope.launch {
+                    isOperating = true
+                    try {
+                        val report = withContext(Dispatchers.IO) { SyncManager.restoreBackup(context, entry.id) }
+                        syncStatusText = report.message; refreshStats()
+                    } finally { isOperating = false }
+                }
+            }) { Text("恢复") } }, dismissButton = { TextButton(onClick = { selectedBackup = null }) { Text("取消") } })
     }
 
     // ── 1. 收到配对请求时的专属认证弹窗（必须博士亲自核验确认）─────────────
@@ -557,6 +600,7 @@ fun SyncDialog(
                             }
 
                             Spacer(Modifier.height(6.dp))
+                            OutlinedButton(onClick = { showBackups = true }, enabled = !isOperating) { Text("本机备份与恢复…") }
                             Text(syncStatusText, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }

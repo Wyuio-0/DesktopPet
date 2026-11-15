@@ -12,7 +12,9 @@ from PyQt5 import QtCore, QtGui, QtWidgets
 from . import theme
 from .notes import NotesManager
 from .schedule import Schedule
-from .sync_service import get_sync_service, get_local_ips
+from .sync_service import get_sync_service, get_local_ips, DataSyncEngine
+from .sync_backups import BackupError
+from datetime import datetime
 from .tasks import Tasks
 from .sync_crypto import pairing_code, InvalidEnvelope
 
@@ -255,6 +257,82 @@ class RhodesPairConfirmDialog(QtWidgets.QDialog):
         super().closeEvent(event)
 
 
+class RhodesBackupDialog(QtWidgets.QDialog):
+    restored = QtCore.pyqtSignal(bool, str)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("学业数据备份与恢复")
+        self.resize(620, 360)
+        self.busy = False
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.addWidget(QtWidgets.QLabel("覆盖前自动备份，保留最近 10 份。恢复仅影响备份中列出的类别；恢复前也会备份当前状态。"))
+        self.items = QtWidgets.QListWidget()
+        layout.addWidget(self.items)
+        self.status = QtWidgets.QLabel()
+        self.status.setWordWrap(True)
+        layout.addWidget(self.status)
+        row = QtWidgets.QHBoxLayout()
+        self.restore = QtWidgets.QPushButton("恢复选中备份…")
+        self.restore.clicked.connect(self._restore)
+        row.addWidget(self.restore)
+        close = QtWidgets.QPushButton("关闭")
+        close.clicked.connect(self.reject)
+        row.addWidget(close)
+        layout.addLayout(row)
+        self.restored.connect(self._finished)
+        self._reload()
+
+    def reject(self):
+        if not self.busy: super().reject()
+
+    def closeEvent(self, event):
+        if self.busy: event.ignore()
+        else: super().closeEvent(event)
+
+    def _reload(self):
+        self.items.clear()
+        labels = {"schedule": "课表", "exams": "考试", "notes": "便签"}
+        try:
+            for entry in DataSyncEngine.list_backups():
+                date = datetime.fromtimestamp(entry["created_ms"] / 1000).strftime("%Y-%m-%d %H:%M:%S") if entry["valid"] else "损坏或不兼容"
+                reason = "恢复前" if entry["reason"] == "before_restore" else "覆盖前"
+                text = f"{date} · {reason} · " + "、".join(labels[k] for k in entry["categories"])
+                item = QtWidgets.QListWidgetItem(text)
+                item.setData(QtCore.Qt.UserRole, entry)
+                self.items.addItem(item)
+            self.restore.setEnabled(self.items.count() > 0)
+            if not self.items.count(): self.status.setText("尚无备份。收到覆盖同步时会自动保存本机快照。")
+        except (BackupError, OSError):
+            self.status.setText("无法读取备份目录，请检查本机存储。")
+            self.restore.setEnabled(False)
+
+    def _restore(self):
+        selected = self.items.currentItem()
+        if selected is None: return
+        entry = selected.data(QtCore.Qt.UserRole)
+        if not entry["valid"]:
+            self.status.setText("此备份未通过完整性校验，不能恢复。")
+            return
+        if QtWidgets.QMessageBox.question(self, "确认恢复", selected.text() + "\n将替换这些类别的当前内容，其他类别保持不变。是否继续？",
+                QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No, QtWidgets.QMessageBox.No) != QtWidgets.QMessageBox.Yes: return
+        self.busy = True
+        self.restore.setEnabled(False)
+        self.status.setText("正在校验并恢复…")
+        def worker():
+            try:
+                DataSyncEngine.restore_backup(entry["id"])
+                self.restored.emit(True, "恢复完成。恢复前的状态也已保存在备份列表中。")
+            except Exception:
+                self.restored.emit(False, "恢复失败。请检查备份完整性和本机存储；已保存的备份仍可查看。")
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _finished(self, success, message):
+        self.busy = False
+        self._reload()
+        self.status.setText(message)
+
+
 class RhodesSyncWindow(QtWidgets.QDialog):
     """罗德岛跨端协同管理中心主窗口。"""
 
@@ -400,6 +478,9 @@ class RhodesSyncWindow(QtWidgets.QDialog):
         sync_btn_bar.addStretch()
         sync_layout.addLayout(sync_btn_bar)
 
+        self.btn_backups = QtWidgets.QPushButton("备份与恢复…")
+        self.btn_backups.clicked.connect(self._open_backups)
+        sync_layout.addWidget(self.btn_backups)
         self.lbl_sync_result = QtWidgets.QLabel("就绪。")
         self.lbl_sync_result.setStyleSheet(f"font-size: {theme.FS_XS}px; color: {theme.FLOAT_TEXT_DIM};")
         sync_layout.addWidget(self.lbl_sync_result)
@@ -424,6 +505,10 @@ class RhodesSyncWindow(QtWidgets.QDialog):
         drop_layout.addWidget(self.btn_send_clip)
 
         main_layout.addWidget(drop_group)
+
+    def _open_backups(self):
+        RhodesBackupDialog(self).exec_()
+        self._refresh_data_counts()
 
     def _bind_service(self):
         """绑定服务事件到 Qt 信号槽。"""

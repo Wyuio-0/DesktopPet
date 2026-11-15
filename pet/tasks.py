@@ -173,11 +173,16 @@ class Task:
     def from_dict(cls, d):
         if not d.get("due"):
             return None
+        try:
+            created = datetime.fromisoformat(d["created"]) if d.get("created") else None
+        except (ValueError, TypeError):
+            created = None
         return cls(
             title=d.get("title", ""), kind=d.get("kind", "homework"),
             due=datetime.fromisoformat(d["due"]),
             course=d.get("course", ""), remind_min=d.get("remind_min", 1440),
             done=d.get("done", False), task_id=d.get("id"),
+            created=created,
             exam_details=d.get("exam_details") if isinstance(d.get("exam_details"), dict) else None)
 
 

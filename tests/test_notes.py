@@ -15,8 +15,11 @@ from pet import actions
 
 
 @pytest.fixture
-def tmp_notes(monkeypatch):
+def tmp_notes(monkeypatch, tmp_path):
     """Fixture providing an isolated NotesManager with a temporary file."""
+    monkeypatch.setattr("pet.sync_backups.backup_directory", lambda directory=tmp_path / "backups": directory)
+    monkeypatch.setenv("APPDATA", str(tmp_path / "appdata"))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
     with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
         tmp_path = f.name
     if os.path.exists(tmp_path):

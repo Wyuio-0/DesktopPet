@@ -135,12 +135,14 @@ public class ExamManager: ObservableObject {
         save()
     }
 
-    public func save() {
+    @discardableResult public func save() -> Bool {
         do {
             let data = try JSONEncoder().encode(exams)
-            try data.write(to: fileURL)
+            try data.write(to: fileURL, options: .atomic)
+            return true
         } catch {
             print("Failed to save exams.json: \(error)")
+            return false
         }
     }
 

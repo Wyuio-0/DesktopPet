@@ -244,6 +244,16 @@ def main():
             if name == "empty_pc":
                 sync.DataSyncEngine.apply_data({"schedule": {"courses": []}, "exams": [], "notes": []}, "replace")
                 return {"ok": True}
+            if name == "pc_backup_roundtrip":
+                sync.DataSyncEngine.apply_data(fixture(), "replace")
+                before = {entry["id"] for entry in sync.DataSyncEngine.list_backups()}
+                sync.DataSyncEngine.apply_data({"notes": []}, "replace")
+                selected = next(entry for entry in sync.DataSyncEngine.list_backups() if entry["id"] not in before)
+                sync.DataSyncEngine.apply_data({"exams": []}, "replace")
+                sync.DataSyncEngine.restore_backup(selected["id"])
+                actual = sync.DataSyncEngine.pack_all_data()
+                return {"ok": actual["notes"] == fixture()["notes"] and not actual["exams"]
+                    and any(entry["reason"] == "before_restore" for entry in sync.DataSyncEngine.list_backups())}
             if name == "check_pc_empty":
                 data = sync.DataSyncEngine.pack_all_data()
                 return {"ok": not data["schedule"]["courses"] and not data["exams"] and not data["notes"]}
@@ -256,6 +266,11 @@ def main():
                 target_ip, port = (phone_ip, state["phone_port"]) if name == "push_invalid_phone" else ("127.0.0.1", service.http_port)
                 status, _ = service._secure_post(target_ip, port, "/api/sync/push", payload["payload"], record["sync_key"], token)
                 return {"ok": status == 400}
+            if name == "push_phone_backup_failure":
+                record = service.pair_manager.get_trusted_devices()["acceptance-android"]
+                status, _ = service._secure_post(phone_ip, state["phone_port"], "/api/sync/push",
+                    {"mode": "replace", "notes": []}, record["sync_key"], phone_token())
+                return {"ok": status == 507}
             if name == "restart_pc": service.stop(); service.start(); return {"ok": True}
             if name == "stop_pc": service.stop(); return {"ok": True}
             if name == "start_pc": service.start(); return {"ok": True}

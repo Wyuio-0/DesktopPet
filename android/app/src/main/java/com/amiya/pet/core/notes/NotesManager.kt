@@ -94,7 +94,7 @@ class NotesManager private constructor(private val context: Context) {
         }
     }
 
-    @Synchronized fun saveNotes() {
+    @Synchronized fun saveNotes(): Boolean {
         try {
             val root = JSONObject()
             val arr = JSONArray()
@@ -108,8 +108,10 @@ class NotesManager private constructor(private val context: Context) {
                 if (file.exists()) file.delete()
                 tmp.renameTo(file)
             }
+            return file.exists() && file.readText(Charsets.UTF_8) == root.toString(2)
         } catch (e: Exception) {
             e.printStackTrace()
+            return false
         }
     }
 
@@ -125,10 +127,10 @@ class NotesManager private constructor(private val context: Context) {
         saveNotes()
     }
 
-    @Synchronized fun replaceNotes(notes: List<Note>) {
+    @Synchronized fun replaceNotes(notes: List<Note>): Boolean {
         _notes.clear()
         _notes.addAll(notes)
-        saveNotes()
+        return saveNotes()
     }
 
     @Synchronized fun updateNote(id: String, content: String, title: String? = null, pinned: Boolean? = null, expected: Note? = null): Note? {

@@ -4,6 +4,7 @@ import android.app.Activity
 import android.app.Instrumentation
 import android.os.Bundle
 import com.amiya.pet.core.sync.SyncManager
+import com.amiya.pet.core.sync.SyncBackupStore
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import org.json.JSONArray
@@ -384,6 +385,70 @@ class SyncAcceptanceRunner : Instrumentation() {
                         check(pc.getInt("courses") == 2 && pc.getInt("exams") == 2 && pc.getInt("notes") == 2)
                     }
                 }
+                case("backup_restore_is_category_scoped_and_saves_recovery_snapshot") {
+                    check(SyncManager.applyReceivedData(app, expected, "replace").success)
+                    val beforeIds = SyncBackupStore.list(app).map { it.id }.toSet()
+                    check(SyncManager.applyReceivedData(app, JSONObject().put("notes", JSONArray()), "replace").success)
+                    val backup = SyncBackupStore.list(app).single { it.id !in beforeIds }
+                    check(backup.categories == listOf("notes"))
+                    val saved = SyncBackupStore.load(app, backup.id)
+                    check(!saved.toString().contains(token())) { "Backup contains pairing token" }
+                    check(saved.getJSONObject("data").getJSONArray("notes").length() == 1)
+                    check(SyncManager.applyReceivedData(app, JSONObject().put("exams", JSONArray()), "replace").success)
+                    check(SyncManager.restoreBackup(app, backup.id).success)
+                    check(snapshot().getJSONArray("notes").length() == 1 && snapshot().getJSONArray("exams").length() == 0)
+                    check(SyncBackupStore.list(app).any { it.reason == "before_restore" })
+                }
+                case("backup_restore_keeps_schedule_settings_and_adjustments") {
+                    val manager = com.amiya.pet.core.schedule.ScheduleManager
+                    manager.remindMinutes = 37; manager.weekStartDay = "monday"
+                    manager.adjustments = listOf(com.amiya.pet.core.schedule.ScheduleAdjustment(date = "2026-12-01", type = "suspend", reason = "验收停课"))
+                    check(manager.save(app))
+                    val beforeIds = SyncBackupStore.list(app).map { it.id }.toSet()
+                    check(SyncManager.applyReceivedData(app, JSONObject("""{"schedule":{"courses":[]}}"""), "replace").success)
+                    val backup = SyncBackupStore.list(app).single { it.id !in beforeIds }
+                    manager.remindMinutes = 5; manager.weekStartDay = "sunday"; manager.adjustments = emptyList()
+                    check(manager.save(app))
+                    check(SyncManager.restoreBackup(app, backup.id).success)
+                    check(manager.remindMinutes == 37 && manager.weekStartDay == "monday" && manager.adjustments.single().reason == "验收停课")
+                    check(manager.courses.isNotEmpty())
+                }
+                case("corrupt_backup_is_rejected_without_changes") {
+                    val entry = SyncBackupStore.list(app).first { it.valid }
+                    val file = java.io.File(app.filesDir, "sync_backups/${entry.id}.json")
+                    val envelope = JSONObject(file.readText(Charsets.UTF_8))
+                    envelope.put("payload", envelope.getString("payload") + " ")
+                    file.writeText(envelope.toString(), Charsets.UTF_8)
+                    val before = dataOnly()
+                    check(!SyncManager.restoreBackup(app, entry.id).success)
+                    check(dataOnly() == before)
+                    check(SyncBackupStore.list(app).any { it.id == entry.id && !it.valid })
+                    check(!SyncManager.restoreBackup(app, "../notes").success)
+                    check(dataOnly() == before)
+                }
+                case("backup_storage_failure_cancels_replace") {
+                    val directory = java.io.File(app.filesDir, "sync_backups")
+                    val held = java.io.File(app.filesDir, "acceptance-backups-held")
+                    check(!held.exists() && directory.renameTo(held))
+                    try {
+                        directory.writeText("独立验收：模拟目录不可写")
+                        val before = dataOnly()
+                        val report = SyncManager.applyReceivedData(app, empty, "replace")
+                        check(!report.success && report.failureStatus == 507)
+                        check(control("push_phone_backup_failure").getBoolean("ok"))
+                        check(dataOnly() == before)
+                    } finally {
+                        if (directory.isFile) check(directory.delete())
+                        check(held.renameTo(directory))
+                    }
+                }
+                case("backup_retention_is_bounded_and_committed_files_are_valid") {
+                    repeat(12) { check(SyncManager.applyReceivedData(app, JSONObject().put("notes", JSONArray()), "replace").success) }
+                    val entries = SyncBackupStore.list(app)
+                    check(entries.size == SyncBackupStore.KEEP && entries.all { it.valid })
+                    check(java.io.File(app.filesDir, "sync_backups").listFiles()!!.none { it.extension == "tmp" })
+                }
+                case("pc_local_backup_restore_roundtrip") { check(control("pc_backup_roundtrip").getBoolean("ok")) }
             }
             summary.put("checks", checks).put("passed", (0 until checks.length()).all { checks.getJSONObject(it).optBoolean("passed") })
         } catch (error: Throwable) {

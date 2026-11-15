@@ -15,6 +15,8 @@ public final class SyncManager: ObservableObject {
     @Published public private(set) var pairedDevices: [DeviceInfo] = []
     @Published public private(set) var statusText = "就绪"
     @Published public var incomingPair: IncomingPair?
+    @Published var backups: [StudyBackupEntry] = []
+    @Published var backupBusy = false
     public var onTacticalDropReceived: ((String, String) -> Void)?
     public struct IncomingPair: Identifiable {
         public let id: String; public let name: String; public let ip: String; public let pin: String
@@ -210,6 +212,7 @@ public final class SyncManager: ObservableObject {
                 } else {
                     do { result = try onMain { try self.apply(path, payload) } }
                     catch is SyncDataFailure { status = 400; result = ["error": "同步数据格式无效，未应用"] }
+                    catch let failure as StudyBackupFailure { status = 507; result = ["error": failure.localizedDescription] }
                 }
             }
             let bytes = try JSONSerialization.data(withJSONObject: result)
@@ -365,7 +368,7 @@ public final class SyncManager: ObservableObject {
             "durationMinutes": $0.durationMinutes, "location": $0.location, "seatNumber": $0.seatNumber, "examType": $0.examType, "note": $0.note] }
         return ["schedule": ["term_start": sched.termStart.map { formatter.string(from: $0) } ?? "", "sections": sched.sections, "courses": courses], "notes": notes, "exams": exams]
     }
-    private func apply(_ path: String, _ payload: [String: Any]) throws -> [String: Any] {
+    private func apply(_ path: String, _ payload: [String: Any], validateOnly: Bool = false, backupReason: String = "before_replace") throws -> [String: Any] {
         if path == "/api/sync/pull" { return snapshot() }
         if path == "/api/status" { return ["status": "ok"] }
         if path == "/api/clipboard" {
@@ -426,6 +429,9 @@ public final class SyncManager: ObservableObject {
             do { incomingNotes = try JSONDecoder().decode([Note].self, from: JSONSerialization.data(withJSONObject: rows)) }
             catch { throw SyncDataFailure.invalid }
         }
+        if validateOnly { return ["status": "valid"] }
+        let categories = ["schedule", "exams", "notes"].filter { payload[$0] != nil }
+        if replace && !categories.isEmpty { try SyncBackupStore.shared.create(backupState(categories), reason: backupReason) }
         let sched = ScheduleManager.shared
         if let courses = incomingCourses {
             if replace { sched.courses = courses } else {
@@ -439,18 +445,94 @@ public final class SyncManager: ObservableObject {
         if let settings = payload["schedule"] as? [String: Any] {
                 if let sections = settings["sections"] as? [String: String] { sched.sections = sections }
                 if let text = settings["term_start"] as? String { let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"; sched.termStart = text.isEmpty ? nil : f.date(from: text) }
-            sched.coursesVersion += 1; sched.save()
+            sched.coursesVersion += 1
+            guard sched.save() else { throw StudyBackupFailure.writeFailed }
         }
         if let exams = incomingExams {
             if replace { ExamManager.shared.exams = exams } else {
                 for exam in exams { if let i = ExamManager.shared.exams.firstIndex(where: { $0.id == exam.id }) { ExamManager.shared.exams[i] = exam } else { ExamManager.shared.exams.append(exam) } }
-            }; ExamManager.shared.save()
+            }; guard ExamManager.shared.save() else { throw StudyBackupFailure.writeFailed }
         }
         if let notes = incomingNotes {
             if replace { NotesManager.shared.notes = notes } else {
                 for note in notes { if let i = NotesManager.shared.notes.firstIndex(where: { $0.id == note.id }) { if NotesManager.shared.notes[i].updatedAt < note.updatedAt { NotesManager.shared.notes[i] = note } } else { NotesManager.shared.notes.append(note) } }
-            }; NotesManager.shared.save()
+            }; guard NotesManager.shared.save() else { throw StudyBackupFailure.writeFailed }
         }
         return ["status": "ok", "result": ["schedule": incomingCourses?.count ?? 0, "exams": incomingExams?.count ?? 0, "notes": incomingNotes?.count ?? 0]]
+    }
+
+    private func backupState(_ categories: [String]) throws -> [String: Any] {
+        let all = snapshot()
+        var data: [String: Any] = [:]; var local: [String: Any] = [:]
+        for key in categories { data[key] = all[key]; local[key] = [String: Any]() }
+        if categories.contains("schedule") {
+            let s = ScheduleManager.shared
+            guard let rows = (data["schedule"] as? [String: Any])?["courses"] as? [[String: Any]], rows.count == s.courses.count else { throw StudyBackupFailure.backupFailed }
+            local["schedule"] = ["remind_enabled": s.remindEnabled, "dismiss_remind_enabled": s.dismissRemindEnabled,
+                "live_class_enabled": s.liveClassEnabled, "remind_minutes": s.remindMinutes, "week_start_day": s.weekStartDay,
+                "notes": s.notes, "adjustments": try JSONSerialization.jsonObject(with: JSONEncoder().encode(s.adjustments))]
+        }
+        if categories.contains("exams") { local["exams"] = try JSONSerialization.jsonObject(with: JSONEncoder().encode(ExamManager.shared.exams)) }
+        if categories.contains("notes") {
+            guard let rows = data["notes"] as? [[String: Any]], rows.count == NotesManager.shared.notes.count else { throw StudyBackupFailure.backupFailed }
+        }
+        return ["data": data, "local": local]
+    }
+
+    func refreshBackups() {
+        DispatchQueue.global().async {
+            do {
+                let entries = try SyncBackupStore.shared.list()
+                DispatchQueue.main.async { self.backups = entries }
+            } catch { DispatchQueue.main.async { self.statusText = "无法读取本机备份目录。" } }
+        }
+    }
+
+    func restoreBackup(_ id: String) {
+        guard !backupBusy else { return }
+        backupBusy = true
+        statusText = "正在校验并恢复备份…"
+        DispatchQueue.global().async {
+            do {
+                let snapshot = try SyncBackupStore.shared.load(id)
+                try self.onMain { try self.restoreState(snapshot) }
+                DispatchQueue.main.async { self.backupBusy = false; self.statusText = "恢复完成，恢复前状态也已备份。"; self.refreshBackups() }
+            } catch {
+                let message = (error as? StudyBackupFailure)?.localizedDescription ?? "备份内容无效或不兼容，未恢复。"
+                DispatchQueue.main.async { self.backupBusy = false; self.statusText = message; self.refreshBackups() }
+            }
+        }
+    }
+
+    private func restoreState(_ snapshot: [String: Any]) throws {
+        guard let data = snapshot["data"] as? [String: Any], let local = snapshot["local"] as? [String: Any] else { throw StudyBackupFailure.invalid }
+        _ = try apply("/api/sync/push", data.merging(["mode": "replace"], uniquingKeysWith: { _, new in new }), validateOnly: true)
+        let options = data["schedule"] != nil ? local["schedule"] as? [String: Any] : nil
+        var adjustments: [ScheduleAdjustment] = []; var nativeExams: [ExamItem] = []
+        do {
+            if data["schedule"] != nil {
+                guard let options = options, Set(options.keys) == Set(["remind_enabled", "dismiss_remind_enabled", "live_class_enabled", "remind_minutes", "week_start_day", "notes", "adjustments"]),
+                      options["remind_enabled"] is Bool, options["dismiss_remind_enabled"] is Bool, options["live_class_enabled"] is Bool,
+                      let minutes = options["remind_minutes"] as? Int, minutes >= 0,
+                      let day = options["week_start_day"] as? String, ["sunday", "monday"].contains(day),
+                      options["notes"] is [String], let rows = options["adjustments"] else { throw StudyBackupFailure.invalid }
+                adjustments = try JSONDecoder().decode([ScheduleAdjustment].self, from: JSONSerialization.data(withJSONObject: rows))
+            }
+            if data["exams"] != nil {
+                guard let rows = local["exams"], let exams = data["exams"] as? [[String: Any]] else { throw StudyBackupFailure.invalid }
+                nativeExams = try JSONDecoder().decode([ExamItem].self, from: JSONSerialization.data(withJSONObject: rows))
+                guard nativeExams.count == exams.count, Set(nativeExams.map { $0.id }) == Set(exams.compactMap { $0["id"] as? String }) else { throw StudyBackupFailure.invalid }
+            }
+            if data["notes"] != nil { guard let empty = local["notes"] as? [String: Any], empty.isEmpty else { throw StudyBackupFailure.invalid } }
+        } catch { throw StudyBackupFailure.invalid }
+        _ = try apply("/api/sync/push", data.merging(["mode": "replace"], uniquingKeysWith: { _, new in new }), backupReason: "before_restore")
+        if let options = options {
+            let s = ScheduleManager.shared
+            s.remindEnabled = options["remind_enabled"] as! Bool; s.dismissRemindEnabled = options["dismiss_remind_enabled"] as! Bool
+            s.liveClassEnabled = options["live_class_enabled"] as! Bool; s.remindMinutes = options["remind_minutes"] as! Int
+            s.weekStartDay = options["week_start_day"] as! String; s.notes = options["notes"] as! [String]; s.adjustments = adjustments
+            guard s.save() else { throw StudyBackupFailure.writeFailed }
+        }
+        if data["exams"] != nil { ExamManager.shared.exams = nativeExams; guard ExamManager.shared.save() else { throw StudyBackupFailure.writeFailed } }
     }
 }

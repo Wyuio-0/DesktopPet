@@ -30,6 +30,7 @@ from .notes import NotesManager, Note, sync_notes_manager
 from .schedule import Schedule, Course
 from .settings import config_dir
 from .tasks import Tasks, Task
+from .sync_backups import BackupStore, BackupError
 from .sync_crypto import SecureSync, InvalidEnvelope, key_id, pairing_code, make_request, read_response, seal, PATHS, MAX_WIRE
 
 DEFAULT_HTTP_PORT = 23333
@@ -60,6 +61,7 @@ def _serialized_data(operation):
 
 
 def _sync_failure_message(error, operation):
+    if isinstance(error, BackupError): return str(error)
     if isinstance(error, OSError) and not isinstance(error, urllib.error.HTTPError):
         return f"{operation}失败：无法连接设备，请检查两端网络、设备互访或防火墙设置，网络恢复后重试。已有配对已保留。"
     return f"{operation}失败，请确认两端已升级、密钥有效，必要时重新配对"
@@ -280,71 +282,12 @@ class DataSyncEngine:
     @_serialized_data
     def pack_all_data():
         """打包本地所有学业数据为 JSON 字典。"""
-        # 1. 课表
-        sched = Schedule()
-        sched_data = {
-            "term": sched.term,
-            "term_start": sched.term_start.isoformat() if sched.term_start else "",
-            "sections": sched.sections,
-            "remind_minutes": sched.remind_minutes,
-            "courses": [
-                {
-                    "id": c.id,
-                    "name": c.name,
-                    "weekday": c.weekday,
-                    "sec_start": c.sec_start,
-                    "sec_end": c.sec_end,
-                    "week_start": c.week_start,
-                    "week_end": c.week_end,
-                    "parity": c.parity,
-                    "room": c.room,
-                    "teacher": c.teacher,
-                    "campus": c.campus,
-                    "note": c.note,
-                    "custom_time": c.custom_time,
-                }
-                for c in sched.courses
-            ],
-            "notes": sched.notes,
-        }
-
-        # 2. 考试与任务 (映射为通用 exams 列表与 tasks 列表)
-        tasks_mgr = Tasks()
-        exams_list = []
-        for t in tasks_mgr.items:
-            if t.kind == "exam":
-                try:
-                    exam_time_ms = round(t.due.timestamp() * 1000)
-                except Exception:
-                    exam_time_ms = int(time.time() * 1000)
-                exams_list.append({
-                    "id": t.id,
-                    "title": t.title,
-                    "examTimeMillis": exam_time_ms,
-                    "durationMinutes": t.exam_details.get("durationMinutes", 120),
-                    "location": t.course or "",
-                    "seatNumber": t.exam_details.get("seatNumber", ""),
-                    "examType": t.exam_details.get("examType", "闭卷"),
-                    "note": t.exam_details.get("note", ""),
-                    **({"relatedCourseId": t.exam_details["relatedCourseId"]} if "relatedCourseId" in t.exam_details else {}),
-                })
-
-        # 3. 便签
-        notes_mgr = sync_notes_manager()
-        with notes_mgr.sync_lock:
-            notes_list = [n.to_dict() for n in notes_mgr.notes]
-
-        return {
-            "version": APP_VERSION,
-            "timestamp": int(time.time()),
-            "schedule": sched_data,
-            "exams": exams_list,
-            "notes": notes_list,
-        }
+        return {"version": APP_VERSION, "timestamp": int(time.time()),
+                **DataSyncEngine._backup_state(("schedule", "exams", "notes"))["data"]}
 
     @staticmethod
     @_serialized_data
-    def apply_data(payload, mode="merge"):
+    def apply_data(payload, mode="merge", *, _backup=True, _reason="before_replace", _validate_only=False):
         """将远端数据应用至本地。mode: 'merge' or 'replace'。"""
         # Parse every included category before changing any local collection.
         if not isinstance(payload, dict) or mode not in ("merge", "replace"):
@@ -398,6 +341,10 @@ class DataSyncEngine:
         except (TypeError, KeyError, ValueError, OverflowError, OSError) as error:
             raise ValueError("无效的同步数据") from error
         results = {"schedule": False, "exams": 0, "notes": 0}
+        if _validate_only: return results
+        categories = [key for key in ("schedule", "exams", "notes") if key in payload]
+        if mode == "replace" and categories and _backup:
+            BackupStore().create(DataSyncEngine._backup_state(categories), _reason)
 
         # 1. 应用课表
         if isinstance(sched_data, dict):
@@ -406,7 +353,7 @@ class DataSyncEngine:
             if courses is None:
                 courses = sched.courses
             if "courses" not in sched_data or mode == "replace" or not sched.courses:
-                sched.save(
+                saved = sched.save(
                     term=sched_data.get("term", sched.term),
                     term_start=term_start or sched.term_start,
                     courses=courses,
@@ -426,12 +373,13 @@ class DataSyncEngine:
                         sched.courses.append(c)
                     else:
                         sched.courses[index] = c
-                sched.save(
+                saved = sched.save(
                     term=sched_data.get("term") or sched.term,
                     term_start=term_start or sched.term_start,
                     courses=sched.courses,
                     sections=sched_data.get("sections") or sched.sections
                 )
+            if not saved: raise BackupError("课表写入失败，请检查本机存储")
             results["schedule"] = True
 
         # 2. 应用考试日程
@@ -462,15 +410,92 @@ class DataSyncEngine:
                 else:
                     tasks_mgr.items.append(task)
                 added_count += 1
-            tasks_mgr.save()
+            if not tasks_mgr.save(): raise BackupError("考试写入失败，请检查本机存储")
             results["exams"] = added_count
 
         # 3. 应用便签
         if notes is not None:
             notes_mgr = sync_notes_manager()
-            results["notes"] = notes_mgr.apply_sync(notes, mode)
+            try:
+                results["notes"] = notes_mgr.apply_sync(notes, mode)
+            except OSError as error:
+                raise BackupError("便签写入失败，请检查本机存储") from error
 
         return results
+
+    @staticmethod
+    def _backup_state(categories):
+        data, local = {}, {}
+        if "schedule" in categories:
+            schedule = Schedule()
+            data["schedule"] = {"term": schedule.term,
+                "term_start": schedule.term_start.isoformat() if schedule.term_start else "",
+                "sections": schedule.sections, "remind_minutes": schedule.remind_minutes,
+                "courses": [Schedule._course_dict(c) for c in schedule.courses], "notes": schedule.notes}
+            local["schedule"] = {"remind_minutes": schedule.remind_minutes,
+                "week_start_day": schedule.week_start_day, "adjustments": schedule.adjustments}
+        if "exams" in categories:
+            exams = [t for t in Tasks().items if t.kind == "exam"]
+            data["exams"] = [{"id": t.id, "title": t.title, "examTimeMillis": round(t.due.timestamp() * 1000),
+                "durationMinutes": t.exam_details.get("durationMinutes", 120), "location": t.course or "",
+                "seatNumber": t.exam_details.get("seatNumber", ""), "examType": t.exam_details.get("examType", "闭卷"),
+                "note": t.exam_details.get("note", ""),
+                **({"relatedCourseId": t.exam_details["relatedCourseId"]} if "relatedCourseId" in t.exam_details else {})} for t in exams]
+            local["exams"] = [t.to_dict() for t in exams]
+        if "notes" in categories:
+            manager = sync_notes_manager()
+            with manager.sync_lock:
+                data["notes"] = [n.to_dict() for n in manager.notes]
+                local["notes"] = {"active_id": manager.active_id}
+        return {"data": data, "local": local}
+
+    @staticmethod
+    def list_backups():
+        return BackupStore().list()
+
+    @staticmethod
+    @_serialized_data
+    def restore_backup(backup_id):
+        snapshot = BackupStore().load(backup_id)
+        data, local = snapshot["data"], snapshot["local"]
+        # Validate sidecars before creating the recovery snapshot or changing any category.
+        try:
+            DataSyncEngine.apply_data(data, "replace", _validate_only=True)
+            if "schedule" in data:
+                options = local["schedule"]
+                if (not isinstance(options, dict) or set(options) != {"remind_minutes", "week_start_day", "adjustments"}
+                        or type(options["remind_minutes"]) is not int or options["remind_minutes"] < 1
+                        or options["week_start_day"] not in ("monday", "sunday")
+                        or not isinstance(options["adjustments"], list)
+                        or any(not isinstance(a, dict) for a in options["adjustments"])): raise ValueError("schedule")
+            if "exams" in data:
+                if not isinstance(local["exams"], list): raise ValueError("exams")
+                native_exams = [Task.from_dict(t) for t in local["exams"]]
+                if (any(t is None or t.kind != "exam" for t in native_exams)
+                        or len(native_exams) != len(data["exams"])
+                        or {t.id for t in native_exams} != {e["id"] for e in data["exams"]}): raise ValueError("exams")
+            if "notes" in data:
+                if not isinstance(local["notes"], dict) or set(local["notes"]) != {"active_id"}: raise ValueError("notes")
+                active_id = local["notes"]["active_id"]
+                if not isinstance(active_id, str) or (active_id and active_id not in {n["id"] for n in data["notes"]}): raise ValueError("notes")
+        except (ValueError, TypeError, KeyError, AttributeError, OverflowError) as error:
+            raise BackupError("备份内容无效或不兼容，未恢复") from error
+        result = DataSyncEngine.apply_data(data, "replace", _reason="before_restore")
+        if "schedule" in data:
+            manager = Schedule()
+            for key, value in local["schedule"].items(): setattr(manager, key, value)
+            if not manager.save(): raise BackupError("课表恢复写入失败，恢复前备份已保留")
+        if "exams" in data:
+            manager = Tasks()
+            manager.items = [t for t in manager.items if t.kind != "exam"] + native_exams
+            if not manager.save(): raise BackupError("考试恢复写入失败，恢复前备份已保留")
+        if "notes" in data:
+            manager = sync_notes_manager()
+            with manager.sync_lock:
+                manager.active_id = local["notes"]["active_id"]
+                if not manager.save(): raise BackupError("便签恢复写入失败，恢复前备份已保留")
+                manager.notify_sync()
+        return result
 
 
 class RhodesHttpHandler(http.server.BaseHTTPRequestHandler):
@@ -682,6 +707,8 @@ class RhodesHttpHandler(http.server.BaseHTTPRequestHandler):
             mode = payload.get("mode", "merge")
             try:
                 result = DataSyncEngine.apply_data(payload, mode=mode)
+            except BackupError as error:
+                return self._send_json(507, {"error": str(error)})
             except ValueError:
                 return self._send_json(400, {"error": "无效的同步数据，未应用"})
             if self.server_service.on_data_synced_callback:

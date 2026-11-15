@@ -44,12 +44,14 @@ public class NotesManager: ObservableObject {
         save()
     }
 
-    public func save() {
+    @discardableResult public func save() -> Bool {
         do {
             let data = try JSONEncoder().encode(notes)
-            try data.write(to: fileURL)
+            try data.write(to: fileURL, options: .atomic)
+            return true
         } catch {
             print("Failed to save notes.json: \(error)")
+            return false
         }
     }
 

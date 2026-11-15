@@ -11,6 +11,7 @@ from tools.run_android_sync_acceptance import fixture
 
 @pytest.fixture(autouse=True)
 def isolated_data(tmp_path, monkeypatch):
+    monkeypatch.setattr("pet.sync_backups.backup_directory", lambda: tmp_path / "backups")
     monkeypatch.setattr("pet.schedule._data_path", lambda: str(tmp_path / "schedule.json"))
     monkeypatch.setattr("pet.tasks._data_path", lambda: str(tmp_path / "tasks.json"))
     monkeypatch.setattr("pet.notes.notes_path", lambda: str(tmp_path / "notes.json"))
