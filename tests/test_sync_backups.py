@@ -65,6 +65,16 @@ def test_partial_restore_does_not_change_other_categories():
     assert contents()["exams"] == []
 
 
+def test_restore_can_return_to_unconfigured_schedule():
+    before = contents()["schedule"]
+    sync.DataSyncEngine.apply_data({"schedule": fixture()["schedule"]}, "replace")
+    backup_id = sync.DataSyncEngine.list_backups()[0]["id"]
+    assert Schedule().term_start is not None
+    sync.DataSyncEngine.restore_backup(backup_id)
+    assert contents()["schedule"] == before
+    assert Schedule().term == "" and Schedule().term_start is None
+
+
 def test_backup_failure_blocks_replacement(monkeypatch):
     seed()
     before = contents()

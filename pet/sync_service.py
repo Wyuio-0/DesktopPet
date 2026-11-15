@@ -24,7 +24,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 
 from .notes import NotesManager, Note, sync_notes_manager
 from .schedule import Schedule, Course
@@ -483,6 +483,11 @@ class DataSyncEngine:
         result = DataSyncEngine.apply_data(data, "replace", _reason="before_restore")
         if "schedule" in data:
             manager = Schedule()
+            # Schedule.save treats empty term/date as "keep existing"; restoration
+            # must also be able to return to an unconfigured schedule.
+            manager.term = data["schedule"].get("term", manager.term)
+            text = data["schedule"].get("term_start", "")
+            manager.term_start = date.fromisoformat(text) if text else None
             for key, value in local["schedule"].items(): setattr(manager, key, value)
             if not manager.save(): raise BackupError("课表恢复写入失败，恢复前备份已保留")
         if "exams" in data:
