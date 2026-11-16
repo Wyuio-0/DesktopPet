@@ -1,9 +1,9 @@
-"""课程表周视图：参考移动端架构的高级自适应周课表色块视图。
+"""课程表周视图：浅色桌面工作区中的自适应周课表色块视图。
 
 特性：
-- 星期表头：自动换算当前周的公历日期（如 9.13），“今天”呈现罗德岛蓝胶囊高亮徽章与整列光晕；
+- 星期表头：自动换算当前周的公历日期（如 9.13），“今天”使用轻量靛蓝标记；
 - 节次时间轴：显示 1..13 节次徽章与上课时刻，当前正在进行的课程节次高亮提示；
-- 现代课程卡片：Material/Arknights 色彩体系，6px 圆角卡片，彻底根治字体腰斩截断；
+- 课程卡片：高对比度分类色块、柔和网格与充足间距，保持文字清晰可读；
 - 教室地点标签：@教室 标签自动换行居中，小卡片智能适配；
 - 交互系统：悬浮高亮与手型光标、富文本 Tooltip、点击课程卡片触发详情弹窗、点击空白时段快捷添加课程。
 """
@@ -11,7 +11,7 @@
 from datetime import date, datetime, timedelta
 from PyQt5 import QtCore, QtGui, QtWidgets
 
-from . import theme
+from . import desktop_theme as apple, theme
 from .schedule import _PARITY_LABEL, WEEKDAY_NAMES
 
 RULER_W = 56         # 左侧节次/时间轴宽度
@@ -198,8 +198,8 @@ class TimetableView(QtWidgets.QWidget):
         p.setRenderHint(QtGui.QPainter.Antialiasing)
         p.setRenderHint(QtGui.QPainter.TextAntialiasing)
 
-        # 整体背景（深色极客风）
-        p.fillRect(self.rect(), QtGui.QColor(theme.BG))
+        # 清爽的系统浅色画布，课程色块继续保留高对比度。
+        p.fillRect(self.rect(), QtGui.QColor(apple.SURFACE))
 
         self._paint_today_column_glow(p)
         self._paint_grid(p)
@@ -217,7 +217,7 @@ class TimetableView(QtWidgets.QWidget):
         col_w = self._col_w()
         x = round(g.left() + self._today_col_idx * col_w)
         today_rect = QtCore.QRect(x, g.top(), round(col_w), g.height())
-        p.fillRect(today_rect, _rgba(theme.ACCENT, 12))
+        p.fillRect(today_rect, _rgba(apple.ACCENT, 12))
 
     def _paint_grid(self, p):
         """绘制网格基准线。"""
@@ -226,7 +226,7 @@ class TimetableView(QtWidgets.QWidget):
         col_w = self._col_w()
 
         # 横向分隔线
-        pen_line = QtGui.QPen(QtGui.QColor(theme.GRID), 1)
+        pen_line = QtGui.QPen(QtGui.QColor(apple.BORDER), 1)
         p.setPen(pen_line)
         for r in range(self._max_sections + 1):
             y = round(g.top() + r * row_h)
@@ -242,7 +242,7 @@ class TimetableView(QtWidgets.QWidget):
             y1 = round(g.top() + (self._current_sec - 1) * row_h)
             y2 = round(g.top() + self._current_sec * row_h)
             cur_slot_rect = QtCore.QRect(g.left(), y1, g.width(), y2 - y1)
-            p.fillRect(cur_slot_rect, _rgba(theme.ACCENT, 18))
+            p.fillRect(cur_slot_rect, _rgba(apple.ACCENT, 14))
 
     def _paint_header(self, p):
         """顶部星期表头，包含星期、公历日期以及今天胶囊高亮。"""
@@ -256,14 +256,14 @@ class TimetableView(QtWidgets.QWidget):
 
             # 今天高亮胶囊背景
             if is_today:
-                p.setBrush(QtGui.QBrush(_rgba(theme.ACCENT, 45)))
-                p.setPen(QtGui.QPen(_rgba(theme.ACCENT, 180), 1))
+                p.setBrush(QtGui.QBrush(_rgba(apple.ACCENT, 24)))
+                p.setPen(QtGui.QPen(_rgba(apple.ACCENT, 120), 1))
                 p.drawRoundedRect(header_rect, 6, 6)
 
             # 星期文字
             day_name = _DAY_LABELS[wd]
             p.setFont(QtGui.QFont(theme.FONT, 11, QtGui.QFont.Bold if is_today else QtGui.QFont.DemiBold))
-            p.setPen(QtGui.QColor(theme.ACCENT if is_today else theme.TEXT))
+            p.setPen(QtGui.QColor(apple.ACCENT if is_today else apple.TEXT))
             w_rect = QtCore.QRect(col_x, MARGIN + 4, round(col_w), 16)
             p.drawText(w_rect, QtCore.Qt.AlignCenter, day_name)
 
@@ -271,7 +271,7 @@ class TimetableView(QtWidgets.QWidget):
             date_str = self._dates[i] if i < len(self._dates) and self._dates[i] else ""
             if date_str:
                 p.setFont(QtGui.QFont(theme.FONT, 9, QtGui.QFont.Bold if is_today else QtGui.QFont.Normal))
-                p.setPen(QtGui.QColor(theme.ACCENT if is_today else theme.TEXT_MUTE))
+                p.setPen(QtGui.QColor(apple.ACCENT if is_today else apple.MUTED))
                 d_rect = QtCore.QRect(col_x, MARGIN + 22, round(col_w), 16)
                 p.drawText(d_rect, QtCore.Qt.AlignCenter, date_str)
 
@@ -282,14 +282,14 @@ class TimetableView(QtWidgets.QWidget):
                 adj = next((a for a in getattr(self._schedule, "adjustments", []) if a.get("date") == d_str), None)
                 if adj and adj.get("type") in ("suspend", "substitute"):
                     badge_text = "停课" if adj.get("type") == "suspend" else "调"
-                    badge_bg = (_rgba(theme.AMBER, 180) if adj.get("type") == "suspend"
-                                else _rgba(theme.ACCENT_BRIGHT, 180))
+                    badge_bg = (_rgba(apple.AMBER, 180) if adj.get("type") == "suspend"
+                                else _rgba(apple.ACCENT_HOVER, 180))
                     b_rect = QtCore.QRect(col_x + round(col_w) - 24, MARGIN + 4, 20, 12)
                     p.setBrush(QtGui.QBrush(badge_bg))
                     p.setPen(QtCore.Qt.NoPen)
                     p.drawRoundedRect(b_rect, 3, 3)
                     p.setFont(QtGui.QFont(theme.FONT, 7, QtGui.QFont.Bold))
-                    p.setPen(QtGui.QColor(theme.ON_ACCENT if adj.get("type") == "substitute" else "#FFFFFF"))
+                    p.setPen(QtGui.QColor(apple.ON_ACCENT))
                     p.drawText(b_rect, QtCore.Qt.AlignCenter, badge_text)
 
     def _paint_ruler(self, p):
@@ -308,13 +308,13 @@ class TimetableView(QtWidgets.QWidget):
 
             # 正在上课节次背景标记
             if is_cur:
-                p.setBrush(QtGui.QBrush(_rgba(theme.ACCENT, 60)))
-                p.setPen(QtGui.QPen(QtGui.QColor(theme.ACCENT), 1))
+                p.setBrush(QtGui.QBrush(_rgba(apple.ACCENT, 24)))
+                p.setPen(QtGui.QPen(QtGui.QColor(apple.ACCENT), 1))
                 p.drawRoundedRect(ruler_rect, 4, 4)
 
             # 节次编号 (上)
             p.setFont(QtGui.QFont(theme.FONT, 9, QtGui.QFont.Bold if is_cur else QtGui.QFont.DemiBold))
-            p.setPen(QtGui.QColor(theme.ACCENT if is_cur else theme.TEXT_DIM))
+            p.setPen(QtGui.QColor(apple.ACCENT if is_cur else apple.SECONDARY))
             sec_rect = QtCore.QRect(MARGIN, y + 2, RULER_W - 6, 14)
             p.drawText(sec_rect, QtCore.Qt.AlignCenter, str(sec))
 
@@ -322,7 +322,7 @@ class TimetableView(QtWidgets.QWidget):
             t = secs.get(str(sec), "")
             if t:
                 p.setFont(QtGui.QFont(theme.FONT, 8))
-                p.setPen(QtGui.QColor(theme.ACCENT if is_cur else theme.TEXT_MUTE))
+                p.setPen(QtGui.QColor(apple.ACCENT if is_cur else apple.MUTED))
                 time_rect = QtCore.QRect(MARGIN, y + 17, RULER_W - 6, 13)
                 p.drawText(time_rect, QtCore.Qt.AlignCenter, t)
 
@@ -352,11 +352,11 @@ class TimetableView(QtWidgets.QWidget):
             if adj and adj.get("type") == "suspend":
                 # 绘制整列停课放假卡片
                 hol_rect = QtCore.QRect(col_x + 2, round(g.top() + 2), round(col_w) - 4, round(g.height() - 4))
-                p.setBrush(QtGui.QBrush(_rgba(theme.AMBER, 18)))
-                p.setPen(QtGui.QPen(_rgba(theme.AMBER, 90), 1, QtCore.Qt.DashLine))
+                p.setBrush(QtGui.QBrush(_rgba(apple.AMBER, 18)))
+                p.setPen(QtGui.QPen(_rgba(apple.AMBER, 90), 1, QtCore.Qt.DashLine))
                 p.drawRoundedRect(hol_rect, 6, 6)
                 p.setFont(QtGui.QFont(theme.FONT, 10, QtGui.QFont.Bold))
-                p.setPen(QtGui.QColor(theme.AMBER))
+                p.setPen(QtGui.QColor(apple.AMBER))
                 reason = adj.get("reason") or "停课"
                 p.drawText(hol_rect, QtCore.Qt.AlignCenter, f"🏖️\n\n{reason}\n全天停课")
                 continue
@@ -371,8 +371,8 @@ class TimetableView(QtWidgets.QWidget):
 
                     # 空白格悬浮加号微光
                     if self._hovered_slot == (wd, sec):
-                        p.setBrush(QtGui.QBrush(_rgba(theme.TEXT, 10)))
-                        p.setPen(QtGui.QPen(QtGui.QColor(theme.ACCENT), 1, QtCore.Qt.DashLine))
+                        p.setBrush(QtGui.QBrush(_rgba(apple.ACCENT, 10)))
+                        p.setPen(QtGui.QPen(QtGui.QColor(apple.ACCENT), 1, QtCore.Qt.DashLine))
                         p.drawRoundedRect(slot_rect, 4, 4)
 
             # 绘制课程卡片（支持重叠课程水平等分并列排布，彻底杜绝互相遮挡）
@@ -440,12 +440,12 @@ class TimetableView(QtWidgets.QWidget):
 
         # 调课徽章
         if is_substitute and total_h >= 24:
-            p.setBrush(QtGui.QBrush(QtGui.QColor(theme.ACCENT_BRIGHT)))
+            p.setBrush(QtGui.QBrush(QtGui.QColor(apple.ACCENT_HOVER)))
             p.setPen(QtCore.Qt.NoPen)
             tag_rect = QtCore.QRect(inner.right() - 16, inner.top(), 16, 11)
             p.drawRoundedRect(tag_rect, 2, 2)
             p.setFont(QtGui.QFont(theme.FONT, 7, QtGui.QFont.Bold))
-            p.setPen(QtGui.QColor(theme.ON_ACCENT))
+            p.setPen(QtGui.QColor(apple.ON_ACCENT))
             p.drawText(tag_rect, QtCore.Qt.AlignCenter, "调")
 
         # 自定义时间标记 (如 📌15:00-17:00)
@@ -453,7 +453,7 @@ class TimetableView(QtWidgets.QWidget):
         top_offset = 0
         if custom_time and total_h >= 45:
             p.setFont(QtGui.QFont(theme.FONT, 7, QtGui.QFont.Bold))
-            p.setPen(QtGui.QColor(theme.AMBER))
+            p.setPen(QtGui.QColor(apple.AMBER_ON_CARD))
             rfm = QtGui.QFontMetrics(p.font())
             time_text = rfm.elidedText("📌" + custom_time, QtCore.Qt.ElideRight, inner.width())
             time_rect = QtCore.QRect(inner.left(), inner.top(), inner.width(), 13)
@@ -489,7 +489,7 @@ class TimetableView(QtWidgets.QWidget):
         if has_room and total_h >= 45:
             room_text = f"@{c.room}"
             p.setFont(QtGui.QFont(theme.FONT, 8 if inner.width() >= 50 else 7, QtGui.QFont.Normal))
-            p.setPen(_rgba(theme.TEXT, 220))
+            p.setPen(_rgba("#FFFFFF", 220))
             rfm = QtGui.QFontMetrics(p.font())
             elided_room = rfm.elidedText(room_text, QtCore.Qt.ElideRight, inner.width())
 
@@ -505,14 +505,14 @@ class TimetableView(QtWidgets.QWidget):
             ts = getattr(self._schedule, "term_start", None)
             head = "学期尚未开始" + (f"（{ts.isoformat()} 开学）" if ts else "")
             p.setFont(QtGui.QFont(theme.FONT, 10, QtGui.QFont.Bold))
-            p.setPen(QtGui.QColor(theme.ACCENT_BRIGHT))
+            p.setPen(QtGui.QColor(apple.ACCENT))
             p.drawText(QtCore.QRect(MARGIN, y, self.width() - 2 * MARGIN, 20),
                        QtCore.Qt.AlignLeft,
                        f"⚠ {head} —— 以下为第 {self._eff_week} 周课表预览")
             y += 20
         if self._notes:
             p.setFont(QtGui.QFont(theme.FONT, 9))
-            p.setPen(QtGui.QColor(theme.FLOAT_TEXT_DIM))
+            p.setPen(QtGui.QColor(apple.SECONDARY))
             p.drawText(QtCore.QRect(MARGIN, y, self.width() - 2 * MARGIN, 20),
                        QtCore.Qt.AlignLeft,
                        "网课说明：" + "；".join(self._notes))
@@ -603,7 +603,7 @@ class TimetableView(QtWidgets.QWidget):
 
         tip_html = f"""
         <div style="font-family:'Microsoft YaHei UI'; padding:4px;">
-            <b style="font-size:{theme.FS_SM}px; color:{theme.ACCENT};">{c.name}</b><br/>
+            <b style="font-size:{theme.FS_SM}px; color:{apple.ACCENT};">{c.name}</b><br/>
             <span>⏰ 时间：{wd_str} 第 {c.sec_start}-{c.sec_end} 节{time_str}</span><br/>
             <span>📅 周次：第 {c.week_start}-{c.week_end} 周 ({parity_str})</span><br/>
             <span>📍 教室：{c.room or '未指定'}</span><br/>
@@ -611,3 +611,4 @@ class TimetableView(QtWidgets.QWidget):
         </div>
         """
         QtWidgets.QToolTip.showText(QtGui.QCursor.pos(), tip_html, self)
+

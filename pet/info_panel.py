@@ -12,7 +12,7 @@ import html as _html
 
 from PyQt5 import QtCore, QtGui, QtWidgets
 
-from . import theme
+from . import desktop_theme as apple, theme
 from .schedule import _PARITY_LABEL
 from .timetable import TimetableView
 
@@ -30,7 +30,7 @@ def _day_head(name):
     """Markdown 风格的「标题行」（强调色加粗）。"""
     return ('<p style="margin:12px 0 2px 0;color:%s;font-size:%dpx;'
             'font-weight:700;">%s</p>'
-            % (theme.ACCENT_BRIGHT, theme.FS_XL, _esc(name)))
+            % (apple.ACCENT, theme.FS_XL, _esc(name)))
 
 
 def _badge(text, color, *, tint="18", bold=False):
@@ -67,7 +67,7 @@ def _today_card_html(c, sched, now, week_no):
 
     # 判定课程状态 (进行中 / 即将开始 / 已结束)
     cur_mins = now.hour * 60 + now.minute
-    status_badge = _badge("已结束", theme.TEXT_DIM)
+    status_badge = _badge("已结束", apple.SECONDARY)
     if a and ":" in a:
         try:
             parts = a.split(":")
@@ -77,17 +77,17 @@ def _today_card_html(c, sched, now, week_no):
                 eparts = b.split(":")
                 end_m = int(eparts[0]) * 60 + int(eparts[1]) + 45
             if cur_mins < start_m:
-                status_badge = _badge("待上课", theme.ACCENT)
+                status_badge = _badge("待上课", apple.ACCENT)
             elif start_m <= cur_mins <= end_m:
-                status_badge = _badge("● 正在进行中", theme.GREEN, tint="22",
+                status_badge = _badge("● 正在进行中", apple.GREEN, tint="12",
                                       bold=True)
         except Exception:
             pass
 
-    room_str = f"📍 {_esc(c.room)}" if c.room else "📍 教室待定"
-    teacher_str = f"👤 {_esc(c.teacher)}" if c.teacher else ""
+    room_str = f"地点：{_esc(c.room)}" if c.room else "地点待定"
+    teacher_str = f"教师：{_esc(c.teacher)}" if c.teacher else ""
     parity_str = {"all": "", "odd": " (仅单周)", "even": " (仅双周)"}.get(c.parity, "")
-    weeks_str = f"📅 第 {c.week_start}-{c.week_end} 周{parity_str}"
+    weeks_str = f"第 {c.week_start}-{c.week_end} 周{parity_str}"
 
     meta_parts = [room_str]
     if teacher_str:
@@ -96,17 +96,17 @@ def _today_card_html(c, sched, now, week_no):
     meta_line = " &nbsp;·&nbsp; ".join(meta_parts)
 
     return f"""
-    <div style="background:{theme.FIELD}; border:1px solid {theme.GRID};
-                border-radius:{theme.R_MD}px; padding:{theme.SP_3}px {theme.SP_4}px;
+        <div style="background:{apple.SURFACE}; border:1px solid {apple.BORDER};
+                border-radius:12px; padding:{theme.SP_4}px {theme.SP_5}px;
                 margin:{theme.SP_2}px 0;">
         <table width="100%" border="0" cellpadding="0" cellspacing="0">
             <tr>
-                <td align="left"><span style="color:{theme.ACCENT}; font-weight:bold; font-size:{theme.FS_SM}px;">{secs} {time_str}</span></td>
+                <td align="left"><span style="color:{apple.ACCENT}; font-weight:600; font-size:{theme.FS_SM}px;">{secs} {time_str}</span></td>
                 <td align="right">{status_badge}</td>
             </tr>
         </table>
-        <div style="color:{theme.TEXT}; font-size:{theme.FS_MD}px; font-weight:bold; margin:6px 0;">{_esc(c.name)}</div>
-        <div style="color:{theme.TEXT_DIM}; font-size:{theme.FS_XS}px;">{meta_line}</div>
+        <div style="color:{apple.TEXT}; font-size:{theme.FS_LG}px; font-weight:600; margin:8px 0;">{_esc(c.name)}</div>
+        <div style="color:{apple.SECONDARY}; font-size:{theme.FS_XS}px;">{meta_line}</div>
     </div>
     """
 
@@ -120,18 +120,18 @@ def _schedule_html(which, sched, week_no):
         if not courses:
             return f"""
             <div style="text-align:center; padding:50px 20px;">
-                <div style="font-size:{theme.FS_HERO}px; margin-bottom:{theme.SP_3}px;">☕</div>
-                <div style="color:{theme.TEXT}; font-size:{theme.FS_LG}px; font-weight:bold; margin-bottom:{theme.SP_2}px;">今日无课 · 自由自习</div>
-                <div style="color:{theme.TEXT_DIM}; font-size:{theme.FS_SM}px; line-height:1.6;">
+            <div style="color:{apple.ACCENT}; font-size:{theme.FS_2XL}px; font-weight:600; margin-bottom:{theme.SP_3}px;">今天</div>
+            <div style="color:{apple.TEXT}; font-size:{theme.FS_LG}px; font-weight:600; margin-bottom:{theme.SP_2}px;">今日无课 · 自由自习</div>
+            <div style="color:{apple.SECONDARY}; font-size:{theme.FS_SM}px; line-height:1.6;">
                     今天 ({today_date_str}) 没有排课，博士可以好好休息或自习备考~<br/>
-                    点击上方「<b>📅 本周课表</b>」可浏览全周日程，或点击「<b>+ 录入课程</b>」手动添加。
+                    点击上方「<b>本周课表</b>」可浏览全周日程，或点击「<b>+ 录入课程</b>」手动添加。
                 </div>
             </div>
             """
         head = f"""
         <div style="margin-bottom:{theme.SP_3}px;">
-            <span style="font-size:{theme.FS_LG}px; font-weight:bold; color:{theme.TEXT};">今日日程</span>
-            <span style="font-size:{theme.FS_SM}px; color:{theme.ACCENT}; margin-left:{theme.SP_2}px;">{today_date_str} · 共 {len(courses)} 门课程</span>
+            <span style="font-size:{theme.FS_LG}px; font-weight:600; color:{apple.TEXT};">今日日程</span>
+            <span style="font-size:{theme.FS_SM}px; color:{apple.SECONDARY}; margin-left:{theme.SP_2}px;">{today_date_str} · 共 {len(courses)} 门课程</span>
         </div>
         """
         cards = "".join(_today_card_html(c, sched, now, week_no) for c in courses)
@@ -142,130 +142,163 @@ def _schedule_html(which, sched, week_no):
     if not nxt:
         return f"""
         <div style="text-align:center; padding:50px 20px;">
-            <div style="font-size:{theme.FS_HERO}px; margin-bottom:{theme.SP_3}px;">🎉</div>
-            <div style="color:{theme.TEXT}; font-size:{theme.FS_LG}px; font-weight:bold; margin-bottom:{theme.SP_2}px;">本周没有剩余课程了</div>
-            <div style="color:{theme.TEXT_DIM}; font-size:{theme.FS_SM}px;">博士可以好好享受空闲时光！</div>
+            <div style="color:{apple.GREEN}; font-size:{theme.FS_2XL}px; font-weight:600; margin-bottom:{theme.SP_3}px;">轻松一点</div>
+            <div style="color:{apple.TEXT}; font-size:{theme.FS_LG}px; font-weight:600; margin-bottom:{theme.SP_2}px;">本周没有剩余课程</div>
+            <div style="color:{apple.SECONDARY}; font-size:{theme.FS_SM}px;">博士可以好好享受空闲时光！</div>
         </div>
         """
     c, weekday, _, start = nxt
     mins = max(0, int((start - now).total_seconds() // 60))
     time_badge = f"{mins} 分钟后" if mins > 0 else "即将开始"
-    where = f"📍 {_esc(c.room)}" if c.room else "📍 教室待定"
-    teacher = f"👤 {_esc(c.teacher)}" if c.teacher else ""
+    where = f"地点：{_esc(c.room)}" if c.room else "地点待定"
+    teacher = f"教师：{_esc(c.teacher)}" if c.teacher else ""
     meta_line = " &nbsp;·&nbsp; ".join(x for x in [where, teacher, f"周{_DAY_LABELS.get(weekday, '')} 第 {c.sec_start}-{c.sec_end} 节"] if x)
 
     return f"""
     <div style="margin-bottom:{theme.SP_4}px;">
-        <span style="font-size:{theme.FS_LG}px; font-weight:bold; color:{theme.TEXT};">下一节课安排</span>
+        <span style="font-size:{theme.FS_LG}px; font-weight:600; color:{apple.TEXT};">下一节课安排</span>
     </div>
-    <div style="background:{theme.FIELD}; border:1px solid {theme.ACCENT};
-                border-radius:{theme.R_MD}px; padding:{theme.SP_5}px {theme.SP_5}px;">
+    <div style="background:{apple.SURFACE}; border:1px solid {apple.BORDER};
+                border-radius:12px; padding:{theme.SP_5}px {theme.SP_5}px;">
         <table width="100%" border="0" cellpadding="0" cellspacing="0">
             <tr>
-                <td align="left"><span style="color:{theme.ACCENT}; font-size:{theme.FS_SM}px; font-weight:bold;">🕒 开课时刻：{start.strftime('%H:%M')}</span></td>
-                <td align="right">{_badge("距离上课 " + time_badge, theme.AMBER, tint="20", bold=True)}</td>
+                <td align="left"><span style="color:{apple.ACCENT}; font-size:{theme.FS_SM}px; font-weight:600;">开课时刻：{start.strftime('%H:%M')}</span></td>
+                <td align="right">{_badge("距离上课 " + time_badge, apple.AMBER, tint="12", bold=True)}</td>
             </tr>
         </table>
-        <div style="color:{theme.TEXT}; font-size:{theme.FS_XL}px; font-weight:bold; margin:10px 0;">{_esc(c.name)}</div>
-        <div style="color:{theme.TEXT_DIM}; font-size:{theme.FS_SM}px;">{meta_line}</div>
+        <div style="color:{apple.TEXT}; font-size:{theme.FS_XL}px; font-weight:600; margin:10px 0;">{_esc(c.name)}</div>
+        <div style="color:{apple.SECONDARY}; font-size:{theme.FS_SM}px;">{meta_line}</div>
     </div>
     """
 
 
 _QSS = """
-QWidget#PanelRoot { background:%(bg)s; color:%(text)s; }
-QWidget#TitleBar { background:%(panel)s; }
-QLabel#TitleText { color:%(accent_bright)s; font-size:%(fs_xl)dpx; font-weight:700; }
-QLabel#TitleSub { color:%(dim)s; font-size:%(fs_sm)dpx; }
-QPushButton#CloseBtn, QPushButton#MaxBtn { color:%(dim)s; border:none; font-size:%(fs_xl)dpx; }
-QPushButton#CloseBtn:hover, QPushButton#MaxBtn:hover { color:%(accent)s; }
+QWidget#PanelRoot {
+    background:%(bg)s; color:%(text)s; font-family:%(font)s; font-size:%(fs_sm)dpx;
+}
+QWidget#TitleBar { background:%(surface)s; border-bottom:1px solid %(border)s; }
+QLabel#BrandMark {
+    background:%(accent)s; color:%(on_accent)s; border-radius:10px;
+    font-size:14px; font-weight:700;
+}
+QLabel#TitleText { color:%(text)s; font-size:16px; font-weight:600; }
+QLabel#TitleSub { color:%(dim)s; font-size:%(fs_xs)dpx; }
+QPushButton#CloseBtn, QPushButton#MaxBtn {
+    background:transparent; color:%(dim)s; border:none; border-radius:9px;
+    font-size:18px; min-width:34px; min-height:34px; padding:0;
+}
+QPushButton#CloseBtn:hover, QPushButton#MaxBtn:hover {
+    background:%(hover)s; color:%(text)s;
+}
+QFrame#Sidebar { background:%(sidebar)s; border:none; border-radius:14px; }
+QLabel#SidebarHeading { color:%(dim)s; font-size:%(fs_xs)dpx; font-weight:600; padding:4px 8px; }
+QLabel#SidebarFooter { color:%(mute)s; font-size:%(fs_xs)dpx; padding:10px 8px 4px 8px; }
+QFrame#ContentSurface {
+    background:%(surface)s; border:1px solid %(border)s; border-radius:16px;
+}
+QLabel#PageTitle { color:%(text)s; font-size:%(fs_2xl)dpx; font-weight:600; }
+QLabel#PageSubtitle { color:%(dim)s; font-size:%(fs_sm)dpx; }
+QFrame#PageDivider { background:%(border)s; border:none; max-height:1px; }
 QListWidget#Nav {
-    background:%(field)s; border:none; font-size:%(fs_lg)dpx; padding-top:10px;
+    background:transparent; border:none; font-size:%(fs_sm)dpx; padding-top:4px;
 }
 QListWidget#Nav::item {
-    padding:%(sp_3)dpx %(sp_4)dpx; border-radius:%(r_sm)dpx; margin:2px %(sp_2)dpx;
+    min-height:22px; padding:9px 10px; border-radius:9px; margin:2px 0;
 }
 QListWidget#Nav::item:selected {
-    background:%(select_bg)s; color:%(accent_bright)s;
+    background:%(select_bg)s; color:%(accent)s; font-weight:600;
+}
+QListWidget#Nav::item:hover:!selected {
+    background:%(hover)s;
 }
 QTextBrowser, QPlainTextEdit {
-    background:%(field)s; color:%(text)s; border:1px solid %(grid)s;
-    border-radius:%(r_md)dpx; font-size:%(fs_lg)dpx; padding:10px; line-height:1.5;
+    background:%(surface)s; color:%(text)s; border:1px solid %(border)s;
+    border-radius:10px; font-size:%(fs_md)dpx; padding:12px;
 }
+QPlainTextEdit:focus { border:1px solid %(accent)s; }
 QTableWidget {
-    background:%(field)s; color:%(text)s; border:1px solid %(grid)s;
-    gridline-color:%(grid)s; font-size:%(fs_md)dpx;
-    selection-background-color:%(select_bg)s;
+    background:%(surface)s; alternate-background-color:%(field)s;
+    color:%(text)s; border:none; gridline-color:%(border)s;
+    font-size:%(fs_sm)dpx; selection-background-color:%(select_bg)s;
+    selection-color:%(text)s; outline:0;
 }
+QTableWidget::item { padding:7px 8px; border-bottom:1px solid %(border)s; }
+QHeaderView { background:%(field)s; border:none; }
 QHeaderView::section {
-    background:%(panel)s; color:%(dim)s; border:none;
-    padding:%(sp_2)dpx; font-size:%(fs_md)dpx;
+    background:%(field)s; color:%(dim)s; border:none;
+    border-bottom:1px solid %(border)s; padding:10px 8px;
+    font-size:%(fs_xs)dpx; font-weight:600;
 }
+QScrollArea { background:transparent; border:none; }
+QScrollBar:vertical { background:transparent; width:9px; margin:3px 2px; }
+QScrollBar::handle:vertical { background:%(scroll)s; border-radius:4px; min-height:28px; }
+QScrollBar::handle:vertical:hover { background:%(dim)s; }
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height:0; }
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background:transparent; }
 QPushButton {
-    background:%(field)s; color:%(text)s; border:1px solid %(grid)s;
-    border-radius:%(r_sm)dpx; padding:6px %(sp_3)dpx; font-size:%(fs_sm)dpx;
+    background:%(field)s; color:%(text)s; border:1px solid %(border)s;
+    border-radius:9px; padding:0 13px; min-height:34px; font-size:%(fs_sm)dpx;
 }
-QPushButton:hover { background:%(hover)s; border-color:%(accent)s; }
+QPushButton:hover { background:%(hover)s; border-color:%(border_strong)s; }
 QPushButton:pressed { background:%(pressed)s; }
-QPushButton:disabled { color:%(mute)s; }
+QPushButton:disabled { color:%(mute)s; background:%(field)s; border-color:%(border)s; }
 QPushButton#PrimaryBtn {
     background:%(accent)s; color:%(on_accent)s;
-    border:1px solid %(accent)s; font-weight:bold;
+    border:1px solid %(accent)s; font-weight:600;
 }
-QPushButton#PrimaryBtn:hover {
-    background:%(accent_bright)s; border-color:%(accent_bright)s;
-}
-QPushButton#PrimaryBtn:pressed { background:%(accent_deep)s; color:#FFFFFF; }
+QPushButton#PrimaryBtn:hover { background:%(accent_hover)s; border-color:%(accent_hover)s; }
+QPushButton#PrimaryBtn:pressed { background:%(accent_deep)s; }
 QPushButton#ActionBtn {
-    background:%(field_hi)s; color:%(accent)s;
-    border:1px solid %(accent)s; font-weight:500;
+    background:%(select_bg)s; color:%(accent)s;
+    border:1px solid transparent; font-weight:600;
 }
-QPushButton#ActionBtn:hover { background:%(accent)s; color:%(on_accent)s; }
+QPushButton#ActionBtn:hover { background:%(hover)s; border-color:%(border_strong)s; }
+QPushButton#WeekStartBtn { background:%(field)s; color:%(dim)s; }
+QToolTip { background:%(text)s; color:%(surface)s; border:none; padding:6px 8px; }
 """ % {
-    "bg": theme.DLG_BG, "panel": theme.PANEL_SOLID,
-    "field": theme.FLOAT_FIELD, "field_hi": theme.FIELD_DARK,
-    "grid": theme.FLOAT_GRID, "text": theme.FLOAT_TEXT,
-    "dim": theme.FLOAT_TEXT_DIM, "mute": theme.TEXT_MUTE,
-    "accent": theme.ACCENT, "accent_bright": theme.ACCENT_BRIGHT,
-    "accent_deep": theme.ACCENT_DEEP, "on_accent": theme.ON_ACCENT,
-    "select_bg": theme.FLOAT_SELECT_BG,
-    "hover": theme.DLG_HOVER, "pressed": theme.DLG_PRESSED,
+    "bg": apple.BG, "surface": apple.SURFACE, "sidebar": apple.SIDEBAR,
+    "field": apple.FIELD, "border": apple.BORDER,
+    "border_strong": apple.BORDER_STRONG, "scroll": apple.BORDER_STRONG,
+    "text": apple.TEXT, "dim": apple.SECONDARY, "mute": apple.MUTED,
+    "accent": apple.ACCENT, "accent_hover": apple.ACCENT_HOVER,
+    "accent_deep": apple.ACCENT_DEEP, "on_accent": apple.ON_ACCENT,
+    "select_bg": apple.SELECT_BG, "hover": apple.HOVER,
+    "pressed": apple.PRESSED, "font": apple.FONT,
+    "fs_xs": theme.FS_XS,
     "fs_sm": theme.FS_SM, "fs_md": theme.FS_MD,
-    "fs_lg": theme.FS_LG, "fs_xl": theme.FS_XL,
-    "r_sm": theme.R_SM, "r_md": theme.R_MD,
-    "sp_2": theme.SP_2, "sp_3": theme.SP_3, "sp_4": theme.SP_4,
+    "fs_2xl": theme.FS_2XL,
 }
 
 
 # ── Fragments for widgets styled outside _QSS ────────────────────────────
 # The knowledge-base tab styles most of its widgets individually; these were
 # all literal cyan/slate before.
-_S_SUNK = ("background: %s; border: 1px solid %s; border-radius: %dpx;"
-           % (theme.BG, theme.GRID, theme.R_MD))
+_S_SUNK = ("background: %s; border: 1px solid %s; border-radius: 10px;"
+           % (apple.FIELD, apple.BORDER))
 _S_ACCENT_LABEL = ("color: %s; font-size: %dpx; font-weight: bold;"
-                   % (theme.ACCENT, theme.FS_MD))
+                   % (apple.ACCENT, theme.FS_MD))
 _S_DIM_LABEL = ("color: %s; font-size: %dpx; font-weight: bold;"
-                % (theme.TEXT_DIM, theme.FS_SM))
-_S_MUTE_TIP = "color: %s; font-size: %dpx;" % (theme.TEXT_MUTE, theme.FS_XS)
+                % (apple.SECONDARY, theme.FS_SM))
+_S_MUTE_TIP = "color: %s; font-size: %dpx;" % (apple.MUTED, theme.FS_XS)
 _S_BTN_PRIMARY = (
-    "QPushButton{background:%s;color:%s;font-weight:bold;padding:6px %dpx;"
-    "border-radius:%dpx;}"
+    "QPushButton{background:%s;color:%s;font-weight:600;padding:0 %dpx;"
+    "min-height:36px;border-radius:9px;border:1px solid %s;}"
     "QPushButton:hover{background:%s;}"
     "QPushButton:pressed{background:%s;color:#FFFFFF;}"
-    % (theme.ACCENT, theme.ON_ACCENT, theme.SP_4, theme.R_SM,
-       theme.ACCENT_BRIGHT, theme.ACCENT_DEEP))
+    % (apple.ACCENT, apple.ON_ACCENT, theme.SP_4, apple.ACCENT,
+       apple.ACCENT_HOVER, apple.ACCENT_DEEP))
 _S_BTN_SECONDARY = (
-    "QPushButton{background:%s;color:%s;border:1px solid %s;padding:6px %dpx;"
-    "border-radius:%dpx;}"
+    "QPushButton{background:%s;color:%s;border:1px solid %s;padding:0 %dpx;"
+    "min-height:34px;border-radius:9px;}"
     "QPushButton:hover{background:%s;border-color:%s;}"
-    % (theme.FIELD, theme.TEXT, theme.GRID, theme.SP_3, theme.R_SM,
-       theme.FIELD_DARK, theme.ACCENT))
+    % (apple.FIELD, apple.TEXT, apple.BORDER, theme.SP_3,
+       apple.HOVER, apple.BORDER_STRONG))
 _S_COMBO = (
     "QComboBox{background:%s;color:%s;border:1px solid %s;padding:5px %dpx;"
-    "border-radius:%dpx;font-size:%dpx;min-width:180px;}"
+    "border-radius:8px;font-size:%dpx;min-width:180px;}"
     "QComboBox:focus{border:1px solid %s;}"
-    % (theme.FIELD, theme.TEXT, theme.GRID, theme.SP_3, theme.R_SM,
-       theme.FS_SM, theme.ACCENT))
+    % (apple.FIELD, apple.TEXT, apple.BORDER, theme.SP_3,
+       theme.FS_SM, apple.ACCENT))
 
 
 def _s_pill(color):
@@ -274,7 +307,7 @@ def _s_pill(color):
             "padding:3px %dpx;border-radius:%dpx;font-size:%dpx;}"
             "QPushButton:hover{background:%s;color:%s;}"
             % (_tint(color, "16"), color, color, theme.SP_2, theme.R_SM,
-               theme.FS_XS, color, theme.ON_ACCENT))
+               theme.FS_XS, color, apple.ON_ACCENT))
 
 
 class InfoPanel(QtWidgets.QWidget):
@@ -284,14 +317,14 @@ class InfoPanel(QtWidgets.QWidget):
         super().__init__(None)
         self.owner = owner          # PetWindow（数据源：schedule / tasks）
         self._drag = None
-        self.setWindowTitle("信息面板")
+        self.setWindowTitle("阿米娅桌面助手")
         self.setWindowFlags(
             QtCore.Qt.Window
             | QtCore.Qt.WindowStaysOnTopHint
             | QtCore.Qt.Tool
         )
-        self.setMinimumSize(780, 520)
-        self.resize(860, 580)
+        self.setMinimumSize(960, 640)
+        self.resize(1160, 760)
         self.setAcceptDrops(True)
         self.setStyleSheet(_QSS)
         self.setObjectName("PanelRoot")
@@ -308,70 +341,123 @@ class InfoPanel(QtWidgets.QWidget):
         root.setContentsMargins(0, 0, 0, 0)
         root.setSpacing(0)
 
-        # 自定义标题栏（可拖动）
+        # 简洁标题栏：品牌标识、窗口名称与系统式窗口操作。
         bar = QtWidgets.QWidget(self)
         bar.setObjectName("TitleBar")
-        bar.setFixedHeight(48)
+        bar.setFixedHeight(62)
         bar_layout = QtWidgets.QHBoxLayout(bar)
-        bar_layout.setContentsMargins(16, 0, 8, 0)
-        title = QtWidgets.QLabel("信息面板", bar)
-        title.setObjectName("TitleText")
-        sub = QtWidgets.QLabel("RHODES ISLAND · DESKTOP", bar)
-        sub.setObjectName("TitleSub")
+        bar_layout.setContentsMargins(22, 0, 16, 0)
+        bar_layout.setSpacing(10)
 
-        self.btn_max = QtWidgets.QPushButton("🗖", bar)
+        brand = QtWidgets.QLabel("A", bar)
+        brand.setObjectName("BrandMark")
+        brand.setAlignment(QtCore.Qt.AlignCenter)
+        brand.setFixedSize(34, 34)
+        bar_layout.addWidget(brand)
+
+        title_group = QtWidgets.QWidget(bar)
+        title_group_layout = QtWidgets.QVBoxLayout(title_group)
+        title_group_layout.setContentsMargins(0, 0, 0, 0)
+        title_group_layout.setSpacing(1)
+        title = QtWidgets.QLabel("阿米娅桌面助手", title_group)
+        title.setObjectName("TitleText")
+        sub = QtWidgets.QLabel("学习与日常安排", title_group)
+        sub.setObjectName("TitleSub")
+        title_group_layout.addWidget(title)
+        title_group_layout.addWidget(sub)
+        bar_layout.addWidget(title_group)
+        bar_layout.addStretch(1)
+
+        self.btn_max = QtWidgets.QPushButton("□", bar)
         self.btn_max.setObjectName("MaxBtn")
-        self.btn_max.setFixedSize(36, 36)
+        self.btn_max.setFixedSize(34, 34)
+        self.btn_max.setToolTip("最大化")
         self.btn_max.setCursor(QtCore.Qt.PointingHandCursor)
         self.btn_max.clicked.connect(self._toggle_maximize)
 
-        close = QtWidgets.QPushButton("✕", bar)
+        close = QtWidgets.QPushButton("×", bar)
         close.setObjectName("CloseBtn")
-        close.setFixedSize(36, 36)
+        close.setFixedSize(34, 34)
+        close.setToolTip("关闭")
         close.setCursor(QtCore.Qt.PointingHandCursor)
         close.clicked.connect(self.hide)
 
-        bar_layout.addWidget(title)
-        bar_layout.addSpacing(10)
-        bar_layout.addWidget(sub)
-        bar_layout.addStretch(1)
         bar_layout.addWidget(self.btn_max)
         bar_layout.addWidget(close)
         root.addWidget(bar)
 
         body = QtWidgets.QHBoxLayout()
-        body.setContentsMargins(10, 10, 10, 10)
-        body.setSpacing(10)
+        body.setContentsMargins(18, 16, 18, 18)
+        body.setSpacing(16)
         root.addLayout(body, 1)
 
-        # 左侧导航
-        self.nav = QtWidgets.QListWidget(self)
-        self.nav.setObjectName("Nav")
-        self.nav.setFixedWidth(150)
-        self.nav.addItem("课程表")
-        self.nav.addItem("待办与考试")
-        self.nav.addItem("OCR 结果")
-        self.nav.addItem("课程知识库")
-        self.nav.currentRowChanged.connect(self._switch_page)
-        body.addWidget(self.nav)
+        # 轻量侧边栏，导航项保留原有页面顺序与信号行为。
+        sidebar = QtWidgets.QFrame(self)
+        sidebar.setObjectName("Sidebar")
+        sidebar.setFixedWidth(194)
+        sidebar_layout = QtWidgets.QVBoxLayout(sidebar)
+        sidebar_layout.setContentsMargins(12, 14, 12, 12)
+        sidebar_layout.setSpacing(6)
+        sidebar_heading = QtWidgets.QLabel("工作区", sidebar)
+        sidebar_heading.setObjectName("SidebarHeading")
+        sidebar_layout.addWidget(sidebar_heading)
 
-        # 右侧页面
-        self.stack = QtWidgets.QStackedWidget(self)
+        self.nav = QtWidgets.QListWidget(sidebar)
+        self.nav.setObjectName("Nav")
+        self.nav.setSpacing(3)
+        self.nav.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarAlwaysOff)
+        self.nav.addItems(("▦   课程表", "✓   待办与考试", "⌕   OCR 结果", "▤   课程知识库"))
+        self.nav.currentRowChanged.connect(self._switch_page)
+        sidebar_layout.addWidget(self.nav, 1)
+
+        sidebar_footer = QtWidgets.QLabel("罗德岛 · 学习空间", sidebar)
+        sidebar_footer.setObjectName("SidebarFooter")
+        sidebar_layout.addWidget(sidebar_footer)
+        body.addWidget(sidebar)
+
+        # 页面置于白色内容面板内，标题、副标题在切换时保持一致。
+        content = QtWidgets.QFrame(self)
+        content.setObjectName("ContentSurface")
+        content_layout = QtWidgets.QVBoxLayout(content)
+        content_layout.setContentsMargins(24, 20, 24, 22)
+        content_layout.setSpacing(12)
+
+        page_heading = QtWidgets.QVBoxLayout()
+        page_heading.setContentsMargins(0, 0, 0, 0)
+        page_heading.setSpacing(4)
+        self.page_title = QtWidgets.QLabel("课程表", content)
+        self.page_title.setObjectName("PageTitle")
+        self.page_subtitle = QtWidgets.QLabel("查看每周安排，轻松规划学习节奏。", content)
+        self.page_subtitle.setObjectName("PageSubtitle")
+        page_heading.addWidget(self.page_title)
+        page_heading.addWidget(self.page_subtitle)
+        content_layout.addLayout(page_heading)
+
+        divider = QtWidgets.QFrame(content)
+        divider.setObjectName("PageDivider")
+        divider.setFrameShape(QtWidgets.QFrame.HLine)
+        content_layout.addWidget(divider)
+
+        self.stack = QtWidgets.QStackedWidget(content)
+        self.stack.setObjectName("PageStack")
         self.stack.addWidget(self._build_schedule_page())
         self.stack.addWidget(self._build_tasks_page())
         self.stack.addWidget(self._build_ocr_page())
         self.stack.addWidget(self._build_knowledge_page())
-        body.addWidget(self.stack, 1)
+        content_layout.addWidget(self.stack, 1)
+        body.addWidget(content, 1)
 
         self.nav.setCurrentRow(0)
 
     def _toggle_maximize(self):
         if self.isMaximized():
             self.showNormal()
-            self.btn_max.setText("🗖")
+            self.btn_max.setText("□")
+            self.btn_max.setToolTip("最大化")
         else:
             self.showMaximized()
-            self.btn_max.setText("🗗")
+            self.btn_max.setText("❐")
+            self.btn_max.setToolTip("还原")
 
     def _build_schedule_page(self):
         page = QtWidgets.QWidget(self)
@@ -396,11 +482,11 @@ class InfoPanel(QtWidgets.QWidget):
         self.btn_add_course.setObjectName("ActionBtn")
         self.btn_add_course.clicked.connect(lambda: self._on_empty_slot_clicked(1, 1))
 
-        self.btn_import_schedule = QtWidgets.QPushButton("📥 导入", page)
+        self.btn_import_schedule = QtWidgets.QPushButton("导入课表", page)
         self.btn_import_schedule.setObjectName("ActionBtn")
         self.btn_import_schedule.clicked.connect(self._on_import_schedule)
 
-        self.btn_ai_analysis = QtWidgets.QPushButton("✨ 学情分析", page)
+        self.btn_ai_analysis = QtWidgets.QPushButton("学情分析", page)
         self.btn_ai_analysis.setObjectName("PrimaryBtn")
         self.btn_ai_analysis.clicked.connect(self._on_ai_schedule_analysis)
 
@@ -414,12 +500,12 @@ class InfoPanel(QtWidgets.QWidget):
         self._max_week = 20
         nav = QtWidgets.QHBoxLayout()
         nav.setSpacing(10)
-        self.btn_prev_week = QtWidgets.QPushButton("◀ 上一周", page)
+        self.btn_prev_week = QtWidgets.QPushButton("‹ 上一周", page)
         self.week_label = QtWidgets.QLabel("第 1 周", page)
         self.week_label.setAlignment(QtCore.Qt.AlignCenter)
         self.week_label.setStyleSheet(_S_ACCENT_LABEL)
         self.btn_cur_week = QtWidgets.QPushButton("回到本周", page)
-        self.btn_next_week = QtWidgets.QPushButton("下一周 ▶", page)
+        self.btn_next_week = QtWidgets.QPushButton("下一周 ›", page)
         self.btn_week_start = QtWidgets.QPushButton(page)
         self.btn_week_start.setObjectName("WeekStartBtn")
         self.btn_week_start.setToolTip("切换周课表起始日：周日 / 周一")
@@ -453,7 +539,8 @@ class InfoPanel(QtWidgets.QWidget):
         self.timetable_area.setFrameShape(QtWidgets.QFrame.NoFrame)
         self.timetable_area.setStyleSheet(
             "QScrollArea{background:%s;border:none;}"
-            "QScrollArea>QWidget>QWidget{background:%s;}" % (theme.BG, theme.BG))
+            "QScrollArea>QWidget>QWidget{background:%s;}"
+            % (apple.SURFACE, apple.SURFACE))
         self.sched_stack = QtWidgets.QStackedWidget(page)
         self.sched_stack.addWidget(self.timetable_area)  # 0: 本周（色块）
         self.sched_stack.addWidget(self.sched_view)      # 1: 今天 / 下一节
@@ -465,10 +552,6 @@ class InfoPanel(QtWidgets.QWidget):
         lay = QtWidgets.QVBoxLayout(page)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(8)
-
-        tip = QtWidgets.QLabel("双击任务可标记完成；选中后可用下方按钮操作。", page)
-        tip.setStyleSheet("color:%s;font-size:%dpx;" % (theme.FLOAT_TEXT_DIM, theme.FS_MD))
-        lay.addWidget(tip)
 
         self.task_table = QtWidgets.QTableWidget(0, 5, page)
         self.task_table.setHorizontalHeaderLabels(
@@ -509,7 +592,7 @@ class InfoPanel(QtWidgets.QWidget):
 
         self.ocr_status = QtWidgets.QLabel("暂无 OCR 结果。", page)
         self.ocr_status.setStyleSheet(
-            "color:%s;font-size:%dpx;" % (theme.FLOAT_TEXT_DIM, theme.FS_MD))
+            "color:%s;font-size:%dpx;" % (apple.SECONDARY, theme.FS_MD))
         lay.addWidget(self.ocr_status)
 
         split = QtWidgets.QSplitter(QtCore.Qt.Horizontal, page)
@@ -536,46 +619,51 @@ class InfoPanel(QtWidgets.QWidget):
         lay.setAlignment(QtCore.Qt.AlignCenter)
 
         # 头部图标与标题
-        icon_lbl = QtWidgets.QLabel("🎓", page)
+        icon_lbl = QtWidgets.QLabel("▤", page)
         icon_lbl.setAlignment(QtCore.Qt.AlignCenter)
-        icon_lbl.setStyleSheet("font-size: 46px; margin-bottom: 2px;")
+        icon_lbl.setFixedSize(60, 60)
+        icon_lbl.setStyleSheet(
+            "background:%s;color:%s;border-radius:18px;font-size:28px;font-weight:600;"
+            % (apple.SELECT_BG, apple.ACCENT))
         lay.addWidget(icon_lbl)
 
-        title = QtWidgets.QLabel("课件学研空间 · Google NotebookLM", page)
+        title = QtWidgets.QLabel("课程知识库", page)
         title.setAlignment(QtCore.Qt.AlignCenter)
-        title.setStyleSheet(f"font-size: 19px; font-weight: bold; color: {theme.TEXT};")
+        title.setStyleSheet(
+            f"font-size: {theme.FS_XL}px; font-weight: 600; color: {apple.TEXT};")
         lay.addWidget(title)
 
         desc = QtWidgets.QLabel(
-            "为提供更沉浸自如的学术研读与考纲备考体验，知识库已全面迁移至专属 Web 网页端。\n"
-            "课件上传、科目分类、结构化考纲提炼与文件移除均可在网页端一站式完成。",
+            "集中整理课程讲义，并在网页工作台中进行阅读、提炼与复习。\n"
+            "课件上传、科目分类和学习进度都可以在同一处管理。",
             page
         )
         desc.setAlignment(QtCore.Qt.AlignCenter)
         desc.setWordWrap(True)
-        desc.setStyleSheet(f"font-size: 13px; color: {theme.TEXT_DIM}; line-height: 1.6;")
+        desc.setStyleSheet(
+            f"font-size: {theme.FS_SM}px; color: {apple.SECONDARY}; line-height: 1.6;")
         lay.addWidget(desc)
 
         lay.addSpacing(6)
 
         # 核心主操作大按钮：一键进入网页版
-        self._btn_open_web = QtWidgets.QPushButton("🌐 打开 NotebookLM 课件研读空间 (网页版)", page)
+        self._btn_open_web = QtWidgets.QPushButton("打开课程知识库", page)
         btn_open_web = self._btn_open_web
         btn_open_web.setCursor(QtCore.Qt.PointingHandCursor)
         btn_open_web.setFixedHeight(48)
         btn_open_web.setMinimumWidth(380)
         btn_open_web.setStyleSheet(f"""
             QPushButton {{
-                background-color: {theme.ACCENT};
-                color: {theme.ON_ACCENT};
-                font-size: 15px;
-                font-weight: bold;
-                border-radius: 8px;
+                background-color: {apple.ACCENT};
+                color: {apple.ON_ACCENT};
+                font-size: {theme.FS_SM}px;
+                font-weight: 600;
+                border-radius: 10px;
                 padding: 0 24px;
                 border: none;
             }}
             QPushButton:hover {{
-                background-color: {theme.ACCENT_BRIGHT};
+                background-color: {apple.ACCENT_HOVER};
             }}
         """)
         btn_open_web.clicked.connect(lambda: self._launch_web_workspace())
@@ -592,16 +680,17 @@ class InfoPanel(QtWidgets.QWidget):
         self.kw_stat_card = QtWidgets.QFrame(page)
         self.kw_stat_card.setStyleSheet(f"""
             QFrame {{
-                background: {theme.FIELD};
-                border: 1px solid {theme.GRID};
-                border-radius: 8px;
-                padding: 10px 20px;
+                background: {apple.FIELD};
+                border: 1px solid {apple.BORDER};
+                border-radius: 12px;
+                padding: 12px 22px;
             }}
         """)
         card_lay = QtWidgets.QVBoxLayout(self.kw_stat_card)
         self.kw_stat_lbl = QtWidgets.QLabel("正在同步本地知识库数据...", self.kw_stat_card)
         self.kw_stat_lbl.setAlignment(QtCore.Qt.AlignCenter)
-        self.kw_stat_lbl.setStyleSheet(f"font-size: 13px; color: {theme.TEXT_DIM};")
+        self.kw_stat_lbl.setStyleSheet(
+            f"font-size: {theme.FS_SM}px; color: {apple.SECONDARY};")
         card_lay.addWidget(self.kw_stat_lbl)
 
         card_center = QtWidgets.QHBoxLayout()
@@ -617,12 +706,12 @@ class InfoPanel(QtWidgets.QWidget):
         sub_btns.setSpacing(12)
         sub_btns.addStretch(1)
 
-        btn_folder = QtWidgets.QPushButton("📂 本地课件文件夹", page)
+        btn_folder = QtWidgets.QPushButton("本地课件文件夹", page)
         btn_folder.setStyleSheet("padding: 6px 14px; font-size: 12px;")
         btn_folder.clicked.connect(self._open_knowledge_folder)
         sub_btns.addWidget(btn_folder)
 
-        btn_refresh = QtWidgets.QPushButton("🔄 刷新统计", page)
+        btn_refresh = QtWidgets.QPushButton("刷新统计", page)
         btn_refresh.setStyleSheet("padding: 6px 14px; font-size: 12px;")
         btn_refresh.clicked.connect(lambda: self.refresh_knowledge_page())
         sub_btns.addWidget(btn_refresh)
@@ -637,6 +726,15 @@ class InfoPanel(QtWidgets.QWidget):
 
     def _switch_page(self, row):
         self.stack.setCurrentIndex(row)
+        titles = (
+            ("课程表", "查看每周安排，轻松规划学习节奏。"),
+            ("待办与考试", "把重要事项排清楚，留出专注时间。"),
+            ("OCR 结果", "查看截图识别、翻译与总结内容。"),
+            ("课程知识库", "整理讲义资料，随时回顾课程重点。"),
+        )
+        if 0 <= row < len(titles):
+            self.page_title.setText(titles[row][0])
+            self.page_subtitle.setText(titles[row][1])
         if row == 0:
             self.show_schedule("week")
         elif row == 1:
@@ -651,8 +749,8 @@ class InfoPanel(QtWidgets.QWidget):
         self.stack.setCurrentIndex(0)
 
         # 选项卡高亮样式联动
-        active_qss = ("background: %s; color: %s; font-weight: bold;"
-                      " border: 1px solid %s;" % (theme.ACCENT, theme.ON_ACCENT, theme.ACCENT))
+        active_qss = ("background: %s; color: %s; font-weight: 600;"
+                      " border: 1px solid %s;" % (apple.ACCENT, apple.ON_ACCENT, apple.ACCENT))
         self.btn_week.setStyleSheet(active_qss if which == "week" else "")
         self.btn_today.setStyleSheet(active_qss if which == "today" else "")
         self.btn_next.setStyleSheet(active_qss if which == "next" else "")
@@ -662,10 +760,10 @@ class InfoPanel(QtWidgets.QWidget):
             self.sched_stack.setCurrentWidget(self.sched_view)
             self.sched_view.setHtml(f"""
             <div style="text-align:center; padding:60px 20px;">
-                <div style="font-size:{theme.FS_HERO}px; margin-bottom:{theme.SP_3}px;">📅</div>
-                <div style="color:{theme.TEXT}; font-size:{theme.FS_LG}px; font-weight:bold; margin-bottom:{theme.SP_2}px;">暂无本科课表数据</div>
-                <div style="color:{theme.TEXT_DIM}; font-size:{theme.FS_SM}px; line-height:1.6;">
-                    点击右上角「<b>+ 录入课程</b>」手动规划课程，或点击「<b>📥 导入课表</b>」导入教务 JSON。<br/>
+                <div style="color:{apple.ACCENT}; font-size:{theme.FS_2XL}px; font-weight:600; margin-bottom:{theme.SP_3}px;">开始规划</div>
+                <div style="color:{apple.TEXT}; font-size:{theme.FS_LG}px; font-weight:600; margin-bottom:{theme.SP_2}px;">暂无课程安排</div>
+                <div style="color:{apple.SECONDARY}; font-size:{theme.FS_SM}px; line-height:1.6;">
+                    点击右上角「<b>+ 录入课程</b>」手动规划课程，或点击「<b>导入课表</b>」导入教务 JSON。<br/>
                     阿米娅将根据您的课表作息提供提醒与学情分析！
                 </div>
             </div>
@@ -806,10 +904,10 @@ class InfoPanel(QtWidgets.QWidget):
             title = "%s · %s" % (tag, t.title)
             if t.done:
                 state, left = "✓ 完成", "—"
-                color = theme.FLOAT_TEXT_DIM
+                color = apple.SECONDARY
             elif t.expired(now):
                 state, left = "已过期", "—"
-                color = theme.RED
+                color = apple.RED
             else:
                 state = "待办"
                 d = t.due - now
@@ -819,7 +917,7 @@ class InfoPanel(QtWidgets.QWidget):
                     left = "%d 小时" % (d.seconds // 3600)
                 else:
                     left = "%d 分钟" % max(1, d.seconds // 60)
-                color = theme.FLOAT_TEXT
+                color = apple.TEXT
             items = [QtWidgets.QTableWidgetItem(state),
                      QtWidgets.QTableWidgetItem(title),
                      QtWidgets.QTableWidgetItem(t.course),
@@ -894,14 +992,14 @@ class InfoPanel(QtWidgets.QWidget):
             f_count = stats.get("file_count", 0)
             c_count = stats.get("chunk_count", 0)
             courses = stats.get("courses", [])
-            text = f"📊 本地知识库收录：共 {f_count} 份课件 · {c_count} 段切片 · 覆盖 {len(courses)} 门课程"
+            text = f"本地已收录 {f_count} 份课件 · {c_count} 段内容 · 覆盖 {len(courses)} 门课程"
             if hasattr(self, "kw_stat_lbl"):
                 self.kw_stat_lbl.setText(text)
 
     def _on_digest_progress(self, filename, course, pct, status_msg):
         """当课件知识点提炼进度更新时，更新知识库提示。"""
         if hasattr(self, "kw_stat_lbl") and pct < 100:
-            self.kw_stat_lbl.setText(f"⏳ 正在后台提炼《{filename}》核心考纲 ({pct}% · {status_msg})")
+            self.kw_stat_lbl.setText(f"正在整理《{filename}》的学习要点（{pct}% · {status_msg}）")
 
     def _on_digest_finished(self, filename, course, ok, msg):
         """提炼完成或出错时，刷新知识库状态。"""
@@ -985,7 +1083,7 @@ class InfoPanel(QtWidgets.QWidget):
     # ── 窗口行为（拖动 / Esc 关闭）─────────────────────────────────
 
     def mousePressEvent(self, e):
-        if e.button() == QtCore.Qt.LeftButton and e.y() <= 48:
+        if e.button() == QtCore.Qt.LeftButton and e.y() <= 62:
             self._drag = e.globalPos() - self.frameGeometry().topLeft()
             e.accept()
         else:
@@ -1021,3 +1119,4 @@ class InfoPanel(QtWidgets.QWidget):
         if screen:
             geo = screen.availableGeometry()
             self.move(geo.center() - self.rect().center())
+
