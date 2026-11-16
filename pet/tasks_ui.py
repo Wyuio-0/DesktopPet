@@ -204,5 +204,7 @@ class TaskListDialog(QtWidgets.QDialog):
         tid = self._current_id()
         if not tid:
             return
-        self.tasks.remove(tid)
+        if not self.tasks.remove(tid):
+            QtWidgets.QMessageBox.warning(self, "删除失败", "任务已保留。请检查存储空间后重试。")
+            return
         self._reload()

@@ -7,14 +7,30 @@
 
 import json
 import functools
+import hashlib
 import os
 import threading
 import uuid
 from datetime import datetime
 
 from .settings import config_dir
+from . import sync_deletions
 
 _CURRENT_MANAGER = None
+
+
+def _version_fingerprint(note):
+    fields = (note.id, note.title, note.content, note.created_at, note.updated_at,
+              "1" if note.pinned else "0")
+    encoded = b"".join(str(len(raw := value.encode("utf-8"))).encode("ascii") + b":" + raw
+                       for value in fields)
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _conflict_copy(note, fingerprint):
+    return Note(note_id="conflict_" + fingerprint, title=note.title + "（冲突副本）",
+                content=note.content, created_at=note.created_at,
+                updated_at=note.updated_at, pinned=note.pinned)
 
 
 def _locked(operation):
@@ -171,10 +187,14 @@ class NotesManager:
             except Exception:
                 pass
 
-    def apply_sync(self, incoming, mode):
+    def apply_sync(self, incoming, mode, deleted_ids=()):
         """Serialize synchronization with a pending editor debounce save."""
         with self.sync_lock:
+            old_notes, old_active = list(self.notes), self.active_id
             before = [n.to_dict() for n in self.notes]
+            deleted = set(deleted_ids)
+            if deleted:
+                self.notes = [note for note in self.notes if note.id not in deleted]
             if mode == "replace": self.notes = []
             by_id = {n.id: n for n in self.notes}
             changed = 0
@@ -184,13 +204,35 @@ class NotesManager:
                     self.notes.append(remote)
                     by_id[remote.id] = remote
                     changed += 1
-                elif remote.updated_at > local.updated_at:
-                    local.title, local.content = remote.title, remote.content
-                    local.updated_at, local.pinned = remote.updated_at, remote.pinned
+                elif (local.title, local.content, local.created_at, local.pinned) == (
+                        remote.title, remote.content, remote.created_at, remote.pinned):
+                    if remote.updated_at > local.updated_at:
+                        index = self.notes.index(local)
+                        self.notes[index] = remote
+                        by_id[remote.id] = remote
+                        changed += 1
+                else:
+                    local_fingerprint = _version_fingerprint(local)
+                    remote_fingerprint = _version_fingerprint(remote)
+                    local_version = (local.updated_at, local_fingerprint)
+                    remote_version = (remote.updated_at, remote_fingerprint)
+                    winner, loser, loser_fingerprint = (
+                        (remote, local, local_fingerprint) if remote_version > local_version
+                        else (local, remote, remote_fingerprint))
+                    conflict = _conflict_copy(loser, loser_fingerprint)
+                    if conflict.id not in deleted and conflict.id not in by_id:
+                        self.notes.append(conflict)
+                        by_id[conflict.id] = conflict
+                    if winner is remote:
+                        index = self.notes.index(local)
+                        self.notes[index] = remote
+                        by_id[remote.id] = remote
                     changed += 1
             if not any(n.id == self.active_id for n in self.notes):
                 self.active_id = self.notes[0].id if self.notes else ""
-            if not self.save(): raise OSError("便签写入失败")
+            if not self.save():
+                self.notes, self.active_id = old_notes, old_active
+                raise OSError("便签写入失败")
             if before != [n.to_dict() for n in self.notes]: self.notify_sync()
             return changed
 
@@ -233,7 +275,6 @@ class NotesManager:
         changed = False
         if content is not None and content != target.content:
             target.content = str(content)
-            target.updated_at = datetime.now().strftime("%Y-%m-%d %H:%M")
             if (not title and target.title in ("未命名便签", "空白便签", "灵感随记")) or not target.title:
                 target.title = target.auto_derive_title()
             changed = True
@@ -244,6 +285,7 @@ class NotesManager:
             target.pinned = bool(pinned)
             changed = True
         if changed:
+            target.updated_at = datetime.now().strftime("%Y-%m-%d %H:%M")
             self.save()
         return target
 
@@ -257,12 +299,19 @@ class NotesManager:
         if idx < 0:
             return False
 
+        old_notes, old_active = list(self.notes), self.active_id
         self.notes.pop(idx)
         if not self.notes:
             self._init_default()
         elif self.active_id == note_id:
             self.active_id = self.notes[min(idx, len(self.notes) - 1)].id
-        self.save()
+        if not self.save():
+            self.notes, self.active_id = old_notes, old_active
+            return False
+        if not sync_deletions.record("notes", note_id):
+            self.notes, self.active_id = old_notes, old_active
+            self.save()
+            return False
         return True
 
 

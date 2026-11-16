@@ -378,7 +378,9 @@ class StickyNoteWindow(QtWidgets.QWidget):
             QtWidgets.QMessageBox.No,
         )
         if reply == QtWidgets.QMessageBox.Yes:
-            self.mgr.delete_note(cur_note.id)
+            if not self.mgr.delete_note(cur_note.id):
+                QtWidgets.QMessageBox.warning(self, "删除失败", "便签已保留。请检查存储空间后重试。")
+                return
             self._load_active_note()
 
     def _toggle_pin(self):

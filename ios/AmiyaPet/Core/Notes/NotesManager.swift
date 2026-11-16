@@ -74,9 +74,13 @@ public class NotesManager: ObservableObject {
         }
     }
 
-    public func deleteNote(id: String) {
+    @discardableResult public func deleteNote(id: String) -> Bool {
+        let previous = notes
+        guard previous.contains(where: { $0.id == id }) else { return false }
         notes.removeAll { $0.id == id }
-        save()
+        guard save() else { notes = previous; return false }
+        guard SyncDeletionStore.shared.record("notes", id) else { notes = previous; _ = save(); return false }
+        return true
     }
 
     public func togglePin(id: String) {

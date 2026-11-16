@@ -10,6 +10,7 @@ import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 import java.util.UUID
+import com.amiya.pet.core.sync.SyncDeletionStore
 
 /**
  * 期末考试数据模型
@@ -150,9 +151,19 @@ object ExamManager {
         }
     }
 
-    fun deleteExam(context: Context, id: String) {
+    fun deleteExam(context: Context, id: String): Boolean {
+        val removed = exams.filter { it.id == id }
+        if (removed.isEmpty()) return false
         exams.removeAll { it.id == id }
-        save(context)
+        if (!save(context)) {
+            exams.addAll(removed); exams.sortBy { it.examTimeMillis }
+            return false
+        }
+        if (!SyncDeletionStore.record(context, "exams", id)) {
+            exams.addAll(removed); exams.sortBy { it.examTimeMillis }; save(context)
+            return false
+        }
+        return true
     }
 
     /**

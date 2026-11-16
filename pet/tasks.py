@@ -16,6 +16,7 @@ import uuid
 from datetime import date, datetime, timedelta
 
 from .settings import config_dir
+from . import sync_deletions
 
 WEEKDAY_NAMES = {1: "周一", 2: "周二", 3: "周三", 4: "周四",
                  5: "周五", 6: "周六", 7: "周日"}
@@ -228,8 +229,20 @@ class Tasks:
         return t
 
     def remove(self, task_id):
+        previous = list(self.items)
+        removed = [t for t in self.items if t.id == task_id]
+        if not removed:
+            return False
         self.items = [t for t in self.items if t.id != task_id]
-        self.save()
+        if not self.save():
+            self.items = previous
+            return False
+        exams = [t for t in removed if t.kind == "exam"]
+        if exams and not sync_deletions.record_many("exams", [task.id for task in exams]):
+            self.items = previous
+            self.save()
+            return False
+        return True
 
     def set_done(self, task_id, done=True):
         for t in self.items:

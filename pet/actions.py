@@ -900,7 +900,9 @@ def delete_course(name, weekday=None, sec_start=None, target_week=None, room=Non
         room=room,
         delete_all_weeks=bool(delete_all_weeks)
     )
-    if not deleted:
+    if deleted is False:
+        return f"删除《{name}》未能保存，原课程已保留，请检查设备存储后重试。"
+    if deleted is None:
         return f"未能在课表中找到匹配的课程「{name}」，未能删除。"
     days = ["", "周一", "周二", "周三", "周四", "周五", "周六", "周日"]
     scope_str = "整门课程" if delete_all_weeks or target_week is None else f"第 {target_week} 周"

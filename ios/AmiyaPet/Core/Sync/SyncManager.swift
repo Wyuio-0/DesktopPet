@@ -5,6 +5,7 @@ import Combine
 import UIKit
 import Security
 import Darwin
+import CryptoKit
 
 private enum SyncDataFailure: Error { case invalid }
 
@@ -319,7 +320,10 @@ public final class SyncManager: ObservableObject {
         operate(device, "/api/clipboard", ["text": text, "title": title])
     }
     public func pull(_ device: DeviceInfo) { operate(device, "/api/sync/pull", [:]) }
-    public func push(_ device: DeviceInfo) { operate(device, "/api/sync/push", onMain { snapshot() }.merging(["mode": "merge"], uniquingKeysWith: { _, new in new })) }
+    public func push(_ device: DeviceInfo) {
+        do { operate(device, "/api/sync/push", try onMain { try snapshot() }.merging(["mode": "merge"], uniquingKeysWith: { _, new in new })) }
+        catch { statusText = "无法读取同步删除记录，请检查本机存储。" }
+    }
     private func operate(_ device: DeviceInfo, _ path: String, _ payload: [String: Any]) {
         lock.lock(); let peer = peers[device.deviceId]; lock.unlock()
         guard let peer = peer else { statusText = "请先重新配对"; return }
@@ -360,16 +364,17 @@ public final class SyncManager: ObservableObject {
         }
     }
 
-    private func snapshot() -> [String: Any] {
+    private func snapshot() throws -> [String: Any] {
         let sched = ScheduleManager.shared; let formatter = DateFormatter(); formatter.dateFormat = "yyyy-MM-dd"
         let courses = (try? JSONSerialization.jsonObject(with: JSONEncoder().encode(sched.courses))) ?? []
         let notes = (try? JSONSerialization.jsonObject(with: JSONEncoder().encode(NotesManager.shared.notes))) ?? []
         let exams: [[String: Any]] = ExamManager.shared.exams.map { ["id": $0.id, "title": $0.title, "examTimeMillis": $0.examTimeMillis,
             "durationMinutes": $0.durationMinutes, "location": $0.location, "seatNumber": $0.seatNumber, "examType": $0.examType, "note": $0.note] }
-        return ["schedule": ["term_start": sched.termStart.map { formatter.string(from: $0) } ?? "", "sections": sched.sections, "courses": courses], "notes": notes, "exams": exams]
+        return ["schedule": ["term_start": sched.termStart.map { formatter.string(from: $0) } ?? "", "sections": sched.sections, "courses": courses],
+                "notes": notes, "exams": exams, "tombstones": try SyncDeletionStore.shared.snapshot()]
     }
     private func apply(_ path: String, _ payload: [String: Any], validateOnly: Bool = false, backupReason: String = "before_replace") throws -> [String: Any] {
-        if path == "/api/sync/pull" { return snapshot() }
+        if path == "/api/sync/pull" { return try snapshot() }
         if path == "/api/status" { return ["status": "ok"] }
         if path == "/api/clipboard" {
             guard let text = payload["text"] as? String else { throw SyncCrypto.Failure.invalid }
@@ -429,10 +434,64 @@ public final class SyncManager: ObservableObject {
             do { incomingNotes = try JSONDecoder().decode([Note].self, from: JSONSerialization.data(withJSONObject: rows)) }
             catch { throw SyncDataFailure.invalid }
         }
+        let incomingTombstones: [String: [String]]
+        if let value = payload["tombstones"] {
+            guard let rows = value as? [String: [String]], Set(rows.keys).isSubset(of: Set(SyncDeletionStore.categories)) else { throw SyncDataFailure.invalid }
+            do { incomingTombstones = try SyncDeletionStore.shared.validate(rows) }
+            catch { throw SyncDataFailure.invalid }
+        } else { incomingTombstones = [:] }
         if validateOnly { return ["status": "valid"] }
         let categories = ["schedule", "exams", "notes"].filter { payload[$0] != nil }
         if replace && !categories.isEmpty { try SyncBackupStore.shared.create(backupState(categories), reason: backupReason) }
+        var replacing = Set<String>()
+        if replace {
+            if (payload["schedule"] as? [String: Any])?["courses"] != nil { replacing.insert("schedule") }
+            if incomingExams != nil { replacing.insert("exams") }
+            if incomingNotes != nil { replacing.insert("notes") }
+        }
+        var affected = Set(categories)
+        for category in SyncDeletionStore.categories where !(incomingTombstones[category] ?? []).isEmpty { affected.insert(category) }
+        var localIds: [String: Set<String>] = [:]; var liveIds: [String: Set<String>] = [:]
         let sched = ScheduleManager.shared
+        if affected.contains("schedule") {
+            localIds["schedule"] = Set(sched.courses.map(\.id))
+            if replacing.contains("schedule") { liveIds["schedule"] = Set((incomingCourses ?? []).map(\.id)) }
+        }
+        if affected.contains("exams") {
+            localIds["exams"] = Set(ExamManager.shared.exams.map(\.id))
+            if replacing.contains("exams") { liveIds["exams"] = Set((incomingExams ?? []).map(\.id)) }
+        }
+        if affected.contains("notes") {
+            localIds["notes"] = Set(NotesManager.shared.notes.map(\.id))
+            if replacing.contains("notes") { liveIds["notes"] = Set((incomingNotes ?? []).map(\.id)) }
+        }
+        let deleted: [String: Set<String>]
+        do { deleted = try SyncDeletionStore.shared.apply(incomingTombstones, mode: mode, replacing: replacing, localIds: localIds, liveIds: liveIds) }
+        catch SyncDeletionFailure.invalid { throw SyncDataFailure.invalid }
+        catch SyncDeletionFailure.storage { throw StudyBackupFailure.backupFailed }
+        catch { throw StudyBackupFailure.backupFailed }
+        incomingCourses = incomingCourses?.filter { !deleted["schedule", default: []].contains($0.id) }
+        incomingExams = incomingExams?.filter { !deleted["exams", default: []].contains($0.id) }
+        incomingNotes = incomingNotes?.filter { !deleted["notes", default: []].contains($0.id) }
+        if affected.contains("schedule") && !replacing.contains("schedule") {
+            let old = sched.courses
+            sched.courses = old.filter { !deleted["schedule", default: []].contains($0.id) }
+            if old.count != sched.courses.count && !sched.save() { sched.courses = old; throw StudyBackupFailure.writeFailed }
+        }
+        if affected.contains("exams") && !replacing.contains("exams") {
+            let old = ExamManager.shared.exams
+            ExamManager.shared.exams = old.filter { !deleted["exams", default: []].contains($0.id) }
+            if old.count != ExamManager.shared.exams.count && !ExamManager.shared.save() {
+                ExamManager.shared.exams = old; throw StudyBackupFailure.writeFailed
+            }
+        }
+        if affected.contains("notes") && !replacing.contains("notes") {
+            let old = NotesManager.shared.notes
+            NotesManager.shared.notes = old.filter { !deleted["notes", default: []].contains($0.id) }
+            if old.count != NotesManager.shared.notes.count && !NotesManager.shared.save() {
+                NotesManager.shared.notes = old; throw StudyBackupFailure.writeFailed
+            }
+        }
         if let courses = incomingCourses {
             if replace { sched.courses = courses } else {
                 for course in courses {
@@ -455,15 +514,36 @@ public final class SyncManager: ObservableObject {
         }
         if let notes = incomingNotes {
             if replace { NotesManager.shared.notes = notes } else {
-                for note in notes { if let i = NotesManager.shared.notes.firstIndex(where: { $0.id == note.id }) { if NotesManager.shared.notes[i].updatedAt < note.updatedAt { NotesManager.shared.notes[i] = note } } else { NotesManager.shared.notes.append(note) } }
+                for note in notes {
+                    if let i = NotesManager.shared.notes.firstIndex(where: { $0.id == note.id }) {
+                        let local = NotesManager.shared.notes[i]
+                        let sameVersion = local.title == note.title && local.content == note.content &&
+                            local.createdAt == note.createdAt && local.pinned == note.pinned
+                        if sameVersion {
+                            if note.updatedAt > local.updatedAt { NotesManager.shared.notes[i] = note }
+                        } else {
+                            let localHash = noteVersionFingerprint(local), remoteHash = noteVersionFingerprint(note)
+                            let remoteWins = note.updatedAt > local.updatedAt || (note.updatedAt == local.updatedAt && remoteHash > localHash)
+                            let loser = remoteWins ? local : note
+                            let loserHash = remoteWins ? localHash : remoteHash
+                            let copy = conflictCopy(loser, loserHash)
+                            if !deleted["notes", default: []].contains(copy.id) && !NotesManager.shared.notes.contains(where: { $0.id == copy.id }) {
+                                NotesManager.shared.notes.append(copy)
+                            }
+                            if remoteWins { NotesManager.shared.notes[i] = note }
+                        }
+                    } else { NotesManager.shared.notes.append(note) }
+                }
             }; guard NotesManager.shared.save() else { throw StudyBackupFailure.writeFailed }
         }
         return ["status": "ok", "result": ["schedule": incomingCourses?.count ?? 0, "exams": incomingExams?.count ?? 0, "notes": incomingNotes?.count ?? 0]]
     }
 
     private func backupState(_ categories: [String]) throws -> [String: Any] {
-        let all = snapshot()
-        var data: [String: Any] = [:]; var local: [String: Any] = [:]
+        let all = try snapshot()
+        guard let tombstones = all["tombstones"] else { throw StudyBackupFailure.backupFailed }
+        let allTombstones = tombstones as? [String: [String]] ?? [:]
+        var data: [String: Any] = ["tombstones": allTombstones.filter { categories.contains($0.key) }]; var local: [String: Any] = [:]
         for key in categories { data[key] = all[key]; local[key] = [String: Any]() }
         if categories.contains("schedule") {
             let s = ScheduleManager.shared
@@ -477,6 +557,22 @@ public final class SyncManager: ObservableObject {
             guard let rows = data["notes"] as? [[String: Any]], rows.count == NotesManager.shared.notes.count else { throw StudyBackupFailure.backupFailed }
         }
         return ["data": data, "local": local]
+    }
+
+    private func noteVersionFingerprint(_ note: Note) -> String {
+        let fields = [note.id, note.title, note.content, note.createdAt, note.updatedAt, note.pinned ? "1" : "0"]
+        var encoded = Data()
+        for field in fields {
+            let bytes = Data(field.utf8)
+            encoded.append(contentsOf: "\(bytes.count):".utf8)
+            encoded.append(bytes)
+        }
+        return SHA256.hash(data: encoded).map { String(format: "%02x", $0) }.joined()
+    }
+
+    private func conflictCopy(_ note: Note, _ fingerprint: String) -> Note {
+        Note(id: "conflict_" + fingerprint, title: note.title + "（冲突副本）", content: note.content,
+             createdAt: note.createdAt, updatedAt: note.updatedAt, pinned: note.pinned)
     }
 
     func refreshBackups() {

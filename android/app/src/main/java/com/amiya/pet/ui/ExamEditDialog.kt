@@ -39,7 +39,7 @@ fun ExamEditDialog(
     initialExam: ExamItem? = null,
     onDismiss: () -> Unit,
     onSaved: (ExamItem) -> Unit,
-    onDeleted: ((String) -> Unit)? = null
+    onDeleted: ((String) -> Boolean)? = null
 ) {
     val context = LocalContext.current
     val scrollState = rememberScrollState()
@@ -168,9 +168,12 @@ fun ExamEditDialog(
 
                     if (initialExam != null && onDeleted != null) {
                         IconButton(onClick = {
-                            onDeleted(initialExam.id)
-                            Toast.makeText(context, "考试已删除", Toast.LENGTH_SHORT).show()
-                            onDismiss()
+                            if (onDeleted(initialExam.id)) {
+                                Toast.makeText(context, "考试已删除", Toast.LENGTH_SHORT).show()
+                                onDismiss()
+                            } else {
+                                Toast.makeText(context, "删除失败，考试已保留。请检查存储空间后重试。", Toast.LENGTH_LONG).show()
+                            }
                         }) {
                             Icon(Icons.Default.DeleteOutline, contentDescription = "删除考试", tint = Color(0xFFFF5252))
                         }

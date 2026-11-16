@@ -663,12 +663,13 @@ object SyncManager {
             put("schedule", schedObj)
             put("exams", examsArr)
             put("notes", notesArr)
+            put("tombstones", SyncDeletionStore.snapshot(context))
             put("timestamp", System.currentTimeMillis())
         }
     }
 
     private data class SyncInput(val schedule: JSONObject?, val courses: List<Course>?,
-        val exams: List<ExamItem>?, val notes: List<Note>?)
+        val exams: List<ExamItem>?, val notes: List<Note>?, val tombstones: JSONObject)
 
     private fun parseSyncInput(payload: JSONObject, mode: String): SyncInput {
         require(mode == "merge" || mode == "replace")
@@ -719,7 +720,10 @@ object SyncManager {
             require(n.has("id") && n.get("id") is String && n.getString("id").isNotEmpty())
             Note.fromJsonObject(n)
         }
-        return SyncInput(schedule, courses, exams, notes)
+        val rawTombstones = if (payload.has("tombstones")) payload.opt("tombstones") as? JSONObject
+            ?: error("删除记录格式无效") else JSONObject()
+        val tombstones = SyncDeletionStore.validate(rawTombstones)
+        return SyncInput(schedule, courses, exams, notes, tombstones)
     }
 
     @Synchronized fun applyReceivedData(context: Context, payload: JSONObject, mode: String = "merge", backupReason: String = "before_replace"): SyncReport {
@@ -730,6 +734,59 @@ object SyncManager {
             try { SyncBackupStore.create(context, backupState(context, categories), backupReason) }
             catch (_: Exception) { return SyncReport(false, "无法安全保存备份，覆盖已取消。请检查本机存储。", failureStatus = 507) }
         }
+        val replacing = mutableSetOf<String>()
+        if (mode == "replace") {
+            if (input.schedule?.has("courses") == true) replacing.add("schedule")
+            if (input.exams != null) replacing.add("exams")
+            if (input.notes != null) replacing.add("notes")
+        }
+        val affected = categories.toMutableSet()
+        for (category in SyncDeletionStore.categories) {
+            if (input.tombstones.optJSONArray(category)?.length()?.let { it > 0 } == true) affected.add(category)
+        }
+        val localIds = mutableMapOf<String, Set<String>>()
+        val liveIds = mutableMapOf<String, Set<String>>()
+        if ("schedule" in affected) {
+            ScheduleManager.load(context)
+            localIds["schedule"] = ScheduleManager.courses.map { it.id }.toSet()
+            if ("schedule" in replacing) liveIds["schedule"] = input.courses.orEmpty().map { it.id }.toSet()
+        }
+        if ("exams" in affected) {
+            ExamManager.load(context)
+            localIds["exams"] = ExamManager.exams.map { it.id }.toSet()
+            if ("exams" in replacing) liveIds["exams"] = input.exams.orEmpty().map { it.id }.toSet()
+        }
+        if ("notes" in affected) {
+            val manager = NotesManager.getInstance(context)
+            localIds["notes"] = manager.notes.map { it.id }.toSet()
+            if ("notes" in replacing) liveIds["notes"] = input.notes.orEmpty().map { it.id }.toSet()
+        }
+        val deleted = try { SyncDeletionStore.apply(context, input.tombstones, mode, replacing, localIds, liveIds) }
+            catch (_: Exception) { return SyncReport(false, "无法保存同步删除记录，数据未应用。", failureStatus = 507) }
+        val incomingCourses = input.courses?.filterNot { it.id in deleted.getValue("schedule") }
+        val incomingExams = input.exams?.filterNot { it.id in deleted.getValue("exams") }
+        val incomingNotes = input.notes?.filterNot { it.id in deleted.getValue("notes") }
+        if ("schedule" in affected && "schedule" !in replacing) {
+            val old = ScheduleManager.courses
+            ScheduleManager.courses = old.filterNot { it.id in deleted.getValue("schedule") }
+            if (old.size != ScheduleManager.courses.size && !ScheduleManager.save(context)) {
+                ScheduleManager.courses = old
+                return SyncReport(false, "课表删除写入失败。", failureStatus = 507)
+            }
+        }
+        if ("exams" in affected && "exams" !in replacing) {
+            val old = ExamManager.exams.toList()
+            ExamManager.exams.removeAll { it.id in deleted.getValue("exams") }
+            if (old.size != ExamManager.exams.size && !ExamManager.save(context)) {
+                ExamManager.exams.clear(); ExamManager.exams.addAll(old)
+                return SyncReport(false, "考试删除写入失败。", failureStatus = 507)
+            }
+        }
+        if ("notes" in affected && "notes" !in replacing) {
+            val manager = NotesManager.getInstance(context)
+            val filtered = manager.notes.filterNot { it.id in deleted.getValue("notes") }
+            if (filtered.size != manager.notes.size && !manager.replaceNotes(filtered)) return SyncReport(false, "便签删除写入失败。", failureStatus = 507)
+        }
         var courseCount = 0
         var examCount = 0
         var noteCount = 0
@@ -738,7 +795,7 @@ object SyncManager {
         val schedObj = input.schedule
         if (schedObj != null) {
             ScheduleManager.load(context)
-            val newCourses = input.courses ?: ScheduleManager.courses
+            val newCourses = incomingCourses ?: ScheduleManager.courses
 
             if (input.courses == null || mode == "replace" || ScheduleManager.courses.isEmpty()) {
                 ScheduleManager.courses = newCourses
@@ -771,14 +828,14 @@ object SyncManager {
         }
 
         // 2. 考试日程处理
-        if (input.exams != null) {
+        if (incomingExams != null) {
             ExamManager.load(context)
             if (mode == "replace") {
                 ExamManager.exams.clear()
-                ExamManager.exams.addAll(input.exams)
+                ExamManager.exams.addAll(incomingExams)
             }
             var addedExams = 0
-            for (exam in if (mode == "replace") emptyList() else input.exams) {
+            for (exam in if (mode == "replace") emptyList() else incomingExams) {
                 val byId = ExamManager.exams.indexOfFirst { it.id == exam.id }
                 val index = if (byId >= 0) byId else ExamManager.exams.indexOfFirst {
                     it.title == exam.title && it.examTimeMillis == exam.examTimeMillis }
@@ -786,20 +843,36 @@ object SyncManager {
                 addedExams++
             }
             if (!ExamManager.save(context)) return SyncReport(false, "考试写入失败，请检查本机存储。", failureStatus = 507)
-            examCount = if (mode == "replace") input.exams.size else addedExams
+            examCount = if (mode == "replace") incomingExams.size else addedExams
         }
 
         // 3. 便签处理
-        if (input.notes != null) {
+        if (incomingNotes != null) {
             val notesMgr = NotesManager.getInstance(context)
             var addedNotes = 0
             val mergedNotes = notesMgr.notes.toMutableList()
-            for (remoteNote in if (mode == "replace") emptyList() else input.notes) {
+            for (remoteNote in if (mode == "replace") emptyList() else incomingNotes) {
                 val index = mergedNotes.indexOfFirst { it.id == remoteNote.id }
                 val localNote = mergedNotes.getOrNull(index)
                 if (localNote != null) {
-                    if (remoteNote.updatedAt > localNote.updatedAt) {
-                        mergedNotes[index] = remoteNote
+                    val sameVersion = remoteNote.title == localNote.title && remoteNote.content == localNote.content &&
+                        remoteNote.createdAt == localNote.createdAt && remoteNote.pinned == localNote.pinned
+                    if (sameVersion) {
+                        if (remoteNote.updatedAt > localNote.updatedAt) {
+                            mergedNotes[index] = remoteNote
+                            addedNotes++
+                        }
+                    } else {
+                        val localHash = noteVersionFingerprint(localNote)
+                        val remoteHash = noteVersionFingerprint(remoteNote)
+                        val remoteWins = remoteNote.updatedAt > localNote.updatedAt ||
+                            (remoteNote.updatedAt == localNote.updatedAt && remoteHash > localHash)
+                        val (loser, losingHash) = if (remoteWins) {
+                            localNote to localHash
+                        } else remoteNote to remoteHash
+                        val copy = conflictCopy(loser, losingHash)
+                        if (copy.id !in deleted.getValue("notes") && mergedNotes.none { it.id == copy.id }) mergedNotes.add(copy)
+                        if (remoteWins) mergedNotes[index] = remoteNote
                         addedNotes++
                     }
                 } else {
@@ -807,8 +880,8 @@ object SyncManager {
                     addedNotes++
                 }
             }
-            if (!notesMgr.replaceNotes(if (mode == "replace") input.notes else mergedNotes)) return SyncReport(false, "便签写入失败，请检查本机存储。", failureStatus = 507)
-            noteCount = if (mode == "replace") input.notes.size else addedNotes
+            if (!notesMgr.replaceNotes(if (mode == "replace") incomingNotes else mergedNotes)) return SyncReport(false, "便签写入失败，请检查本机存储。", failureStatus = 507)
+            noteCount = if (mode == "replace") incomingNotes.size else addedNotes
         }
 
         return SyncReport(
@@ -820,10 +893,27 @@ object SyncManager {
         )
     }
 
+    private fun noteVersionFingerprint(note: Note): String {
+        val fields = listOf(note.id, note.title, note.content, note.createdAt, note.updatedAt, if (note.pinned) "1" else "0")
+        val bytes = ByteArrayOutputStream()
+        for (field in fields) {
+            val raw = field.toByteArray(Charsets.UTF_8)
+            bytes.write(raw.size.toString().toByteArray(Charsets.US_ASCII)); bytes.write(':'.code); bytes.write(raw)
+        }
+        return MessageDigest.getInstance("SHA-256").digest(bytes.toByteArray())
+            .joinToString("") { "%02x".format(it.toInt() and 255) }
+    }
+
+    private fun conflictCopy(note: Note, fingerprint: String) =
+        note.copy(id = "conflict_$fingerprint", title = note.title + "（冲突副本）")
+
     // ── 受信任设备管理 ───────────────────────────────────────────────
     private fun backupState(context: Context, categories: List<String>): JSONObject {
         val all = packAllData(context)
         val data = JSONObject(); val local = JSONObject()
+        val tombstones = JSONObject()
+        for (category in categories) tombstones.put(category, all.getJSONObject("tombstones").getJSONArray(category))
+        data.put("tombstones", tombstones)
         for (category in categories) { data.put(category, all.get(category)); local.put(category, JSONObject()) }
         if ("schedule" in categories) {
             val adjustments = JSONArray()

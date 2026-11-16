@@ -5,6 +5,7 @@ public struct NotesView: View {
     @State private var searchText: String = ""
     @State private var editingNote: Note?
     @State private var isCreatingNote: Bool = false
+    @State private var showDeleteFailure: Bool = false
 
     public init() {}
 
@@ -67,7 +68,7 @@ public struct NotesView: View {
                                 }
                                 .swipeActions(edge: .trailing, allowsFullSwipe: true) {
                                     Button(role: .destructive) {
-                                        manager.deleteNote(id: note.id)
+                                        if !manager.deleteNote(id: note.id) { showDeleteFailure = true }
                                     } label: {
                                         Label("删除", systemImage: "trash")
                                     }
@@ -91,6 +92,11 @@ public struct NotesView: View {
             }
             .sheet(isPresented: $isCreatingNote) {
                 NoteEditModal { _ in }
+            }
+            .alert("删除失败", isPresented: $showDeleteFailure) {
+                Button("好", role: .cancel) {}
+            } message: {
+                Text("便签已保留。请检查设备存储空间后重试。")
             }
         }
     }

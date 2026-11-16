@@ -6,6 +6,7 @@ public struct CourseDetailModal: View {
     var onDelete: () -> Void
     var onAnalyze: () -> Void
     @Environment(\.dismiss) var dismiss
+    @State private var showDeleteFailure = false
 
     public var body: some View {
         NavigationStack {
@@ -71,9 +72,12 @@ public struct CourseDetailModal: View {
                         }
 
                         Button(role: .destructive, action: {
-                            ScheduleManager.shared.deleteCourse(id: course.id)
-                            dismiss()
-                            onDelete()
+                            if ScheduleManager.shared.deleteCourse(id: course.id) {
+                                dismiss()
+                                onDelete()
+                            } else {
+                                showDeleteFailure = true
+                            }
                         }) {
                             Text("删除课程")
                                 .frame(maxWidth: .infinity)
@@ -93,6 +97,11 @@ public struct CourseDetailModal: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("关闭") { dismiss() }
                 }
+            }
+            .alert("删除失败", isPresented: $showDeleteFailure) {
+                Button("好", role: .cancel) {}
+            } message: {
+                Text("课程已保留。请检查设备存储空间后重试。")
             }
         }
     }

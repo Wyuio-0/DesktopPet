@@ -18,6 +18,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import android.widget.Toast
 import com.amiya.pet.core.notes.Note
 import com.amiya.pet.core.notes.NotesManager
 import kotlinx.coroutines.delay
@@ -48,8 +49,11 @@ fun NotesScreen() {
                 }
             },
             onDelete = {
-                notesManager.deleteNote(currentEditingNote!!.id)
-                currentEditingNote = null
+                if (notesManager.deleteNote(currentEditingNote!!.id)) {
+                    currentEditingNote = null
+                } else {
+                    Toast.makeText(context, "删除失败，便签已保留。请检查存储空间后重试。", Toast.LENGTH_LONG).show()
+                }
             }
         )
     } else {

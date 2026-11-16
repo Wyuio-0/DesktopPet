@@ -44,9 +44,9 @@ class BackupStore:
     def _check_payload(payload):
         if (not isinstance(payload, dict) or set(payload) != {"data", "local"}
                 or not isinstance(payload["data"], dict) or not payload["data"]
-                or not set(payload["data"]).issubset(CATEGORIES)
+                or not set(payload["data"]).issubset(CATEGORIES | {"tombstones"})
                 or not isinstance(payload["local"], dict)
-                or set(payload["local"]) != set(payload["data"])):
+                or set(payload["local"]) != (set(payload["data"]) - {"tombstones"})):
             raise BackupError("备份内容无效或不兼容")
 
     def create(self, payload, reason="before_replace"):
@@ -114,7 +114,7 @@ class BackupStore:
             try:
                 entry, payload = self._read(path.stem)
                 entries.append({"id": path.stem, "created_ms": entry["created_ms"], "reason": entry["reason"],
-                                "categories": list(payload["data"]), "valid": True})
+                                "categories": [key for key in payload["data"] if key != "tombstones"], "valid": True})
             except BackupError:
                 entries.append({"id": path.stem, "created_ms": 0, "reason": "corrupt", "categories": [], "valid": False})
         return entries

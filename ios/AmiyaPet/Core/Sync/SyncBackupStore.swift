@@ -45,8 +45,8 @@ final class SyncBackupStore {
     private func digest(_ body: String) -> String { SHA256.hash(data: Data(body.utf8)).map { String(format: "%02x", $0) }.joined() }
     private func check(_ payload: [String: Any]) throws {
         guard Set(payload.keys) == Set(["data", "local"]), let data = payload["data"] as? [String: Any],
-              !data.isEmpty, Set(data.keys).isSubset(of: Set(["schedule", "exams", "notes"])),
-              let local = payload["local"] as? [String: Any], Set(local.keys) == Set(data.keys) else { throw StudyBackupFailure.invalid }
+              !data.isEmpty, Set(data.keys).isSubset(of: Set(["schedule", "exams", "notes", "tombstones"])),
+              let local = payload["local"] as? [String: Any], Set(local.keys) == Set(data.keys).subtracting(["tombstones"]) else { throw StudyBackupFailure.invalid }
     }
     private func read(_ id: String) throws -> ([String: Any], [String: Any]) {
         do {
@@ -97,7 +97,7 @@ final class SyncBackupStore {
             do {
                 let (entry, payload) = try read(id)
                 return StudyBackupEntry(id: id, createdMillis: (entry["created_ms"] as? NSNumber)?.int64Value ?? 0,
-                    reason: entry["reason"] as? String ?? "", categories: Array((payload["data"] as! [String: Any]).keys).sorted(), valid: true)
+                    reason: entry["reason"] as? String ?? "", categories: Array((payload["data"] as! [String: Any]).keys).filter { $0 != "tombstones" }.sorted(), valid: true)
             } catch { return StudyBackupEntry(id: id, createdMillis: 0, reason: "corrupt", categories: [], valid: false) }
         }
     }

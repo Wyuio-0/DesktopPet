@@ -256,9 +256,13 @@ public class ScheduleManager: ObservableObject {
         save()
     }
 
-    public func deleteCourse(id: String) {
+    @discardableResult public func deleteCourse(id: String) -> Bool {
+        let previous = courses
+        guard previous.contains(where: { $0.id == id }) else { return false }
         courses.removeAll { $0.id == id }
-        save()
+        guard save() else { courses = previous; return false }
+        guard SyncDeletionStore.shared.record("schedule", id) else { courses = previous; _ = save(); return false }
+        return true
     }
 
     public func updateCourse(_ updated: Course) {
