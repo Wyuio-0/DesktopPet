@@ -115,7 +115,11 @@ def apply(incoming, mode, categories, local_ids, live_ids):
     """Merge peer tombstones; replacements clear tombstones for restored live IDs."""
     with _lock:
         current = _load()
-        remote = validate(incoming)
+        if not isinstance(incoming, dict):
+            raise ValueError("无效的同步删除记录")
+        remote_input = {category: sorted(rows) if isinstance(rows, set) else rows
+                        for category, rows in incoming.items()}
+        remote = validate(remote_input)
         for category in CATEGORIES:
             current[category].update(remote[category])
         if mode == "replace":
