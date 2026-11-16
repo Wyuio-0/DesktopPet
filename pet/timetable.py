@@ -14,8 +14,8 @@ from PyQt5 import QtCore, QtGui, QtWidgets
 from . import desktop_theme as apple, theme
 from .schedule import _PARITY_LABEL, WEEKDAY_NAMES
 
-RULER_W = 56         # 左侧节次/时间轴宽度
-HEADER_H = 46        # 顶部星期/日期标题高度
+RULER_W = 68         # 左侧节次/时间轴宽度
+HEADER_H = 56        # 顶部星期/日期标题高度
 MARGIN = 8
 GAP = 4              # 课程块之间的垂直与水平微间隙
 MAX_SECTIONS = 13    # 一天最多 13 节课
@@ -90,7 +90,7 @@ class TimetableView(QtWidgets.QWidget):
 
         self.setMouseTracking(True)
         self.setAutoFillBackground(True)
-        self.setMinimumSize(600, 480)
+        self.setMinimumSize(760, 600)
 
     @property
     def col_weekdays(self):
@@ -262,17 +262,17 @@ class TimetableView(QtWidgets.QWidget):
 
             # 星期文字
             day_name = _DAY_LABELS[wd]
-            p.setFont(QtGui.QFont(theme.FONT, 11, QtGui.QFont.Bold if is_today else QtGui.QFont.DemiBold))
+            p.setFont(QtGui.QFont(theme.FONT, 13, QtGui.QFont.Bold if is_today else QtGui.QFont.DemiBold))
             p.setPen(QtGui.QColor(apple.ACCENT if is_today else apple.TEXT))
-            w_rect = QtCore.QRect(col_x, MARGIN + 4, round(col_w), 16)
+            w_rect = QtCore.QRect(col_x, MARGIN + 2, round(col_w), 22)
             p.drawText(w_rect, QtCore.Qt.AlignCenter, day_name)
 
             # 公历日期 (例如 9.13)
             date_str = self._dates[i] if i < len(self._dates) and self._dates[i] else ""
             if date_str:
-                p.setFont(QtGui.QFont(theme.FONT, 9, QtGui.QFont.Bold if is_today else QtGui.QFont.Normal))
+                p.setFont(QtGui.QFont(theme.FONT, 11, QtGui.QFont.Bold if is_today else QtGui.QFont.Normal))
                 p.setPen(QtGui.QColor(apple.ACCENT if is_today else apple.MUTED))
-                d_rect = QtCore.QRect(col_x, MARGIN + 22, round(col_w), 16)
+                d_rect = QtCore.QRect(col_x, MARGIN + 25, round(col_w), 20)
                 p.drawText(d_rect, QtCore.Qt.AlignCenter, date_str)
 
             # 调课/停课徽章 (感知教学安排调整)
@@ -284,11 +284,11 @@ class TimetableView(QtWidgets.QWidget):
                     badge_text = "停课" if adj.get("type") == "suspend" else "调"
                     badge_bg = (_rgba(apple.AMBER, 180) if adj.get("type") == "suspend"
                                 else _rgba(apple.ACCENT_HOVER, 180))
-                    b_rect = QtCore.QRect(col_x + round(col_w) - 24, MARGIN + 4, 20, 12)
+                    b_rect = QtCore.QRect(col_x + round(col_w) - 27, MARGIN + 2, 24, 18)
                     p.setBrush(QtGui.QBrush(badge_bg))
                     p.setPen(QtCore.Qt.NoPen)
                     p.drawRoundedRect(b_rect, 3, 3)
-                    p.setFont(QtGui.QFont(theme.FONT, 7, QtGui.QFont.Bold))
+                    p.setFont(QtGui.QFont(theme.FONT, 9, QtGui.QFont.Bold))
                     p.setPen(QtGui.QColor(apple.ON_ACCENT))
                     p.drawText(b_rect, QtCore.Qt.AlignCenter, badge_text)
 
@@ -313,17 +313,17 @@ class TimetableView(QtWidgets.QWidget):
                 p.drawRoundedRect(ruler_rect, 4, 4)
 
             # 节次编号 (上)
-            p.setFont(QtGui.QFont(theme.FONT, 9, QtGui.QFont.Bold if is_cur else QtGui.QFont.DemiBold))
+            p.setFont(QtGui.QFont(theme.FONT, 11, QtGui.QFont.Bold if is_cur else QtGui.QFont.DemiBold))
             p.setPen(QtGui.QColor(apple.ACCENT if is_cur else apple.SECONDARY))
-            sec_rect = QtCore.QRect(MARGIN, y + 2, RULER_W - 6, 14)
+            sec_rect = QtCore.QRect(MARGIN, y, RULER_W - 6, 19)
             p.drawText(sec_rect, QtCore.Qt.AlignCenter, str(sec))
 
             # 开始时刻 (下)
             t = secs.get(str(sec), "")
             if t:
-                p.setFont(QtGui.QFont(theme.FONT, 8))
+                p.setFont(QtGui.QFont(theme.FONT, 10))
                 p.setPen(QtGui.QColor(apple.ACCENT if is_cur else apple.MUTED))
-                time_rect = QtCore.QRect(MARGIN, y + 17, RULER_W - 6, 13)
+                time_rect = QtCore.QRect(MARGIN, y + 19, RULER_W - 6, 20)
                 p.drawText(time_rect, QtCore.Qt.AlignCenter, t)
 
     def _paint_courses(self, p):
@@ -444,25 +444,25 @@ class TimetableView(QtWidgets.QWidget):
             p.setPen(QtCore.Qt.NoPen)
             tag_rect = QtCore.QRect(inner.right() - 16, inner.top(), 16, 11)
             p.drawRoundedRect(tag_rect, 2, 2)
-            p.setFont(QtGui.QFont(theme.FONT, 7, QtGui.QFont.Bold))
+            p.setFont(QtGui.QFont(theme.FONT, 9, QtGui.QFont.Bold))
             p.setPen(QtGui.QColor(apple.ON_ACCENT))
             p.drawText(tag_rect, QtCore.Qt.AlignCenter, "调")
 
-        # 自定义时间标记 (如 📌15:00-17:00)
+        # 自定义时间标记 (如 15:00-17:00)
         custom_time = getattr(c, "custom_time", "")
         top_offset = 0
         if custom_time and total_h >= 45:
-            p.setFont(QtGui.QFont(theme.FONT, 7, QtGui.QFont.Bold))
+            p.setFont(QtGui.QFont(theme.FONT, 9, QtGui.QFont.Bold))
             p.setPen(QtGui.QColor(apple.AMBER_ON_CARD))
             rfm = QtGui.QFontMetrics(p.font())
-            time_text = rfm.elidedText("📌" + custom_time, QtCore.Qt.ElideRight, inner.width())
-            time_rect = QtCore.QRect(inner.left(), inner.top(), inner.width(), 13)
+            time_text = rfm.elidedText(custom_time, QtCore.Qt.ElideRight, inner.width())
+            time_rect = QtCore.QRect(inner.left(), inner.top(), inner.width(), 18)
             p.drawText(time_rect, QtCore.Qt.AlignHCenter | QtCore.Qt.AlignTop, time_text)
-            top_offset = 14
+            top_offset = 19
 
         # 单节短卡片（高度很小）：居中显示一行课程名
         if total_h < 40:
-            p.setFont(QtGui.QFont(theme.FONT, 9, QtGui.QFont.Bold))
+            p.setFont(QtGui.QFont(theme.FONT, 12, QtGui.QFont.Bold))
             p.setPen(QtGui.QColor(255, 255, 255))
             fm = QtGui.QFontMetrics(p.font())
             elided = fm.elidedText(c.name, QtCore.Qt.ElideRight, inner.width())
@@ -471,13 +471,13 @@ class TimetableView(QtWidgets.QWidget):
 
         # 常规 2 节及以上课程卡片：上部课程名称，下部教室地点
         # 1. 课程名：根据可用高度分配行数（最多 2 或 3 行）
-        name_font = QtGui.QFont(theme.FONT, 10 if inner.width() >= 50 else 8, QtGui.QFont.Bold)
+        name_font = QtGui.QFont(theme.FONT, 14 if inner.width() >= 90 else 12, QtGui.QFont.Bold)
         p.setFont(name_font)
         fm = QtGui.QFontMetrics(name_font)
         line_h = fm.lineSpacing()
 
         has_room = bool(c.room)
-        reserved_bottom = 20 if has_room else 0
+        reserved_bottom = 22 if has_room else 0
         avail_name_h = max(line_h, total_h - reserved_bottom - top_offset)
         max_lines = max(1, avail_name_h // line_h)
 
@@ -488,13 +488,13 @@ class TimetableView(QtWidgets.QWidget):
         # 2. 教室与地点（@理学楼-401）
         if has_room and total_h >= 45:
             room_text = f"@{c.room}"
-            p.setFont(QtGui.QFont(theme.FONT, 8 if inner.width() >= 50 else 7, QtGui.QFont.Normal))
+            p.setFont(QtGui.QFont(theme.FONT, 11 if inner.width() >= 90 else 9, QtGui.QFont.Normal))
             p.setPen(_rgba("#FFFFFF", 220))
             rfm = QtGui.QFontMetrics(p.font())
             elided_room = rfm.elidedText(room_text, QtCore.Qt.ElideRight, inner.width())
 
             room_y = min(inner.bottom() - 14, name_rect.bottom() + 2)
-            room_rect = QtCore.QRect(inner.left(), room_y, inner.width(), 16)
+            room_rect = QtCore.QRect(inner.left(), room_y, inner.width(), 18)
             p.drawText(room_rect, QtCore.Qt.AlignHCenter | QtCore.Qt.AlignVCenter, elided_room)
 
     def _paint_notes(self, p):
@@ -594,21 +594,28 @@ class TimetableView(QtWidgets.QWidget):
 
     def _show_course_tooltip(self, c):
         """展示课程悬浮详细气泡。"""
+        import html
+
         wd_str = _DAY_LABELS.get(c.weekday, f"周{c.weekday}")
         secs = getattr(self._schedule, "sections", {}) or {}
         t1 = secs.get(str(c.sec_start), "")
         t2 = secs.get(str(c.sec_end), "")
         time_str = f" ({t1}-{t2})" if t1 and t2 else ""
         parity_str = {"all": "全部周", "odd": "单周", "even": "双周"}.get(c.parity, "")
+        week_str = f"第 {c.week_start}-{c.week_end} 周 ({parity_str})"
 
         tip_html = f"""
-        <div style="font-family:'Microsoft YaHei UI'; padding:4px;">
-            <b style="font-size:{theme.FS_SM}px; color:{apple.ACCENT};">{c.name}</b><br/>
-            <span>⏰ 时间：{wd_str} 第 {c.sec_start}-{c.sec_end} 节{time_str}</span><br/>
-            <span>📅 周次：第 {c.week_start}-{c.week_end} 周 ({parity_str})</span><br/>
-            <span>📍 教室：{c.room or '未指定'}</span><br/>
-            <span>👤 教师：{c.teacher or '未指定'}</span>
+        <div style="font-family:'Microsoft YaHei UI'; padding:6px; font-size:13px; line-height:1.5;">
+            <b style="font-size:15px; color:{apple.ACCENT};">{html.escape(str(c.name))}</b><br/>
+            <span>⏰ 时间：{html.escape(wd_str)} 第 {c.sec_start}-{c.sec_end} 节{html.escape(time_str)}</span><br/>
+            <span>📅 周次：{html.escape(week_str)}</span><br/>
+            <span>📍 教室：{html.escape(c.room or '未指定')}</span><br/>
+            <span>👤 教师：{html.escape(c.teacher or '未指定')}</span><br/>
+            <span>🏫 校区：{html.escape(c.campus or '未指定')}</span>
+            {f'<br/><span>🕒 自定义时间：{html.escape(c.custom_time)}</span>' if getattr(c, 'custom_time', '') else ''}
+            {f'<br/><span>📝 备注：{html.escape(c.note)}</span>' if getattr(c, 'note', '') else ''}
         </div>
         """
         QtWidgets.QToolTip.showText(QtGui.QCursor.pos(), tip_html, self)
+
 

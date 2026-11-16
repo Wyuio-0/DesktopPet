@@ -146,7 +146,7 @@ class CourseDetailDialog(QtWidgets.QDialog):
         self.setWindowTitle("课程详情")
         self.setWindowFlags(QtCore.Qt.Dialog | QtCore.Qt.FramelessWindowHint)
         self.setAttribute(QtCore.Qt.WA_TranslucentBackground, True)
-        self.setFixedWidth(420)
+        self.setFixedWidth(460)
         self._build_ui()
 
     def _build_ui(self):
@@ -197,6 +197,8 @@ class CourseDetailDialog(QtWidgets.QDialog):
         t_end = self.sections.get(str(self.course.sec_end), "")
         time_span = f" ({t_start} - {t_end})" if t_start and t_end else ""
         self._add_row(card_lay, "⏰ 上课时间", f"{wd_str} 第 {self.course.sec_start}-{self.course.sec_end} 节{time_span}")
+        if getattr(self.course, "custom_time", ""):
+            self._add_row(card_lay, "🕒 自定义时间", self.course.custom_time)
 
         # 2. 周次与单双周
         parity_str = {"all": "全部周", "odd": "仅单周", "even": "仅双周"}.get(self.course.parity, "全部周")
@@ -211,10 +213,11 @@ class CourseDetailDialog(QtWidgets.QDialog):
         self._add_row(card_lay, "👤 任课教师", teacher_str)
 
         # 5. 校区
-        if self.course.campus:
-            self._add_row(card_lay, "🏫 所在校区", self.course.campus)
+        self._add_row(card_lay, "🏫 所在校区", self.course.campus or "未指定校区")
 
         # 6. 备注
+        self._add_row(card_lay, "📝 课程备注", self.course.note or "无备注")
+
         # 7. 课程课件资料
         kb_inst = None
         if self.parent() and hasattr(self.parent(), "owner"):
@@ -714,4 +717,5 @@ class CoursewareSummaryDialog(QtWidgets.QDialog):
         from .web_launcher import open_notebook_lm
         open_notebook_lm(course=course, filename=filename, brain=brain, kb=kb)
         QtCore.QTimer.singleShot(0, self.accept)
+
 

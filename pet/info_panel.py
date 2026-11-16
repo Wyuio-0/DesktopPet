@@ -323,8 +323,14 @@ class InfoPanel(QtWidgets.QWidget):
             | QtCore.Qt.WindowStaysOnTopHint
             | QtCore.Qt.Tool
         )
-        self.setMinimumSize(960, 640)
-        self.resize(1160, 760)
+        screen = QtWidgets.QApplication.primaryScreen()
+        available = screen.availableGeometry() if screen else None
+        width = min(1480, int(available.width() * 0.94)) if available else 1360
+        height = min(1020, int(available.height() * 0.94)) if available else 900
+        width = max(960, width)
+        height = max(640, height)
+        self.setMinimumSize(min(1120, width), min(720, height))
+        self.resize(width, height)
         self.setAcceptDrops(True)
         self.setStyleSheet(_QSS)
         self.setObjectName("PanelRoot")
@@ -467,13 +473,15 @@ class InfoPanel(QtWidgets.QWidget):
 
         btns = QtWidgets.QHBoxLayout()
         btns.setSpacing(6)
-        self.btn_week = QtWidgets.QPushButton("本周课表", page)
+        self.btn_week = QtWidgets.QPushButton("周视图", page)
+        self.btn_week_list = QtWidgets.QPushButton("详细周表", page)
         self.btn_today = QtWidgets.QPushButton("今日日程", page)
         self.btn_next = QtWidgets.QPushButton("下一节课", page)
         self.btn_week.clicked.connect(lambda: self.show_schedule("week"))
+        self.btn_week_list.clicked.connect(lambda: self.show_schedule("list"))
         self.btn_today.clicked.connect(lambda: self.show_schedule("today"))
         self.btn_next.clicked.connect(lambda: self.show_schedule("next"))
-        for b in (self.btn_week, self.btn_today, self.btn_next):
+        for b in (self.btn_week, self.btn_week_list, self.btn_today, self.btn_next):
             btns.addWidget(b)
         btns.addStretch(1)
 
@@ -528,7 +536,7 @@ class InfoPanel(QtWidgets.QWidget):
         self.sched_view.setOpenExternalLinks(False)
         self.sched_view.setStyleSheet(_S_SUNK + " padding: %dpx;" % theme.SP_3)
 
-        # 周课表可视化色块视图（自适应填满，无滚动条）
+        # 周课表可视化色块视图
         self.timetable = TimetableView(page)
         self.timetable.sig_course_clicked.connect(self._on_course_clicked)
         self.timetable.sig_empty_slot_clicked.connect(self._on_empty_slot_clicked)
@@ -544,6 +552,22 @@ class InfoPanel(QtWidgets.QWidget):
         self.sched_stack = QtWidgets.QStackedWidget(page)
         self.sched_stack.addWidget(self.timetable_area)  # 0: 本周（色块）
         self.sched_stack.addWidget(self.sched_view)      # 1: 今天 / 下一节
+        self.week_list_area = QtWidgets.QScrollArea(page)
+        self.week_list_area.setWidgetResizable(True)
+        self.week_list_area.setFrameShape(QtWidgets.QFrame.NoFrame)
+        self.week_list_area.setObjectName("WeekListArea")
+        self.week_list_area.setStyleSheet(
+            f"QScrollArea{{background:{apple.SURFACE};border:none;}}"
+            f"QScrollArea>QWidget>QWidget{{background:{apple.SURFACE};}}")
+        self.week_list_content = QtWidgets.QWidget(self.week_list_area)
+        self.week_list_content.setObjectName("WeekListContent")
+        self.week_list_content.setAutoFillBackground(True)
+        self.week_list_content.setStyleSheet(f"background:{apple.SURFACE};")
+        self.week_list_layout = QtWidgets.QVBoxLayout(self.week_list_content)
+        self.week_list_layout.setContentsMargins(4, 4, 10, 12)
+        self.week_list_layout.setSpacing(14)
+        self.week_list_area.setWidget(self.week_list_content)
+        self.sched_stack.addWidget(self.week_list_area)  # 2: 完整信息列表
         lay.addWidget(self.sched_stack, 1)
         return page
 
@@ -736,14 +760,14 @@ class InfoPanel(QtWidgets.QWidget):
             self.page_title.setText(titles[row][0])
             self.page_subtitle.setText(titles[row][1])
         if row == 0:
-            self.show_schedule("week")
+            self.show_schedule("list")
         elif row == 1:
             self.refresh_tasks()
         elif row == 3:
             self.refresh_knowledge_page()
 
     def show_schedule(self, which):
-        """展示课程表：'week' 用可视化色块表，'today'/'next' 用富文本列表。"""
+        """展示课程表：周列表展示完整信息，周视图显示时间网格。"""
         s = self.owner.schedule
         self.nav.setCurrentRow(0)
         self.stack.setCurrentIndex(0)
@@ -752,10 +776,12 @@ class InfoPanel(QtWidgets.QWidget):
         active_qss = ("background: %s; color: %s; font-weight: 600;"
                       " border: 1px solid %s;" % (apple.ACCENT, apple.ON_ACCENT, apple.ACCENT))
         self.btn_week.setStyleSheet(active_qss if which == "week" else "")
+        self.btn_week_list.setStyleSheet(active_qss if which == "list" else "")
         self.btn_today.setStyleSheet(active_qss if which == "today" else "")
         self.btn_next.setStyleSheet(active_qss if which == "next" else "")
 
         if not s.courses:
+            self._schedule_mode = which
             self.week_nav_widget.hide()
             self.sched_stack.setCurrentWidget(self.sched_view)
             self.sched_view.setHtml(f"""
@@ -770,14 +796,17 @@ class InfoPanel(QtWidgets.QWidget):
             """)
             return
 
-        if which == "week":
-            # 色块视图：等宽列、高度∝节数、按课程配色；默认定位到当前周
-            s_week = s.week_no() or 0
-            self._display_week = s_week if s_week >= 1 else 1
+        if which in ("week", "list"):
+            # 两种周视图共用周导航；切换表现形式时保留当前浏览周。
+            if getattr(self, "_schedule_mode", None) not in ("week", "list"):
+                s_week = s.week_no() or 0
+                self._display_week = s_week if s_week >= 1 else 1
+            self._schedule_mode = which
             self._max_week = max((c.week_end for c in s.courses), default=20)
             self._render_week()
             return
 
+        self._schedule_mode = which
         self.week_nav_widget.hide()
         week_no = s.week_no()
         html = _schedule_html(which, s, week_no)
@@ -790,7 +819,11 @@ class InfoPanel(QtWidgets.QWidget):
     def _render_week(self):
         s = self.owner.schedule
         self.timetable.set_data(s, self._display_week)
-        self.sched_stack.setCurrentWidget(self.timetable_area)
+        if self._schedule_mode == "list":
+            self._render_week_list()
+            self.sched_stack.setCurrentWidget(self.week_list_area)
+        else:
+            self.sched_stack.setCurrentWidget(self.timetable_area)
         self.week_nav_widget.show()
         real_week = s.week_no() or 0
         tag = " (本周)" if self._display_week == real_week else ""
@@ -800,6 +833,178 @@ class InfoPanel(QtWidgets.QWidget):
         self.btn_cur_week.setEnabled(self._display_week != real_week and real_week >= 1)
         is_sun = getattr(s, "week_start_day", "sunday") == "sunday"
         self.btn_week_start.setText("起始: 周日" if is_sun else "起始: 周一")
+
+    def _render_week_list(self):
+        """按日期分组展示本周课程的完整信息，避免七列网格压缩长文本。"""
+        while self.week_list_layout.count():
+            item = self.week_list_layout.takeAt(0)
+            widget = item.widget()
+            if widget:
+                widget.deleteLater()
+
+        sched = self.owner.schedule
+        visible_days = 0
+        weekdays = self.timetable.col_weekdays
+        dates = self.timetable._date_objs
+        for index, weekday in enumerate(weekdays):
+            course_date = dates[index] if index < len(dates) else None
+            if course_date and hasattr(sched, "courses_for_grid"):
+                courses, adjustment = sched.courses_for_grid(
+                    course_date, weekday, self._display_week)
+            else:
+                courses = list(sched.courses_on(weekday, self._display_week))
+                adjustment = None
+
+            if adjustment and adjustment.get("type") == "suspend":
+                day_courses = []
+            else:
+                day_courses = sorted(courses, key=lambda c: (c.sec_start, c.sec_end, c.name))
+            if not day_courses and not (adjustment and adjustment.get("type") == "suspend"):
+                continue
+
+            visible_days += 1
+            day_group = QtWidgets.QWidget(self.week_list_content)
+            day_layout = QtWidgets.QVBoxLayout(day_group)
+            day_layout.setContentsMargins(0, 0, 0, 0)
+            day_layout.setSpacing(8)
+
+            day_heading = QtWidgets.QHBoxLayout()
+            date_label = ""
+            if course_date:
+                date_label = f" · {course_date.month}月{course_date.day}日"
+            day_title = QtWidgets.QLabel(
+                f"周{_DAY_LABELS.get(weekday, str(weekday))}{date_label}", day_group)
+            day_title.setStyleSheet(
+                f"color:{apple.TEXT};font-size:16px;font-weight:700;padding:2px 0;")
+            day_heading.addWidget(day_title)
+            day_heading.addStretch(1)
+            count_label = QtWidgets.QLabel(
+                "停课" if adjustment and adjustment.get("type") == "suspend"
+                else f"{len(day_courses)} 门课程", day_group)
+            count_label.setStyleSheet(
+                f"color:{apple.SECONDARY};font-size:13px;padding:2px 8px;")
+            day_heading.addWidget(count_label)
+            day_layout.addLayout(day_heading)
+
+            if adjustment and adjustment.get("type") == "suspend":
+                reason = adjustment.get("reason") or "本日停课"
+                suspension = QtWidgets.QLabel(f"{reason} · 全天停课", day_group)
+                suspension.setWordWrap(True)
+                suspension.setStyleSheet(
+                    f"background:#FFF8E8;color:{apple.AMBER};border:1px solid #F0D9A8;"
+                    "border-radius:10px;padding:14px 16px;font-size:14px;")
+                day_layout.addWidget(suspension)
+            else:
+                for course in day_courses:
+                    card = self._make_week_course_card(
+                        course, weekday, adjustment=adjustment)
+                    day_layout.addWidget(card)
+            self.week_list_layout.addWidget(day_group)
+
+        if visible_days == 0:
+            empty = QtWidgets.QLabel("本周暂无课程安排", self.week_list_content)
+            empty.setAlignment(QtCore.Qt.AlignCenter)
+            empty.setMinimumHeight(180)
+            empty.setStyleSheet(
+                f"color:{apple.SECONDARY};font-size:18px;padding:24px;")
+            self.week_list_layout.addWidget(empty)
+
+        if sched.notes:
+            note = QtWidgets.QLabel("课表说明：" + "；".join(str(n) for n in sched.notes),
+                                    self.week_list_content)
+            note.setWordWrap(True)
+            note.setStyleSheet(
+                f"background:{apple.FIELD};color:{apple.SECONDARY};border:1px solid {apple.BORDER};"
+                "border-radius:10px;padding:12px 14px;font-size:13px;")
+            self.week_list_layout.addWidget(note)
+        self.week_list_layout.addStretch(1)
+
+    def _make_week_course_card(self, course, display_weekday, adjustment=None):
+        """创建可读的课程卡片，显式呈现所有已录入字段。"""
+        card = QtWidgets.QFrame(self.week_list_content)
+        card.setObjectName("WeekCourseCard")
+        card.setStyleSheet(
+            f"QFrame#WeekCourseCard{{background:{apple.SURFACE};border:1px solid {apple.BORDER};"
+            "border-radius:12px;}"
+            f"QLabel{{border:none;background:transparent;color:{apple.TEXT};}}")
+        outer = QtWidgets.QHBoxLayout(card)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+        color = self.timetable._color_of.get(course.name)
+        color_name = color.name() if color else apple.ACCENT
+        accent = QtWidgets.QFrame(card)
+        accent.setFixedWidth(5)
+        accent.setStyleSheet(f"background:{color_name};border-top-left-radius:12px;border-bottom-left-radius:12px;")
+        outer.addWidget(accent)
+
+        body = QtWidgets.QVBoxLayout()
+        body.setContentsMargins(16, 12, 14, 12)
+        body.setSpacing(8)
+        outer.addLayout(body, 1)
+
+        header = QtWidgets.QHBoxLayout()
+        header.setSpacing(12)
+        name = QtWidgets.QLabel(course.name, card)
+        name.setWordWrap(True)
+        name.setStyleSheet(f"font-size:18px;font-weight:700;color:{apple.TEXT};")
+        header.addWidget(name, 1)
+
+        start = (self.owner.schedule.sections or {}).get(str(course.sec_start), "")
+        end = (self.owner.schedule.sections or {}).get(str(course.sec_end), "")
+        section_text = f"第 {course.sec_start}-{course.sec_end} 节"
+        custom_time = getattr(course, "custom_time", "")
+        if custom_time:
+            section_text += f"  ·  自定义 {custom_time}"
+        elif start and end:
+            section_text += f"  ·  {start}–{end}"
+        time_label = QtWidgets.QLabel(section_text, card)
+        time_label.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+        time_label.setStyleSheet(
+            f"color:{apple.ACCENT};background:{apple.SELECT_BG};border-radius:8px;"
+            "padding:6px 10px;font-size:13px;font-weight:600;")
+        header.addWidget(time_label, 0)
+
+        detail_btn = QtWidgets.QPushButton("课程详情", card)
+        detail_btn.setFixedHeight(32)
+        detail_btn.setStyleSheet(
+            f"QPushButton{{background:{apple.FIELD};color:{apple.ACCENT};border:1px solid {apple.BORDER};"
+            "border-radius:8px;padding:0 12px;font-size:13px;}"
+            f"QPushButton:hover{{background:{apple.SELECT_BG};border-color:{apple.ACCENT};}}")
+        detail_btn.clicked.connect(lambda _checked=False, c=course: self._on_course_clicked(c))
+        header.addWidget(detail_btn, 0)
+        body.addLayout(header)
+
+        parity = {"all": "每周", "odd": "单周", "even": "双周"}.get(course.parity, "每周")
+        week_text = f"第 {course.week_start}-{course.week_end} 周 · {parity}"
+        display_day = f"周{_DAY_LABELS.get(display_weekday, str(display_weekday))}"
+        if adjustment and adjustment.get("type") == "substitute":
+            source_day = f"周{_DAY_LABELS.get(course.weekday, str(course.weekday))}"
+            display_day += f" · 调课自{source_day}"
+        meta_values = (
+            ("上课日", display_day),
+            ("教学周", week_text),
+            ("教室", course.room or "未指定"),
+            ("教师", course.teacher or "未指定"),
+            ("校区", course.campus or "未指定"),
+        )
+        meta_row = QtWidgets.QHBoxLayout()
+        meta_row.setSpacing(22)
+        for label_text, value_text in meta_values:
+            item = QtWidgets.QLabel(
+                f"<span style='color:{apple.MUTED};'>{label_text}</span>　{_esc(value_text)}", card)
+            item.setTextFormat(QtCore.Qt.RichText)
+            item.setWordWrap(True)
+            item.setStyleSheet(f"font-size:13px;color:{apple.SECONDARY};")
+            meta_row.addWidget(item, 1)
+        body.addLayout(meta_row)
+
+        if course.note:
+            note = QtWidgets.QLabel(f"备注：{_esc(course.note)}", card)
+            note.setTextFormat(QtCore.Qt.RichText)
+            note.setWordWrap(True)
+            note.setStyleSheet(f"color:{apple.SECONDARY};font-size:13px;")
+            body.addWidget(note)
+        return card
 
     def _toggle_week_start_day(self):
         s = self.owner.schedule
@@ -1119,4 +1324,5 @@ class InfoPanel(QtWidgets.QWidget):
         if screen:
             geo = screen.availableGeometry()
             self.move(geo.center() - self.rect().center())
+
 
