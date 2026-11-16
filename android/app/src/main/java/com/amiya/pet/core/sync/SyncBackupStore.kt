@@ -36,7 +36,9 @@ object SyncBackupStore {
         require(payload.keys().asSequence().toSet() == setOf("data", "local"))
         val data = payload.getJSONObject("data"); val local = payload.getJSONObject("local")
         val keys = data.keys().asSequence().toSet()
-        require(keys.isNotEmpty() && categories.containsAll(keys) && local.keys().asSequence().toSet() == keys)
+        val dataCategories = keys - "tombstones"
+        require(keys.isNotEmpty() && (categories + "tombstones").containsAll(keys) &&
+            local.keys().asSequence().toSet() == dataCategories)
     }
     private fun read(context: Context, id: String): Pair<JSONObject, JSONObject> {
         val raw = ByteArrayOutputStream()
@@ -90,7 +92,7 @@ object SyncBackupStore {
         try {
             val (entry, payload) = read(context, id)
             Entry(id, entry.getLong("created_ms"), entry.getString("reason"),
-                payload.getJSONObject("data").keys().asSequence().toList(), true)
+                payload.getJSONObject("data").keys().asSequence().filter { it != "tombstones" }.toList(), true)
         } catch (_: Exception) { Entry(id, 0, "corrupt", emptyList(), false) }
     }
 }

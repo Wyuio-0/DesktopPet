@@ -31,6 +31,7 @@ from .schedule import Schedule, Course
 from .settings import config_dir
 from .tasks import Tasks, Task
 from .sync_backups import BackupStore, BackupError
+from . import sync_deletions
 from .sync_crypto import SecureSync, InvalidEnvelope, key_id, pairing_code, make_request, read_response, seal, PATHS, MAX_WIRE
 
 DEFAULT_HTTP_PORT = 23333
@@ -283,7 +284,8 @@ class DataSyncEngine:
     def pack_all_data():
         """打包本地所有学业数据为 JSON 字典。"""
         return {"version": APP_VERSION, "timestamp": int(time.time()),
-                **DataSyncEngine._backup_state(("schedule", "exams", "notes"))["data"]}
+                **DataSyncEngine._backup_state(("schedule", "exams", "notes"))["data"],
+                "tombstones": sync_deletions.snapshot()}
 
     @staticmethod
     @_serialized_data
@@ -292,6 +294,10 @@ class DataSyncEngine:
         # Parse every included category before changing any local collection.
         if not isinstance(payload, dict) or mode not in ("merge", "replace"):
             raise ValueError("无效的同步模式或数据")
+        try:
+            incoming_tombstones = sync_deletions.validate(payload.get("tombstones"))
+        except ValueError as error:
+            raise ValueError("无效的同步删除记录") from error
         sched_data = payload.get("schedule")
         if "schedule" in payload and not isinstance(sched_data, dict):
             raise ValueError("schedule 必须是对象")
@@ -345,6 +351,58 @@ class DataSyncEngine:
         categories = [key for key in ("schedule", "exams", "notes") if key in payload]
         if mode == "replace" and categories and _backup:
             BackupStore().create(DataSyncEngine._backup_state(categories), _reason)
+
+        replacing = set()
+        if mode == "replace":
+            if sched_data is not None and "courses" in sched_data: replacing.add("schedule")
+            if exams is not None: replacing.add("exams")
+            if notes is not None: replacing.add("notes")
+        affected = set(categories) | {key for key, ids in incoming_tombstones.items() if ids}
+        local_ids, live_ids = {}, {}
+        for category in affected:
+            if category == "schedule":
+                local_ids[category] = {c.id for c in Schedule().courses}
+                live_ids[category] = {c.id for c in courses or []} if category in replacing else set()
+            elif category == "exams":
+                local_ids[category] = {t.id for t in Tasks().items if t.kind == "exam"}
+                live_ids[category] = {e.get("id") for e, _ in exams or [] if e.get("id")} if category in replacing else set()
+            else:
+                manager = sync_notes_manager()
+                with manager.sync_lock: local_ids[category] = {n.id for n in manager.notes}
+                live_ids[category] = {n.id for n in notes or []} if category in replacing else set()
+        try:
+            deleted = sync_deletions.apply(incoming_tombstones, mode, replacing, local_ids, live_ids)
+        except (OSError, ValueError, TypeError) as error:
+            raise BackupError("无法保存同步删除记录，数据未应用") from error
+        if courses is not None:
+            courses = [course for course in courses if course.id not in deleted["schedule"]]
+        if exams is not None:
+            exams = [(item, due) for item, due in exams if item.get("id") not in deleted["exams"]]
+        if notes is not None:
+            notes = [note for note in notes if note.id not in deleted["notes"]]
+
+        # Apply merge tombstones before upserts. For replacement, the incoming
+        # collection is authoritative and already excludes tombstoned IDs.
+        if "schedule" in affected and "schedule" not in replacing:
+            manager = Schedule()
+            old = manager.courses
+            manager.courses = [course for course in old if course.id not in deleted["schedule"]]
+            if len(manager.courses) != len(old) and not manager.save():
+                manager.courses = old
+                raise BackupError("课表删除写入失败")
+        if "exams" in affected and "exams" not in replacing:
+            manager = Tasks()
+            old = manager.items
+            manager.items = [task for task in old if task.kind != "exam" or task.id not in deleted["exams"]]
+            if len(manager.items) != len(old) and not manager.save():
+                manager.items = old
+                raise BackupError("考试删除写入失败")
+        if "notes" in affected and "notes" not in replacing:
+            manager = sync_notes_manager()
+            try:
+                manager.apply_sync([], "merge", deleted_ids=deleted["notes"])
+            except OSError as error:
+                raise BackupError("便签删除写入失败") from error
 
         # 1. 应用课表
         if isinstance(sched_data, dict):
@@ -417,7 +475,7 @@ class DataSyncEngine:
         if notes is not None:
             notes_mgr = sync_notes_manager()
             try:
-                results["notes"] = notes_mgr.apply_sync(notes, mode)
+                results["notes"] = notes_mgr.apply_sync(notes, mode, deleted_ids=deleted["notes"])
             except OSError as error:
                 raise BackupError("便签写入失败，请检查本机存储") from error
 
@@ -425,7 +483,8 @@ class DataSyncEngine:
 
     @staticmethod
     def _backup_state(categories):
-        data, local = {}, {}
+        tombstones = sync_deletions.snapshot()
+        data, local = {"tombstones": {key: tombstones[key] for key in categories}}, {}
         if "schedule" in categories:
             schedule = Schedule()
             data["schedule"] = {"term": schedule.term,

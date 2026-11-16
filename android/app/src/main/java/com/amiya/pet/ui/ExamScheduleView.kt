@@ -276,9 +276,12 @@ fun ExamScheduleView(
                 selectedExamToEdit = null
             },
             onDeleted = { delId ->
-                ExamManager.deleteExam(context, delId)
-                showEditDialog = false
-                selectedExamToEdit = null
+                val deleted = ExamManager.deleteExam(context, delId)
+                if (deleted) {
+                    showEditDialog = false
+                    selectedExamToEdit = null
+                }
+                deleted
             }
         )
     }

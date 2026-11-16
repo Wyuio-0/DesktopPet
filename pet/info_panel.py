@@ -763,7 +763,9 @@ class InfoPanel(QtWidgets.QWidget):
 
     def _on_delete_course(self, course):
         """删除指定课程。"""
-        self.owner.schedule.delete_course(course)
+        if not self.owner.schedule.delete_course(course):
+            QtWidgets.QMessageBox.warning(self, "删除失败", "课程已保留。请检查存储空间后重试。")
+            return
         self._render_week()
         if hasattr(self.owner, "bubble"):
             self.owner.bubble.say(f"已删除课程《{course.name}》。", self.owner._body_rect())
@@ -856,7 +858,9 @@ class InfoPanel(QtWidgets.QWidget):
         tid = self._selected_task_id()
         if not tid:
             return
-        self.owner.tasks.remove(tid)
+        if not self.owner.tasks.remove(tid):
+            QtWidgets.QMessageBox.warning(self, "删除失败", "任务已保留。请检查存储空间后重试。")
+            return
         self.refresh_tasks()
 
     def show_ocr(self, mode, text, result):

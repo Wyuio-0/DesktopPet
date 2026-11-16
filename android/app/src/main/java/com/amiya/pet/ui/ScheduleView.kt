@@ -319,10 +319,11 @@ fun ScheduleScreen(
             courseName = target.name,
             onDismiss = { deletingCourse = null },
             onConfirm = {
-                ScheduleManager.deleteCourse(target.id, context)
-                Toast.makeText(context, "已删除课程《${target.name}》", Toast.LENGTH_SHORT).show()
+                val deleted = ScheduleManager.deleteCourse(target.id, context)
+                Toast.makeText(context, if (deleted) "已删除课程《${target.name}》" else "删除失败，课程已保留。请检查存储空间后重试。",
+                    if (deleted) Toast.LENGTH_SHORT else Toast.LENGTH_LONG).show()
                 deletingCourse = null
-                refreshTrigger++
+                if (deleted) refreshTrigger++
             }
         )
     }

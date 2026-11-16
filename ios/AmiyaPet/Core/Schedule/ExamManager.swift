@@ -160,9 +160,13 @@ public class ExamManager: ObservableObject {
         }
     }
 
-    public func deleteExam(id: String) {
+    @discardableResult public func deleteExam(id: String) -> Bool {
+        let previous = exams
+        guard previous.contains(where: { $0.id == id }) else { return false }
         exams.removeAll { $0.id == id }
-        save()
+        guard save() else { exams = previous; return false }
+        guard SyncDeletionStore.shared.record("exams", id) else { exams = previous; _ = save(); return false }
+        return true
     }
 
     public func hasUrgentExam(withinHours hours: Int = 24) -> Bool {

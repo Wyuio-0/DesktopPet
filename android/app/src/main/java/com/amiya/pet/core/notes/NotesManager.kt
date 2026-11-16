@@ -7,6 +7,7 @@ import org.json.JSONObject
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
+import com.amiya.pet.core.sync.SyncDeletionStore
 
 data class Note(
     val id: String = "note_" + UUID.randomUUID().toString().substring(0, 8),
@@ -128,9 +129,13 @@ class NotesManager private constructor(private val context: Context) {
     }
 
     @Synchronized fun replaceNotes(notes: List<Note>): Boolean {
+        val oldNotes = _notes.toList()
         _notes.clear()
         _notes.addAll(notes)
-        return saveNotes()
+        if (saveNotes()) return true
+        _notes.clear()
+        _notes.addAll(oldNotes)
+        return false
     }
 
     @Synchronized fun updateNote(id: String, content: String, title: String? = null, pinned: Boolean? = null, expected: Note? = null): Note? {
@@ -154,12 +159,20 @@ class NotesManager private constructor(private val context: Context) {
     }
 
     @Synchronized fun deleteNote(id: String): Boolean {
+        val oldNotes = _notes.toList()
         val removed = _notes.removeAll { it.id == id }
         if (_notes.isEmpty()) {
             _notes.add(Note(title = "新便签", content = ""))
         }
         if (removed) {
-            saveNotes()
+            if (!saveNotes()) {
+                _notes.clear(); _notes.addAll(oldNotes)
+                return false
+            }
+            if (!SyncDeletionStore.record(context, "notes", id)) {
+                _notes.clear(); _notes.addAll(oldNotes); saveNotes()
+                return false
+            }
         }
         return removed
     }

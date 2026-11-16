@@ -11,6 +11,7 @@ import java.text.SimpleDateFormat
 import java.util.*
 import java.util.regex.Pattern
 import com.amiya.pet.widget.ScheduleWidgetProvider
+import com.amiya.pet.core.sync.SyncDeletionStore
 data class DeleteCourseQuery(
     val name: String,
     val weekday: Int? = null,
@@ -295,18 +296,32 @@ object ScheduleManager {
         save(context)
     }
 
-    fun updateCourse(course: Course, context: Context) {
+    fun updateCourse(course: Course, context: Context): Boolean {
         ensureLoaded(context)
+        val old = courses
+        if (old.none { it.id == course.id }) return false
         courses = courses.map { if (it.id == course.id) course else it }
         coursesVersion++
-        save(context)
+        if (save(context)) return true
+        courses = old
+        coursesVersion++
+        return false
     }
 
-    fun deleteCourse(courseId: String, context: Context) {
+    fun deleteCourse(courseId: String, context: Context): Boolean {
         ensureLoaded(context)
+        val removed = courses.firstOrNull { it.id == courseId } ?: return false
         courses = courses.filterNot { it.id == courseId }
         coursesVersion++
-        save(context)
+        if (!save(context)) {
+            courses = courses + removed; coursesVersion++
+            return false
+        }
+        if (!SyncDeletionStore.record(context, "schedule", courseId)) {
+            courses = courses + removed; coursesVersion++; save(context)
+            return false
+        }
+        return true
     }
 
     /**
@@ -424,29 +439,31 @@ object ScheduleManager {
         ) ?: return null
 
         if (query.deleteAllWeeks || target.weekStart == target.weekEnd || query.targetWeek == null) {
-            deleteCourse(target.id, context)
-            return target
+            return if (deleteCourse(target.id, context)) target else null
         }
 
         val tWeek = query.targetWeek
         if (tWeek < target.weekStart || tWeek > target.weekEnd) {
-            deleteCourse(target.id, context)
-            return target
+            return if (deleteCourse(target.id, context)) target else null
         }
 
         // 单周豁免：若删除的是某一具体周次
         if (tWeek == target.weekStart) {
             val updated = target.copy(weekStart = target.weekStart + 1)
-            updateCourse(updated, context)
+            if (!updateCourse(updated, context)) return null
         } else if (tWeek == target.weekEnd) {
             val updated = target.copy(weekEnd = target.weekEnd - 1)
-            updateCourse(updated, context)
+            if (!updateCourse(updated, context)) return null
         } else {
-            val part1 = target.copy(id = UUID.randomUUID().toString(), weekEnd = tWeek - 1)
+            val oldCourses = courses.toList()
+            val part1 = target.copy(weekEnd = tWeek - 1)
             val part2 = target.copy(id = UUID.randomUUID().toString(), weekStart = tWeek + 1)
             courses = courses.filterNot { it.id == target.id } + listOf(part1, part2)
             coursesVersion++
-            save(context)
+            if (!save(context)) {
+                courses = oldCourses; coursesVersion++; save(context)
+                return null
+            }
         }
         return target
     }

@@ -26,6 +26,7 @@ import uuid
 from datetime import date, datetime, timedelta
 
 from .settings import config_dir
+from . import sync_deletions
 
 # 常见作息（仅作默认展示，具体以 schedule.json 的 sections 为准）。
 DEFAULT_SECTIONS = {
@@ -536,7 +537,14 @@ class Schedule:
         for i, c in enumerate(self.courses):
             if self._course_matches(c, target_course):
                 del self.courses[i]
-                return self.save()
+                if not self.save():
+                    self.courses.insert(i, c)
+                    return False
+                if not sync_deletions.record("schedule", c.id):
+                    self.courses.insert(i, c)
+                    self.save()
+                    return False
+                return True
         return False
 
     def snap_time_to_sections(self, start_time_str, end_time_str):
@@ -612,28 +620,33 @@ class Schedule:
             return None
 
         if delete_all_weeks or target.week_start == target.week_end or target_week is None:
-            self.delete_course(target)
-            return target
+            return target if self.delete_course(target) else False
 
         t_week = int(target_week)
         if t_week < target.week_start or t_week > target.week_end:
-            self.delete_course(target)
-            return target
+            return target if self.delete_course(target) else False
 
         # 单周豁免：若删除的是首周或末周，缩窄周次；否则拆分为前后两段
         if t_week == target.week_start:
+            old_week_start = target.week_start
             target.week_start += 1
-            self.save()
+            if not self.save():
+                target.week_start = old_week_start
+                return False
         elif t_week == target.week_end:
+            old_week_end = target.week_end
             target.week_end -= 1
-            self.save()
+            if not self.save():
+                target.week_end = old_week_end
+                return False
         else:
+            old_courses = list(self.courses)
             part1 = Course(
                 name=target.name, weekday=target.weekday,
                 sec_start=target.sec_start, sec_end=target.sec_end,
                 week_start=target.week_start, week_end=t_week - 1,
                 parity=target.parity, room=target.room, teacher=target.teacher,
-                campus=target.campus, note=target.note, custom_time=target.custom_time
+                campus=target.campus, note=target.note, custom_time=target.custom_time, id=target.id
             )
             part2 = Course(
                 name=target.name, weekday=target.weekday,
@@ -642,8 +655,10 @@ class Schedule:
                 parity=target.parity, room=target.room, teacher=target.teacher,
                 campus=target.campus, note=target.note, custom_time=target.custom_time
             )
-            self.courses = [c for c in self.courses if not self._course_matches(c, target)] + [part1, part2]
-            self.save()
+            self.courses = [c for c in self.courses if c.id != target.id] + [part1, part2]
+            if not self.save():
+                self.courses = old_courses
+                return False
         return target
 
     def modify_course_matching(self, target_name, target_weekday=None, target_sec_start=None, target_week=None,
