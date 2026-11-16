@@ -467,7 +467,8 @@ public final class SyncManager: ObservableObject {
         }
         let deleted: [String: Set<String>]
         do { deleted = try SyncDeletionStore.shared.apply(incomingTombstones, mode: mode, replacing: replacing, localIds: localIds, liveIds: liveIds) }
-        catch is SyncCrypto.Failure { throw SyncDataFailure.invalid }
+        catch SyncDeletionFailure.invalid { throw SyncDataFailure.invalid }
+        catch SyncDeletionFailure.storage { throw StudyBackupFailure.backupFailed }
         catch { throw StudyBackupFailure.backupFailed }
         incomingCourses = incomingCourses?.filter { !deleted["schedule", default: []].contains($0.id) }
         incomingExams = incomingExams?.filter { !deleted["exams", default: []].contains($0.id) }

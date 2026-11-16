@@ -1,5 +1,10 @@
 import Foundation
 
+enum SyncDeletionFailure: Error {
+    case invalid
+    case storage
+}
+
 final class SyncDeletionStore {
     static let shared = SyncDeletionStore()
     static let categories = ["schedule", "exams", "notes"]
@@ -14,16 +19,16 @@ final class SyncDeletionStore {
         guard FileManager.default.fileExists(atPath: fileURL.path) else { return empty() }
         let body = try JSONSerialization.jsonObject(with: Data(contentsOf: fileURL)) as? [String: Any]
         guard let body = body, body["schema"] as? Int == 1,
-              Set(body.keys).isSubset(of: Set(["schema"] + Self.categories)) else { throw StudyBackupFailure.invalid }
+              Set(body.keys).isSubset(of: Set(["schema"] + Self.categories)) else { throw SyncDeletionFailure.invalid }
         var result = empty()
         for category in Self.categories {
             let rows: [String]
             if let raw = body[category] {
-                guard let parsed = raw as? [String] else { throw StudyBackupFailure.invalid }
+                guard let parsed = raw as? [String] else { throw SyncDeletionFailure.invalid }
                 rows = parsed
             } else { rows = [] }
             guard rows.count <= maximumIds, Set(rows).count == rows.count,
-                  rows.allSatisfy({ !$0.isEmpty && $0.utf8.count <= maximumIdLength }) else { throw StudyBackupFailure.invalid }
+                  rows.allSatisfy({ !$0.isEmpty && $0.utf8.count <= maximumIdLength }) else { throw SyncDeletionFailure.invalid }
             result[category] = Set(rows)
         }
         return result
@@ -32,7 +37,7 @@ final class SyncDeletionStore {
     private func save(_ value: [String: Set<String>]) throws {
         var body: [String: Any] = ["schema": 1]
         for category in Self.categories {
-            guard let ids = value[category], ids.count <= maximumIds else { throw StudyBackupFailure.backupFailed }
+            guard let ids = value[category], ids.count <= maximumIds else { throw SyncDeletionFailure.storage }
             body[category] = ids.sorted()
         }
         let data = try JSONSerialization.data(withJSONObject: body, options: [.sortedKeys])
@@ -47,10 +52,10 @@ final class SyncDeletionStore {
     }
 
     func validate(_ incoming: [String: [String]]) throws -> [String: [String]] {
-        guard Set(incoming.keys).isSubset(of: Set(Self.categories)) else { throw SyncCrypto.Failure.invalid }
+        guard Set(incoming.keys).isSubset(of: Set(Self.categories)) else { throw SyncDeletionFailure.invalid }
         for rows in incoming.values where rows.count > maximumIds || Set(rows).count != rows.count ||
             !rows.allSatisfy({ !$0.isEmpty && $0.utf8.count <= maximumIdLength }) {
-            throw SyncCrypto.Failure.invalid
+            throw SyncDeletionFailure.invalid
         }
         return incoming
     }
@@ -80,7 +85,7 @@ final class SyncDeletionStore {
         for category in Self.categories {
             let rows = incoming[category] ?? []
             guard rows.count <= maximumIds, Set(rows).count == rows.count,
-                  rows.allSatisfy({ !$0.isEmpty && $0.utf8.count <= maximumIdLength }) else { throw SyncCrypto.Failure.invalid }
+                  rows.allSatisfy({ !$0.isEmpty && $0.utf8.count <= maximumIdLength }) else { throw SyncDeletionFailure.invalid }
             remote[category] = Set(rows)
             value[category, default: []].formUnion(rows)
         }

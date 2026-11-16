@@ -41,6 +41,7 @@ targets:
       - path: AmiyaPet/Core/Schedule/Course.swift
       - path: AmiyaPet/Core/Schedule/ScheduleAdjustment.swift
       - path: AmiyaPet/Core/Schedule/ScheduleManager.swift
+      - path: AmiyaPet/Core/Sync/SyncDeletionStore.swift
       - path: AmiyaPet/Core/Focus/PomodoroTimer.swift
       - path: AmiyaPet/Core/Notifications/LiveActivityManager.swift
       - path: AmiyaPet/UI/Main/AmiyaTheme.swift
