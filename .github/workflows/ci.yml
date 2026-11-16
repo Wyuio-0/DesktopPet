@@ -8,14 +8,16 @@ on:
   pull_request:
   workflow_dispatch:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
 env:
   PYTHON_VERSION: "3.12"
 
-# release job 需要创建 Release（生成 release notes / 上传 exe）：
-# 显式声明写权限，并配合仓库 Settings → Actions → Workflow permissions 设为
-# "Read and write permissions"（仓库级别默认 read-only 会覆盖这里）。
+# 默认只授予仓库只读权限；只有发布任务需要写入 Release。
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   test:
@@ -35,15 +37,15 @@ jobs:
         run: python tools/check_secrets.py --all
       - name: Run tests
         run: python -m pytest
+      - name: Check native sync HTTP boundaries
+        run: python tools/check_sync_protocol.py
 
-  build:
-    name: Build exe
+  build-windows:
+    name: Build Windows installer
     needs: test
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v5
-        with:
-          fetch-depth: 0   # 完整历史 + tags：release notes 需要 git log prev..HEAD
       - uses: actions/setup-python@v6
         with:
           python-version: ${{ env.PYTHON_VERSION }}
@@ -94,6 +96,24 @@ jobs:
           $flag = if ($head -match "Inno Setup 7") { "-dMyAppVersion=" } else { "/DMyAppVersion=" }
           Write-Host "Using $iscc :: $head"
           & $iscc "installer\DesktopPet.iss" "$flag$env:MY_APP_VERSION"
+      - name: Stage Windows release assets
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path release-assets -Force | Out-Null
+          Copy-Item DesktopPet-onedir.zip release-assets\\ -Force
+          Copy-Item dist\\DesktopPet-Setup-*.exe release-assets\\ -Force
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DesktopPet-Windows-dist
+          path: release-assets/*
+          if-no-files-found: error
+
+  build-android:
+    name: Build Android APK
+    needs: test
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
       - uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
@@ -104,25 +124,19 @@ jobs:
         env:
           MY_APP_VERSION: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || 'dev' }}
         run: |
-          cd android
-          .\gradlew.bat assembleDebug --no-daemon
-          if (-not (Test-Path ..\dist)) { New-Item -ItemType Directory -Path ..\dist }
-          Copy-Item app\build\outputs\apk\debug\app-debug.apk "..\dist\AmiyaPet-Android-$env:MY_APP_VERSION.apk" -Force
-          cd ..
+          New-Item -ItemType Directory -Path release-assets -Force | Out-Null
+          Push-Location android
+          .\\gradlew.bat assembleDebug --no-daemon
+          Pop-Location
+          Copy-Item android\\app\\build\\outputs\\apk\\debug\\app-debug.apk "release-assets\\AmiyaPet-Android-$env:MY_APP_VERSION.apk" -Force
       - name: Build isolated Android acceptance harness (compile only)
         shell: pwsh
         working-directory: android
-        run: .\gradlew.bat :app:assembleDebug :app:assembleDebugAndroidTest -PsyncAcceptance=true --no-daemon
-      - name: Check native sync HTTP boundaries
-        run: python tools/check_sync_protocol.py
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        run: .\\gradlew.bat :app:assembleDebug :app:assembleDebugAndroidTest -PsyncAcceptance=true --no-daemon
+      - uses: actions/upload-artifact@v4
         with:
-          name: DesktopPet-dist
-          path: |
-            DesktopPet-onedir.zip
-            dist/DesktopPet-Setup-*.exe
-            dist/AmiyaPet-Android-*.apk
+          name: AmiyaPet-Android-dist
+          path: release-assets/*
           if-no-files-found: error
 
 
@@ -187,21 +201,30 @@ jobs:
   release:
     name: Release (tag)
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [build, build-ios]
+    needs: [build-windows, build-android, build-ios]
     runs-on: windows-latest
+    permissions:
+      actions: read
+      contents: write
     steps:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0   # 完整历史 + tags：release notes 需要 git log prev..HEAD
-      - name: Download Windows & Android artifacts
+      - name: Download Windows artifacts
         uses: actions/download-artifact@v4
         with:
-          name: DesktopPet-dist
+          name: DesktopPet-Windows-dist
+          path: release-assets
+      - name: Download Android artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: AmiyaPet-Android-dist
+          path: release-assets
       - name: Download iOS artifacts
         uses: actions/download-artifact@v4
         with:
           name: AmiyaPet-iOS-dist
-          path: dist
+          path: release-assets
       - name: Prepare release notes
         shell: pwsh
         run: |
@@ -227,11 +250,11 @@ jobs:
         uses: softprops/action-gh-release@v3
         with:
           files: |
-            dist/DesktopPet-Setup-*.exe
-            DesktopPet-onedir.zip
-            dist/AmiyaPet-Android-*.apk
-            dist/AmiyaPet-iOS-*.ipa
-            dist/AmiyaPet-iOS-*.zip
+            release-assets/DesktopPet-Setup-*.exe
+            release-assets/DesktopPet-onedir.zip
+            release-assets/AmiyaPet-Android-*.apk
+            release-assets/AmiyaPet-iOS-*.ipa
+            release-assets/AmiyaPet-iOS-*.zip
           body_path: release_body.md
           generate_release_notes: false
           draft: false
