@@ -203,10 +203,20 @@ jobs:
     needs: [build-windows, build-android, build-ios]
     runs-on: windows-latest
     steps:
-      - name: Download verified release assets
+      - name: Download Windows artifacts
         uses: actions/download-artifact@v4
         with:
-          name: DesktopPet-release-assets
+          name: DesktopPet-Windows-dist
+          path: release-assets
+      - name: Download Android artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: AmiyaPet-Android-dist
+          path: release-assets
+      - name: Download iOS artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: AmiyaPet-iOS-dist
           path: release-assets
       - name: Verify release assets
         shell: pwsh
@@ -243,20 +253,10 @@ jobs:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0   # 完整历史 + tags：release notes 需要 git log prev..HEAD
-      - name: Download Windows artifacts
+      - name: Download verified release assets
         uses: actions/download-artifact@v4
         with:
-          name: DesktopPet-Windows-dist
-          path: release-assets
-      - name: Download Android artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: AmiyaPet-Android-dist
-          path: release-assets
-      - name: Download iOS artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: AmiyaPet-iOS-dist
+          name: DesktopPet-release-assets
           path: release-assets
       - name: Prepare release notes
         shell: pwsh
