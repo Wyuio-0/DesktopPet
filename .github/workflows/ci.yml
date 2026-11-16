@@ -37,8 +37,6 @@ jobs:
         run: python tools/check_secrets.py --all
       - name: Run tests
         run: python -m pytest
-      - name: Check native sync HTTP boundaries
-        run: python tools/check_sync_protocol.py
 
   build-windows:
     name: Build Windows installer
@@ -133,6 +131,8 @@ jobs:
         shell: pwsh
         working-directory: android
         run: .\gradlew.bat :app:assembleDebug :app:assembleDebugAndroidTest -PsyncAcceptance=true --no-daemon
+      - name: Check native sync HTTP boundaries
+        run: python tools/check_sync_protocol.py
       - uses: actions/upload-artifact@v4
         with:
           name: AmiyaPet-Android-dist
