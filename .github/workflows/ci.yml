@@ -100,8 +100,8 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Path release-assets -Force | Out-Null
-          Copy-Item DesktopPet-onedir.zip release-assets\\ -Force
-          Copy-Item dist\\DesktopPet-Setup-*.exe release-assets\\ -Force
+          Copy-Item DesktopPet-onedir.zip release-assets\ -Force
+          Copy-Item dist\DesktopPet-Setup-*.exe release-assets\ -Force
       - uses: actions/upload-artifact@v4
         with:
           name: DesktopPet-Windows-dist
@@ -126,13 +126,13 @@ jobs:
         run: |
           New-Item -ItemType Directory -Path release-assets -Force | Out-Null
           Push-Location android
-          .\\gradlew.bat assembleDebug --no-daemon
+          .\gradlew.bat assembleDebug --no-daemon
           Pop-Location
-          Copy-Item android\\app\\build\\outputs\\apk\\debug\\app-debug.apk "release-assets\\AmiyaPet-Android-$env:MY_APP_VERSION.apk" -Force
+          Copy-Item android\app\build\outputs\apk\debug\app-debug.apk "release-assets\AmiyaPet-Android-$env:MY_APP_VERSION.apk" -Force
       - name: Build isolated Android acceptance harness (compile only)
         shell: pwsh
         working-directory: android
-        run: .\\gradlew.bat :app:assembleDebug :app:assembleDebugAndroidTest -PsyncAcceptance=true --no-daemon
+        run: .\gradlew.bat :app:assembleDebug :app:assembleDebugAndroidTest -PsyncAcceptance=true --no-daemon
       - uses: actions/upload-artifact@v4
         with:
           name: AmiyaPet-Android-dist
