@@ -198,10 +198,43 @@ jobs:
           path: ios/build/artifacts/*
           if-no-files-found: error
 
+  package-assets:
+    name: Assemble and verify release assets
+    needs: [build-windows, build-android, build-ios]
+    runs-on: windows-latest
+    steps:
+      - name: Download verified release assets
+        uses: actions/download-artifact@v4
+        with:
+          name: DesktopPet-release-assets
+          path: release-assets
+      - name: Verify release assets
+        shell: pwsh
+        run: |
+          $patterns = @(
+            "DesktopPet-Setup-*.exe",
+            "DesktopPet-onedir.zip",
+            "AmiyaPet-Android-*.apk",
+            "AmiyaPet-iOS-*.ipa",
+            "AmiyaPet-iOS-*.zip"
+          )
+          foreach ($pattern in $patterns) {
+            $matches = @(Get-ChildItem -Path release-assets -Filter $pattern -File)
+            if ($matches.Count -eq 0) {
+              throw "Missing release asset matching $pattern"
+            }
+          }
+          Write-Host "Verified $((Get-ChildItem release-assets -File).Count) release assets"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DesktopPet-release-assets
+          path: release-assets/*
+          if-no-files-found: error
+
   release:
     name: Release (tag)
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [build-windows, build-android, build-ios]
+    needs: package-assets
     runs-on: windows-latest
     permissions:
       actions: read
