@@ -127,7 +127,7 @@ public final class SyncManager: ObservableObject {
     public func createPairingInvite() -> String { secure.createInvite() }
     private func info() -> [String: Any] {
         ["device_id": deviceId, "device_name": deviceName, "device_type": "ios", "http_port": port,
-         "version": "1.9.7", "protocol": 2, "epoch": secure.epoch]
+         "version": "1.9.8", "protocol": 2, "epoch": secure.epoch]
     }
     private func onMain<T>(_ body: () throws -> T) rethrows -> T {
         if Thread.isMainThread { return try body() }
