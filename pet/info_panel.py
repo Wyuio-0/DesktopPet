@@ -12,7 +12,7 @@ import html as _html
 
 from PyQt5 import QtCore, QtGui, QtWidgets
 
-from . import desktop_theme as apple, theme
+from . import desktop_theme as apple, theme, logging as petlog
 from .schedule import _PARITY_LABEL
 from .timetable import TimetableView
 
@@ -1253,7 +1253,16 @@ class InfoPanel(QtWidgets.QWidget):
         from .web_launcher import open_notebook_lm
         brain = getattr(self.owner, "brain", None)
         kb = getattr(brain, "knowledge", None)
-        open_notebook_lm(course=course, filename=filename, brain=brain, kb=kb)
+        try:
+            return open_notebook_lm(course=course, filename=filename, brain=brain, kb=kb)
+        except Exception as e:
+            petlog.warn(f"知识库页面打开失败: {e}")
+            QtWidgets.QMessageBox.warning(
+                self,
+                "知识库暂时无法打开",
+                "NotebookLM 工作台启动失败。请稍后重试；如果问题持续，请重启桌宠。",
+            )
+            return None
 
     def show_knowledge(self, course=None):
         """展示课程知识库管理页，并直接打开 NotebookLM 网页端。"""

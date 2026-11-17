@@ -294,11 +294,8 @@ class CourseDetailDialog(QtWidgets.QDialog):
 
     def _on_open_knowledge(self):
         self.accept()
-        from .web_launcher import open_notebook_lm
-        owner = getattr(self.parent(), "owner", None)
-        brain = getattr(owner, "brain", None)
-        kb = getattr(brain, "knowledge", None)
-        open_notebook_lm(course=self.course.name, brain=brain, kb=kb)
+        # The owning InfoPanel handles launch and error feedback. Emitting the
+        # signal also avoids starting the server twice from this dialog path.
         self.sig_open_knowledge.emit(self.course.name)
 
 
@@ -715,7 +712,19 @@ class CoursewareSummaryDialog(QtWidgets.QDialog):
         self.file_path = file_path
         self._current_text = kb.get_digest(filename, course) if (kb is not None and kb.has_digest(filename, course)) else ""
         from .web_launcher import open_notebook_lm
-        open_notebook_lm(course=course, filename=filename, brain=brain, kb=kb)
+        try:
+            open_notebook_lm(course=course, filename=filename, brain=brain, kb=kb)
+        except Exception as e:
+            from . import logging as petlog
+            petlog.warn(f"知识库页面打开失败: {e}")
+            if owner is not None and hasattr(owner, "bubble"):
+                owner.bubble.say(
+                    "暂时无法打开课程知识库。请稍后重试；如果问题持续，请重启桌宠。",
+                    owner._body_rect(), auto_ms=5000)
+            elif parent is not None:
+                QtCore.QTimer.singleShot(0, lambda: QtWidgets.QMessageBox.warning(
+                    parent, "知识库暂时无法打开",
+                    "NotebookLM 工作台启动失败。请稍后重试；如果问题持续，请重启桌宠。"))
         QtCore.QTimer.singleShot(0, self.accept)
 
 
