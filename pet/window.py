@@ -451,7 +451,14 @@ class PetWindow(QtWidgets.QWidget):
     def show_knowledge_page(self, course=None):
         """直接在系统浏览器中打开 Google NotebookLM 课件研读空间。"""
         from .web_launcher import open_notebook_lm
-        open_notebook_lm(course=course, brain=self.brain, kb=getattr(self.brain, "knowledge", None))
+        try:
+            open_notebook_lm(course=course, brain=self.brain, kb=getattr(self.brain, "knowledge", None))
+        except Exception as e:
+            petlog.warn(f"知识库页面打开失败: {e}")
+            self.bubble.say(
+                "博士，暂时无法打开课程知识库。请稍后重试；如果持续失败，请重启桌宠。",
+                self._body_rect(), auto_ms=5000)
+            return
         msg = "博士，已为您在浏览器中打开 NotebookLM 课件研读工作台！"
         if course:
             msg = f"博士，已为您在浏览器中打开【{course}】的 NotebookLM 课件研读工作台！"
@@ -477,7 +484,7 @@ class PetWindow(QtWidgets.QWidget):
             if hasattr(self, "tray_coord") and self.tray_coord:
                 self.tray_coord.show_message("NotebookLM 服务", "Web 服务已就绪，请从课程知识库菜单打开网页。")
         else:
-            self.bubble.say("博士，启动 Web 服务失败，请检查端口是否被占用。", self._body_rect(), auto_ms=3000)
+            self.bubble.say("博士，暂时无法启动知识库服务。请稍后重试或查看运行日志。", self._body_rect(), auto_ms=4000)
 
     def _ensure_web_service_bg(self):
         """后台静默初始化 Web 研读服务，不弹提示。"""

@@ -14,7 +14,7 @@ import urllib.parse
 import webbrowser
 
 from . import logging as petlog
-from web.security import ACCESS_KEY, local_host
+from web.security import local_host
 
 _SERVER_STARTED = False
 _SERVER_LOCK = threading.Lock()
@@ -25,6 +25,7 @@ _SERVER_THREAD = None
 _ACCESS = None
 _WEB_SERVER = None
 _SERVER_ADDRESS = None
+_SERVER_ERROR = None
 
 
 def is_server_listening(host: str = "127.0.0.1", port: int = 5050) -> bool:
@@ -73,9 +74,10 @@ def _get_web_server_module():
 
 def ensure_server_running(host: str = "127.0.0.1", port: int = 5050, brain=None, kb=None) -> bool:
     """Start an owned loopback service; never trust another listener on the port."""
-    global _SERVER_STARTED, _SERVER_THREAD
+    global _SERVER_STARTED, _SERVER_THREAD, _SERVER_ERROR
     host = local_host(host)
     with _SERVER_LOCK:
+        _SERVER_ERROR = None
         if (_SITE is not None and _SERVER_ADDRESS == (host, port)
                 and _SERVER_THREAD and _SERVER_THREAD.is_alive()):
             if brain is not None or kb is not None:
@@ -88,7 +90,7 @@ def ensure_server_running(host: str = "127.0.0.1", port: int = 5050, brain=None,
         ready = threading.Event()
 
         def _run_server():
-            global _LOOP, _RUNNER, _SITE, _ACCESS, _WEB_SERVER, _SERVER_ADDRESS
+            global _LOOP, _RUNNER, _SITE, _ACCESS, _WEB_SERVER, _SERVER_ADDRESS, _SERVER_ERROR
             loop = asyncio.new_event_loop()
             runner = None
             try:
@@ -99,17 +101,24 @@ def ensure_server_running(host: str = "127.0.0.1", port: int = 5050, brain=None,
                 if brain is not None or kb is not None:
                     ws.set_app_context(brain, kb)
                 app = ws.make_app()
+                # The frozen build may load web.server from disk under a
+                # separate module object. Read the AppKey from that exact
+                # module instance; aiohttp AppKey lookup is identity-based.
+                access_key = getattr(ws, "ACCESS_KEY", None)
+                if access_key is None:
+                    raise RuntimeError("web.server 未导出 ACCESS_KEY")
                 runner = web.AppRunner(app, access_log=None)
                 loop.run_until_complete(runner.setup())
                 site = web.TCPSite(runner, host, port)
                 loop.run_until_complete(site.start())
                 _RUNNER, _SITE = runner, site
-                _ACCESS, _WEB_SERVER = app[ACCESS_KEY], ws
+                _ACCESS, _WEB_SERVER = app[access_key], ws
                 _SERVER_ADDRESS = (host, port)
                 ready.set()
                 petlog.log("web_launcher: NotebookLM 本机服务已就绪")
                 loop.run_forever()
             except Exception as e:
+                _SERVER_ERROR = str(e)
                 petlog.warn(f"web_launcher: 后台启动 NotebookLM 服务失败: {e}")
             finally:
                 try:
@@ -202,7 +211,8 @@ def open_notebook_lm(course: str = None, filename: str = None, host: str = "127.
     """
     host = local_host(host)
     if not ensure_server_running(host, port, brain=brain, kb=kb):
-        raise RuntimeError("网页工作台启动失败：端口可能被其他程序占用")
+        detail = f"（{_SERVER_ERROR}）" if _SERVER_ERROR else "（端口可能被占用，或服务启动超时）"
+        raise RuntimeError(f"网页工作台启动失败{detail}")
 
     params = {}
     if course and str(course).strip() and course != "__ALL__":
