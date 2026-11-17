@@ -159,7 +159,7 @@ def test_launcher_opens_authenticated_workspace(server_module, monkeypatch):
     from pet import web_launcher
     monkeypatch.setattr(web_launcher, "_get_web_server_module", lambda: server_module)
     opened = []
-    monkeypatch.setattr(web_launcher.webbrowser, "open", opened.append)
+    monkeypatch.setattr(web_launcher.webbrowser, "open", lambda url: opened.append(url) or True)
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0))
         port = sock.getsockname()[1]

@@ -7,10 +7,9 @@
 
 import asyncio
 import socket
-import sys
 import threading
 import time
-import urllib.parse
+import traceback
 import webbrowser
 
 from . import logging as petlog
@@ -43,32 +42,12 @@ def is_running(host: str = "127.0.0.1", port: int = 5050) -> bool:
 
 
 def _get_web_server_module():
-    """动态获取 web.server 模块，优先读取磁盘上的最新源文件，方便热更新与免重构调试。"""
+    """Import the service shipped with this version through Python's loader.
+
+    Old installations can contain loose web/server.py hot patches next to the
+    executable. They must never replace the bundled service and its auth layer.
+    """
     import importlib
-    import importlib.util
-    import os
-    import sys
-
-    base_dirs = []
-    if getattr(sys, 'frozen', False):
-        exe_dir = os.path.dirname(sys.executable)
-        base_dirs.extend([exe_dir, os.path.join(exe_dir, '_internal')])
-    else:
-        root_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        base_dirs.append(root_dir)
-
-    for b in base_dirs:
-        candidate = os.path.join(b, "web", "server.py")
-        if os.path.isfile(candidate):
-            try:
-                spec = importlib.util.spec_from_file_location("web.server", candidate)
-                if spec and spec.loader:
-                    mod = importlib.util.module_from_spec(spec)
-                    spec.loader.exec_module(mod)
-                    return mod
-            except Exception as e:
-                petlog.warn(f"web_launcher: 动态载入外部 {candidate} 失败，回退内建模块: {e}")
-
     return importlib.import_module("web.server")
 
 
@@ -101,32 +80,21 @@ def ensure_server_running(host: str = "127.0.0.1", port: int = 5050, brain=None,
                 if brain is not None or kb is not None:
                     ws.set_app_context(brain, kb)
                 app = ws.make_app()
-                # aiohttp AppKeys are identity-based; resolve the key from the
-                # code instance that created this app, including frozen builds.
-                access_key = getattr(ws, "ACCESS_KEY", None)
-                if access_key is None:
-                    # Some frozen importers expose the module's callable
-                    # without forwarding its globals as module attributes.
-                    # make_app uses this exact key to populate the app, so its
-                    # function globals are the authoritative fallback.
-                    make_app_globals = getattr(
-                        getattr(ws, "make_app", None), "__globals__", {})
-                    access_key = make_app_globals.get("ACCESS_KEY")
-                if access_key is None:
-                    raise RuntimeError("web.server 未导出 ACCESS_KEY")
+                access = app[ws.ACCESS_KEY]
+                petlog.log(f"web_launcher: 服务模块 {ws.__file__}")
                 runner = web.AppRunner(app, access_log=None)
                 loop.run_until_complete(runner.setup())
                 site = web.TCPSite(runner, host, port)
                 loop.run_until_complete(site.start())
                 _RUNNER, _SITE = runner, site
-                _ACCESS, _WEB_SERVER = app[access_key], ws
+                _ACCESS, _WEB_SERVER = access, ws
                 _SERVER_ADDRESS = (host, port)
                 ready.set()
                 petlog.log("web_launcher: NotebookLM 本机服务已就绪")
                 loop.run_forever()
             except Exception as e:
                 _SERVER_ERROR = str(e)
-                petlog.warn(f"web_launcher: 后台启动 NotebookLM 服务失败: {e}")
+                petlog.warn(f"web_launcher: 后台启动 NotebookLM 服务失败: {e}\n{traceback.format_exc()}")
             finally:
                 try:
                     if runner:
@@ -234,8 +202,12 @@ def open_notebook_lm(course: str = None, filename: str = None, host: str = "127.
         url = _ACCESS.launch_url(host, port, params)
 
     try:
-        webbrowser.open(url)
+        opened = webbrowser.open(url)
     except Exception as e:
         petlog.warn(f"web_launcher: 无法自动打开系统浏览器: {e}")
+        raise RuntimeError("无法打开默认浏览器，请检查系统默认浏览器设置后重试") from e
+    if not opened:
+        petlog.warn("web_launcher: 系统浏览器未接受打开请求")
+        raise RuntimeError("默认浏览器未接受打开请求，请检查系统默认浏览器设置后重试")
 
     return url

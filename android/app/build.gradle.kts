@@ -14,8 +14,8 @@ android {
         applicationId = "com.amiya.pet"
         minSdk = 26
         targetSdk = 35
-        versionCode = 220
-        versionName = "1.9.10"
+        versionCode = 221
+        versionName = "1.9.11"
         testInstrumentationRunner = "com.amiya.pet.acceptance.SyncAcceptanceRunner"
         manifestPlaceholders["appDisplayName"] = if (syncAcceptance) "阿米娅同步验收（独立数据）" else "阿米娅桌宠"
     }

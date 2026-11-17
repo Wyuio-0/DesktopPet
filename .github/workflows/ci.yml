@@ -73,6 +73,8 @@ jobs:
             exit 1
           }
           Write-Host "dist clean"
+      - name: Check packaged knowledge workspace with legacy source leftovers
+        run: python tools/check_packaged_workspace.py dist/DesktopPet/DesktopPet.exe
       - name: Package zip (onedir)
         shell: pwsh
         run: Compress-Archive -Path dist\DesktopPet\* -DestinationPath DesktopPet-onedir.zip -Force
