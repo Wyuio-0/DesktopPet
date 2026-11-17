@@ -456,7 +456,7 @@ class PetWindow(QtWidgets.QWidget):
         except Exception as e:
             petlog.warn(f"知识库页面打开失败: {e}")
             self.bubble.say(
-                "博士，暂时无法打开课程知识库。请稍后重试；如果持续失败，请重启桌宠。",
+                f"博士，课程知识库打开失败：{e}",
                 self._body_rect(), auto_ms=5000)
             return
         msg = "博士，已为您在浏览器中打开 NotebookLM 课件研读工作台！"

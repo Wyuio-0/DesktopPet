@@ -48,6 +48,12 @@ def find_character(name=None):
 
 
 def main():
+    # Invoked by tools/check_packaged_workspace.py with isolated user paths.
+    # Run before single-instance handling so CI never talks to a user's pet.
+    if len(sys.argv) == 3 and sys.argv[1] == "--check-knowledge-workspace":
+        from pet.web_workspace_check import run
+        sys.exit(run(sys.argv[2]))
+
     # 先装全局异常钩子：打包版 console=False，所有未捕获异常写入 pet.log
     # （%APPDATA%\AmiyaPet\pet.log），否则只能盲猜。
     petlog.init_logging()

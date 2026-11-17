@@ -1260,7 +1260,7 @@ class InfoPanel(QtWidgets.QWidget):
             QtWidgets.QMessageBox.warning(
                 self,
                 "知识库暂时无法打开",
-                "NotebookLM 工作台启动失败。请稍后重试；如果问题持续，请重启桌宠。",
+                f"{e}\n\n请稍后重试；如果问题持续，请查看运行日志。",
             )
             return None
 
