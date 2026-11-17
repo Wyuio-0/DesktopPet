@@ -44,6 +44,7 @@ def is_running(host: str = "127.0.0.1", port: int = 5050) -> bool:
 
 def _get_web_server_module():
     """动态获取 web.server 模块，优先读取磁盘上的最新源文件，方便热更新与免重构调试。"""
+    import importlib
     import importlib.util
     import os
     import sys
@@ -68,8 +69,7 @@ def _get_web_server_module():
             except Exception as e:
                 petlog.warn(f"web_launcher: 动态载入外部 {candidate} 失败，回退内建模块: {e}")
 
-    import web.server as ws
-    return ws
+    return importlib.import_module("web.server")
 
 
 def ensure_server_running(host: str = "127.0.0.1", port: int = 5050, brain=None, kb=None) -> bool:
@@ -101,10 +101,17 @@ def ensure_server_running(host: str = "127.0.0.1", port: int = 5050, brain=None,
                 if brain is not None or kb is not None:
                     ws.set_app_context(brain, kb)
                 app = ws.make_app()
-                # The frozen build may load web.server from disk under a
-                # separate module object. Read the AppKey from that exact
-                # module instance; aiohttp AppKey lookup is identity-based.
+                # aiohttp AppKeys are identity-based; resolve the key from the
+                # code instance that created this app, including frozen builds.
                 access_key = getattr(ws, "ACCESS_KEY", None)
+                if access_key is None:
+                    # Some frozen importers expose the module's callable
+                    # without forwarding its globals as module attributes.
+                    # make_app uses this exact key to populate the app, so its
+                    # function globals are the authoritative fallback.
+                    make_app_globals = getattr(
+                        getattr(ws, "make_app", None), "__globals__", {})
+                    access_key = make_app_globals.get("ACCESS_KEY")
                 if access_key is None:
                     raise RuntimeError("web.server 未导出 ACCESS_KEY")
                 runner = web.AppRunner(app, access_log=None)
