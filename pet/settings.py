@@ -67,13 +67,13 @@ class Settings:
     """
 
     _SCHEMA_VERSION = 2
-    # 已知有效顶层键；前缀模式（perm_*/hotkeys_*）也有效。
+    # 已知有效顶层键；前缀模式（perm_*/hotkeys_*/appearance_*）也有效。
     _KNOWN_KEYS = frozenset({
         "volume", "voice_enabled", "tts_on", "character", "exam_badge",
         "clone_manual_autostop", "check_updates", "knowledge_embed",
         "pet_pos", "week_start_day", "schema_version", "onboarding_completed",
     })
-    _KNOWN_PREFIXES = ("perm_", "hotkeys_")
+    _KNOWN_PREFIXES = ("perm_", "hotkeys_", "appearance_")
 
     def __init__(self):
         self.path = _settings_path()

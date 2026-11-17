@@ -16,7 +16,7 @@ public struct DeviceInfo: Codable, Identifiable, Hashable {
         deviceType: String = "ios",
         ip: String,
         httpPort: Int = 23334,
-        version: String = "1.9.11",
+        version: String = "1.9.12",
         paired: Bool = false
     ) {
         self.deviceId = deviceId
