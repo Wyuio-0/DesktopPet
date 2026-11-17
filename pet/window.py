@@ -16,6 +16,7 @@ from .ai import AmiyaBrain
 from .character import Character
 from .focus import PetFocusToolsManager
 from .frames import key_frame, calc_action_interval
+from .sprite_animation import SpriteCapture, resize_sprite
 from .hotkey import GlobalHotkey
 from .info_panel import InfoPanel, PAGE_OCR, PAGE_SCHEDULE, PAGE_TASKS
 from .input_controller import PetInputController
@@ -137,7 +138,8 @@ class PetWindow(QtWidgets.QWidget):
 
     def __init__(self, character):
         super().__init__()
-        self.char = character
+        self.prefs = Settings()
+        self.char = self._preferred_character(character, self.prefs)
         self.characters_dir = os.path.dirname(character.dir)
         self._cap = None            # cv2.VideoCapture of the current clip
         self._cur_action = None     # Action currently playing
@@ -188,9 +190,6 @@ class PetWindow(QtWidgets.QWidget):
         self._rest_timer.setSingleShot(True)
         self._rest_timer.timeout.connect(self._rest_step)
         self._load_rest_config()
-
-        # Persisted user preferences
-        self.prefs = Settings()
 
         # Voice
         vcfg = self.char.cfg.get("voice", {})
@@ -741,11 +740,31 @@ class PetWindow(QtWidgets.QWidget):
     # 角色切换与生命周期管理                                             #
     # ------------------------------------------------------------------ #
 
+    @staticmethod
+    def _preferred_character(character, prefs):
+        saved = prefs.get("appearance_" + character.key, character.appearance_key)
+        selected = Character(character.dir, appearance=saved)
+        if selected.appearance_key != "default":
+            try:
+                for name in ("start", "idle"):
+                    action = selected.action(name)
+                    if action is not None and action.sprite is not None:
+                        probe = SpriteCapture(action.sprite, selected.dir)
+                        try:
+                            if not probe.read()[0]:
+                                raise ValueError("无法读取插画动画")
+                        finally:
+                            probe.release()
+            except Exception as error:
+                petlog.warn(f"已保存形象的素材不可用，使用原形象: {error}")
+                return Character(character.dir)
+        return selected
+
     def _switch_character(self, char_dir):
         if os.path.normcase(char_dir) == os.path.normcase(self.char.dir):
             return
         try:
-            new_char = Character(char_dir)
+            new_char = self._preferred_character(Character(char_dir), self.prefs)
         except Exception as e:
             self.trans_popup.hide()
             self.bubble.say("切换失败：%s" % type(e).__name__, self._body_rect())
@@ -831,6 +850,43 @@ class PetWindow(QtWidgets.QWidget):
         self.bubble.say("已切换到%s。" % self.char.display_name, self._body_rect())
         self.voice.play("greet")
 
+    def _switch_appearance(self, key):
+        """Swap only presentation while ongoing AI, voice and tools keep running."""
+        if key == self.char.appearance_key:
+            return True
+        previous = self.char
+        try:
+            selected = Character(previous.dir, appearance=key)
+            if selected.appearance_key != key:
+                raise ValueError("未找到这个形象")
+            # Validate the selected idle asset before changing any live state.
+            idle = selected.action("idle")
+            if idle is None:
+                raise ValueError("该形象缺少待机动画")
+            probe = self._capture_action(selected, idle)
+            try:
+                ok, _ = probe.read()
+                if not ok:
+                    raise ValueError("无法读取该形象的动画")
+            finally:
+                probe.release()
+        except Exception as error:
+            petlog.warn(f"形象切换失败: {error}")
+            self.bubble.say(f"形象切换失败：{error}", self._body_rect(), auto_ms=4000)
+            return False
+        if hasattr(self, "wander_coord"):
+            self.wander_coord.cancel_wandering()
+        body = self._body_rect()
+        anchor = (body.center().x(), body.bottom() + 1)
+        self._rest_timer.stop()
+        self.char = selected
+        self._load_rest_config()
+        self._appearance_anchor = anchor
+        self.play("idle")
+        self.prefs.set("appearance_" + self.char.key, key)
+        self._tick()
+        return True
+
     def _speak(self, text, fallback="reply"):
         if not self.voice.enabled or self.voice.volume <= 0:
             return
@@ -901,18 +957,33 @@ class PetWindow(QtWidgets.QWidget):
     # Playback                                                             #
     # ------------------------------------------------------------------ #
 
+    @staticmethod
+    def _capture_action(character, action):
+        if action.sprite is not None:
+            return SpriteCapture(action.sprite, character.dir)
+        clip = action.pick_clip()
+        if clip is None:
+            raise ValueError("该动作没有可用动画")
+        capture = cv2.VideoCapture(clip)
+        if not capture.isOpened():
+            capture.release()
+            raise ValueError("无法打开动画文件")
+        return capture
+
     def play(self, action_name):
         if action_name != "move":
             self._facing_left = False
         action = self.char.action(action_name)
         if action is None:
             return
-        clip = action.pick_clip()
-        if clip is None:
-            return
+        try:
+            capture = self._capture_action(self.char, action)
+        except Exception as error:
+            petlog.warn(f"播放动作 {action_name} 失败: {error}")
+            return False
         if self._cap is not None:
             self._cap.release()
-        self._cap = cv2.VideoCapture(clip)
+        self._cap = capture
         self._cur_action = action
         self._loops_left = action.loop_count
         # Reset the per-clip frame cache. Only sustained loops (idle/sit/sleep/
@@ -926,12 +997,14 @@ class PetWindow(QtWidgets.QWidget):
         self._caching = action.loop
         self._cache_full = False        # reset budget tracker for this clip
         self._skip_count = 0            # reset frame-skip counter
+        self._last_bgra = None
         # 按动画原始真实速度播放（优先使用各角色 config.json 中校准的原生真实毫秒间隔）。
         fps = self._cap.get(cv2.CAP_PROP_FPS)
         speed = float(self.prefs.get("anim_speed", 1.0)) if hasattr(self, "prefs") else 1.0
         interval = calc_action_interval(action.interval, fps, speed_mult=speed)
         self._timer.start(interval)
         self._schedule_rest(action_name)
+        return True
 
     # ------------------------------------------------------------------ #
     # Idle rest cycle (idle -> sit -> sleep)                               #
@@ -1049,7 +1122,9 @@ class PetWindow(QtWidgets.QWidget):
             if self._skip_count % div != 0:
                 self._mem.tick_gc()
                 return
-        bgra = key_frame(frame, self.char.scale * self._dpr)
+        scale = self.char.scale * self._dpr
+        bgra = (resize_sprite(frame, scale) if frame.shape[2] == 4
+                else key_frame(frame, scale))
         # ── first pass: store raw BGRA (fast, keeps original playback speed) ──
         # 预算按"估算压缩后大小"记账（PNG 约 10-15:1），而不是原始大小——
         # 否则几帧就撑爆预算导致缓存中止、每轮循环全量重抠图。
@@ -1120,6 +1195,19 @@ class PetWindow(QtWidgets.QWidget):
             if not self._first_frame_shown:
                 self._first_frame_shown = True
                 self._restore_position()
+        anchor = getattr(self, "_appearance_anchor", None)
+        if anchor is not None:
+            self._appearance_anchor = None
+            body = self._body_rect()
+            x = self.x() + anchor[0] - body.center().x()
+            y = self.y() + anchor[1] - body.bottom() - 1
+            screen = QtWidgets.QApplication.screenAt(QtCore.QPoint(*anchor)) or self.screen()
+            if screen:
+                area = screen.availableGeometry()
+                x = max(area.left(), min(x, area.right() - lw + 1))
+                y = max(area.top(), min(y, area.bottom() - lh + 1))
+            self.move(x, y)
+            self._reposition_popups()
 
     # ------------------------------------------------------------------ #
     # Geometry helpers                                                     #

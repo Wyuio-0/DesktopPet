@@ -85,6 +85,10 @@ class PetTrayCoordinator(QtCore.QObject):
             m.addAction("🛑 停止知识库 Web 服务 (释放 5050 端口)", self.window.stop_knowledge_web_service)
         m.addSeparator()
 
+        builder = getattr(self.window, "menu_builder", None)
+        if builder is not None and builder.add_appearance_menu(m) is not None:
+            m.addSeparator()
+
         tts_act = m.addAction("朗读回答（语音合成）")
         tts_act.setCheckable(True)
         tts_supported = getattr(self.window, "_tts_supported", True)

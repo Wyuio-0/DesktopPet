@@ -96,6 +96,7 @@ class PetContextMenuBuilder(QtCore.QObject):
         # ── 3. 智能与角色 ────────────────────────────────────────────
         self.add_ai_menu(m)
         self.add_character_menu(m)
+        self.add_appearance_menu(m)
         self.add_audio_menu(m)
         m.addSeparator()
 
@@ -146,6 +147,25 @@ class PetContextMenuBuilder(QtCore.QObject):
         placeholder = sub.addAction("加载中…")
         placeholder.setEnabled(False)
         sub.aboutToShow.connect(lambda s=sub: self._populate_character_menu(s))
+
+    def add_appearance_menu(self, parent):
+        """Choose an appearance without changing character identity."""
+        choices = getattr(self.window.char, "available_appearances", ())
+        if len(choices) < 2:
+            return None
+        sub = parent.addMenu("切换形象")
+        group = QtWidgets.QActionGroup(sub)
+        group.setExclusive(True)
+        current = self.window.char.appearance_key
+        for key, label in choices:
+            action = sub.addAction(label)
+            action.setData(key)
+            action.setCheckable(True)
+            action.setChecked(key == current)
+            group.addAction(action)
+            action.triggered.connect(
+                lambda checked=False, selected=key: self.window._switch_appearance(selected))
+        return sub
 
     def _populate_character_menu(self, sub):
         sub.clear()
