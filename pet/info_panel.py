@@ -6,7 +6,7 @@
 入口：PetWindow 右键菜单（课程表/待办与考试/OCR 的查看类动作都指向本面板）。
 """
 
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import html as _html
 
@@ -199,6 +199,21 @@ QFrame#ContentSurface {
 QLabel#PageTitle { color:%(text)s; font-size:%(fs_2xl)dpx; font-weight:600; }
 QLabel#PageSubtitle { color:%(dim)s; font-size:%(fs_sm)dpx; }
 QFrame#PageDivider { background:%(border)s; border:none; max-height:1px; }
+QFrame#StatCard, QFrame#OcrCard, QFrame#KnowledgeFileCard {
+    background:%(surface)s; border:1px solid %(border)s; border-radius:12px;
+}
+QFrame#KnowledgeFileCard { padding:4px; }
+QLabel#StatLabel { color:%(dim)s; font-size:%(fs_sm)dpx; }
+QLabel#StatValue { color:%(text)s; font-size:%(fs_2xl)dpx; font-weight:700; }
+QLabel#CardTitle { color:%(text)s; font-size:%(fs_md)dpx; font-weight:600; }
+QLabel#OcrStatus {
+    color:%(accent)s; background:%(select_bg)s; border:1px solid %(border)s;
+    border-radius:10px; padding:7px 12px; font-size:%(fs_sm)dpx; font-weight:600;
+}
+QLabel#FileBadge {
+    color:%(accent)s; background:%(select_bg)s; border:1px solid %(border)s;
+    border-radius:8px; padding:5px 8px; font-size:%(fs_xs)dpx; font-weight:700;
+}
 QListWidget#Nav {
     background:transparent; border:none; font-size:%(fs_sm)dpx; padding-top:4px;
 }
@@ -220,15 +235,17 @@ QTableWidget {
     background:%(surface)s; alternate-background-color:%(field)s;
     color:%(text)s; border:none; gridline-color:%(border)s;
     font-size:%(fs_sm)dpx; selection-background-color:%(select_bg)s;
-    selection-color:%(text)s; outline:0;
+    selection-color:%(text)s; outline:0; border-radius:10px;
 }
-QTableWidget::item { padding:7px 8px; border-bottom:1px solid %(border)s; }
+QTableWidget::item { padding:10px 10px; border-bottom:1px solid %(border)s; }
 QHeaderView { background:%(field)s; border:none; }
 QHeaderView::section {
     background:%(field)s; color:%(dim)s; border:none;
     border-bottom:1px solid %(border)s; padding:10px 8px;
     font-size:%(fs_xs)dpx; font-weight:600;
 }
+QSplitter::handle { background:%(border)s; }
+QSplitter::handle:hover { background:%(accent)s; }
 QScrollArea { background:transparent; border:none; }
 QScrollBar:vertical { background:transparent; width:9px; margin:3px 2px; }
 QScrollBar::handle:vertical { background:%(scroll)s; border-radius:4px; min-height:28px; }
@@ -575,11 +592,34 @@ class InfoPanel(QtWidgets.QWidget):
         page = QtWidgets.QWidget(self)
         lay = QtWidgets.QVBoxLayout(page)
         lay.setContentsMargins(0, 0, 0, 0)
-        lay.setSpacing(8)
+        lay.setSpacing(14)
+
+        stats_row = QtWidgets.QHBoxLayout()
+        stats_row.setSpacing(12)
+        self.task_stat_values = {}
+        for key, label in (("pending", "待完成"),
+                           ("exams", "近期考试"),
+                           ("week", "本周安排")):
+            card = QtWidgets.QFrame(page)
+            card.setObjectName("StatCard")
+            card_layout = QtWidgets.QVBoxLayout(card)
+            card_layout.setContentsMargins(16, 12, 16, 12)
+            card_layout.setSpacing(3)
+            title = QtWidgets.QLabel(label, card)
+            title.setObjectName("StatLabel")
+            value = QtWidgets.QLabel("0", card)
+            value.setObjectName("StatValue")
+            card_layout.addWidget(title)
+            card_layout.addWidget(value)
+            stats_row.addWidget(card, 1)
+            self.task_stat_values[key] = value
+        lay.addLayout(stats_row)
 
         self.task_table = QtWidgets.QTableWidget(0, 5, page)
         self.task_table.setHorizontalHeaderLabels(
             ["状态", "事项", "课程", "截止时间", "剩余"])
+        self.task_table.setAlternatingRowColors(True)
+        self.task_table.setShowGrid(False)
         self.task_table.setSelectionBehavior(
             QtWidgets.QAbstractItemView.SelectRows)
         self.task_table.setSelectionMode(
@@ -587,7 +627,9 @@ class InfoPanel(QtWidgets.QWidget):
         self.task_table.setEditTriggers(
             QtWidgets.QAbstractItemView.NoEditTriggers)
         self.task_table.verticalHeader().setVisible(False)
+        self.task_table.verticalHeader().setDefaultSectionSize(54)
         header = self.task_table.horizontalHeader()
+        header.setMinimumHeight(42)
         header.setSectionResizeMode(1, QtWidgets.QHeaderView.Stretch)
         for col in (0, 2, 3, 4):
             header.setSectionResizeMode(col, QtWidgets.QHeaderView.ResizeToContents)
@@ -612,23 +654,53 @@ class InfoPanel(QtWidgets.QWidget):
         page = QtWidgets.QWidget(self)
         lay = QtWidgets.QVBoxLayout(page)
         lay.setContentsMargins(0, 0, 0, 0)
-        lay.setSpacing(8)
+        lay.setSpacing(14)
 
+        status_row = QtWidgets.QHBoxLayout()
         self.ocr_status = QtWidgets.QLabel("暂无 OCR 结果。", page)
+        self.ocr_status.setObjectName("OcrStatus")
         self.ocr_status.setStyleSheet(
-            "color:%s;font-size:%dpx;" % (apple.SECONDARY, theme.FS_MD))
-        lay.addWidget(self.ocr_status)
+            "color:%s;font-size:%dpx;" % (apple.ACCENT, theme.FS_SM))
+        status_row.addWidget(self.ocr_status)
+        status_row.addStretch(1)
+        lay.addLayout(status_row)
 
         split = QtWidgets.QSplitter(QtCore.Qt.Horizontal, page)
-        self.ocr_source = QtWidgets.QPlainTextEdit(page)
-        self.ocr_result = QtWidgets.QPlainTextEdit(page)
+        split.setHandleWidth(10)
+        self.ocr_source_card = QtWidgets.QFrame(split)
+        self.ocr_source_card.setObjectName("OcrCard")
+        source_layout = QtWidgets.QVBoxLayout(self.ocr_source_card)
+        source_layout.setContentsMargins(16, 14, 16, 14)
+        source_layout.setSpacing(10)
+        source_title = QtWidgets.QLabel("原文（识别结果）", self.ocr_source_card)
+        source_title.setObjectName("CardTitle")
+        source_layout.addWidget(source_title)
+        self.ocr_source = QtWidgets.QPlainTextEdit(self.ocr_source_card)
+        self.ocr_source.setObjectName("OcrText")
+
+        self.ocr_result_card = QtWidgets.QFrame(split)
+        self.ocr_result_card.setObjectName("OcrCard")
+        result_layout = QtWidgets.QVBoxLayout(self.ocr_result_card)
+        result_layout.setContentsMargins(16, 14, 16, 14)
+        result_layout.setSpacing(10)
+        result_title = QtWidgets.QLabel("译文 / 总结", self.ocr_result_card)
+        result_title.setObjectName("CardTitle")
+        result_layout.addWidget(result_title)
+        self.ocr_result = QtWidgets.QPlainTextEdit(self.ocr_result_card)
+        self.ocr_result.setObjectName("OcrText")
+
         for w in (self.ocr_source, self.ocr_result):
             w.setReadOnly(True)
             w.setPlaceholderText("")
+            w.setStyleSheet(
+                "background:transparent;border:none;padding:2px;"
+                "font-size:%dpx;color:%s;" % (theme.FS_MD, apple.TEXT))
         self.ocr_source.setPlaceholderText("原文（识别结果）")
         self.ocr_result.setPlaceholderText("译文 / 总结")
-        split.addWidget(self.ocr_source)
-        split.addWidget(self.ocr_result)
+        source_layout.addWidget(self.ocr_source, 1)
+        result_layout.addWidget(self.ocr_result, 1)
+        split.addWidget(self.ocr_source_card)
+        split.addWidget(self.ocr_result_card)
         split.setStretchFactor(0, 1)
         split.setStretchFactor(1, 1)
         lay.addWidget(split, 1)
@@ -638,112 +710,99 @@ class InfoPanel(QtWidgets.QWidget):
         page = QtWidgets.QWidget(self)
         page.setAcceptDrops(True)
         lay = QtWidgets.QVBoxLayout(page)
-        lay.setContentsMargins(36, 40, 36, 40)
+        lay.setContentsMargins(4, 4, 8, 8)
         lay.setSpacing(14)
-        lay.setAlignment(QtCore.Qt.AlignCenter)
 
-        # 头部图标与标题
+        heading = QtWidgets.QHBoxLayout()
+        heading.setSpacing(14)
         icon_lbl = QtWidgets.QLabel("▤", page)
         icon_lbl.setAlignment(QtCore.Qt.AlignCenter)
-        icon_lbl.setFixedSize(60, 60)
+        icon_lbl.setFixedSize(48, 48)
         icon_lbl.setStyleSheet(
-            "background:%s;color:%s;border-radius:18px;font-size:28px;font-weight:600;"
+            "background:%s;color:%s;border-radius:14px;font-size:23px;font-weight:700;"
             % (apple.SELECT_BG, apple.ACCENT))
-        lay.addWidget(icon_lbl)
+        heading.addWidget(icon_lbl)
 
+        title_stack = QtWidgets.QVBoxLayout()
+        title_stack.setSpacing(4)
         title = QtWidgets.QLabel("课程知识库", page)
-        title.setAlignment(QtCore.Qt.AlignCenter)
         title.setStyleSheet(
-            f"font-size: {theme.FS_XL}px; font-weight: 600; color: {apple.TEXT};")
-        lay.addWidget(title)
-
+            f"font-size:{theme.FS_XL}px;font-weight:700;color:{apple.TEXT};")
         desc = QtWidgets.QLabel(
-            "集中整理课程讲义，并在网页工作台中进行阅读、提炼与复习。\n"
-            "课件上传、科目分类和学习进度都可以在同一处管理。",
-            page
-        )
-        desc.setAlignment(QtCore.Qt.AlignCenter)
-        desc.setWordWrap(True)
+            "整理讲义资料，在网页工作台中阅读、提炼与复习。", page)
         desc.setStyleSheet(
-            f"font-size: {theme.FS_SM}px; color: {apple.SECONDARY}; line-height: 1.6;")
-        lay.addWidget(desc)
+            f"font-size:{theme.FS_SM}px;color:{apple.SECONDARY};")
+        title_stack.addWidget(title)
+        title_stack.addWidget(desc)
+        heading.addLayout(title_stack, 1)
 
-        lay.addSpacing(6)
-
-        # 核心主操作大按钮：一键进入网页版
         self._btn_open_web = QtWidgets.QPushButton("打开课程知识库", page)
-        btn_open_web = self._btn_open_web
-        btn_open_web.setCursor(QtCore.Qt.PointingHandCursor)
-        btn_open_web.setFixedHeight(48)
-        btn_open_web.setMinimumWidth(380)
-        btn_open_web.setStyleSheet(f"""
-            QPushButton {{
-                background-color: {apple.ACCENT};
-                color: {apple.ON_ACCENT};
-                font-size: {theme.FS_SM}px;
-                font-weight: 600;
-                border-radius: 10px;
-                padding: 0 24px;
-                border: none;
-            }}
-            QPushButton:hover {{
-                background-color: {apple.ACCENT_HOVER};
-            }}
-        """)
-        btn_open_web.clicked.connect(lambda: self._launch_web_workspace())
+        self._btn_open_web.setObjectName("PrimaryBtn")
+        self._btn_open_web.setMinimumHeight(42)
+        self._btn_open_web.clicked.connect(lambda: self._launch_web_workspace())
+        heading.addWidget(self._btn_open_web)
+        lay.addLayout(heading)
 
-        btn_center = QtWidgets.QHBoxLayout()
-        btn_center.addStretch(1)
-        btn_center.addWidget(btn_open_web)
-        btn_center.addStretch(1)
-        lay.addLayout(btn_center)
+        stats_row = QtWidgets.QHBoxLayout()
+        stats_row.setSpacing(12)
+        self.kw_stat_values = {}
+        for key, label in (("courses", "覆盖课程"),
+                           ("files", "已收录课件"),
+                           ("chunks", "知识片段")):
+            card = QtWidgets.QFrame(page)
+            card.setObjectName("StatCard")
+            card_layout = QtWidgets.QVBoxLayout(card)
+            card_layout.setContentsMargins(16, 12, 16, 12)
+            card_layout.setSpacing(3)
+            caption = QtWidgets.QLabel(label, card)
+            caption.setObjectName("StatLabel")
+            value = QtWidgets.QLabel("0", card)
+            value.setObjectName("StatValue")
+            card_layout.addWidget(caption)
+            card_layout.addWidget(value)
+            stats_row.addWidget(card, 1)
+            self.kw_stat_values[key] = value
+        lay.addLayout(stats_row)
 
-        lay.addSpacing(4)
-
-        # 知识库统计信息卡片
         self.kw_stat_card = QtWidgets.QFrame(page)
-        self.kw_stat_card.setStyleSheet(f"""
-            QFrame {{
-                background: {apple.FIELD};
-                border: 1px solid {apple.BORDER};
-                border-radius: 12px;
-                padding: 12px 22px;
-            }}
-        """)
-        card_lay = QtWidgets.QVBoxLayout(self.kw_stat_card)
-        self.kw_stat_lbl = QtWidgets.QLabel("正在同步本地知识库数据...", self.kw_stat_card)
-        self.kw_stat_lbl.setAlignment(QtCore.Qt.AlignCenter)
+        self.kw_stat_card.setObjectName("KnowledgeStatus")
+        self.kw_stat_card.setStyleSheet(
+            f"background:{apple.FIELD};border:1px solid {apple.BORDER};"
+            f"border-radius:{theme.R_MD}px;")
+        status_layout = QtWidgets.QHBoxLayout(self.kw_stat_card)
+        status_layout.setContentsMargins(14, 8, 14, 8)
+        self.kw_stat_lbl = QtWidgets.QLabel("正在同步本地知识库数据…", self.kw_stat_card)
+        self.kw_stat_lbl.setWordWrap(True)
         self.kw_stat_lbl.setStyleSheet(
-            f"font-size: {theme.FS_SM}px; color: {apple.SECONDARY};")
-        card_lay.addWidget(self.kw_stat_lbl)
+            f"font-size:{theme.FS_SM}px;color:{apple.SECONDARY};")
+        status_layout.addWidget(self.kw_stat_lbl, 1)
+        self.kw_btn_folder = QtWidgets.QPushButton("本地课件文件夹", self.kw_stat_card)
+        self.kw_btn_folder.clicked.connect(self._open_knowledge_folder)
+        status_layout.addWidget(self.kw_btn_folder)
+        self.kw_btn_refresh = QtWidgets.QPushButton("刷新统计", self.kw_stat_card)
+        self.kw_btn_refresh.clicked.connect(lambda: self.refresh_knowledge_page())
+        status_layout.addWidget(self.kw_btn_refresh)
+        lay.addWidget(self.kw_stat_card)
 
-        card_center = QtWidgets.QHBoxLayout()
-        card_center.addStretch(1)
-        card_center.addWidget(self.kw_stat_card)
-        card_center.addStretch(1)
-        lay.addLayout(card_center)
+        files_heading = QtWidgets.QHBoxLayout()
+        self.kw_recent_title = QtWidgets.QLabel("最近添加的课件", page)
+        self.kw_recent_title.setObjectName("CardTitle")
+        files_heading.addWidget(self.kw_recent_title)
+        files_heading.addStretch(1)
+        lay.addLayout(files_heading)
 
-        lay.addSpacing(6)
+        self.kw_files_scroll = QtWidgets.QScrollArea(page)
+        self.kw_files_scroll.setWidgetResizable(True)
+        self.kw_files_scroll.setFrameShape(QtWidgets.QFrame.NoFrame)
+        self.kw_files_container = QtWidgets.QWidget(self.kw_files_scroll)
+        self.kw_files_layout = QtWidgets.QVBoxLayout(self.kw_files_container)
+        self.kw_files_layout.setContentsMargins(2, 2, 8, 8)
+        self.kw_files_layout.setSpacing(9)
+        self.kw_files_layout.addStretch(1)
+        self.kw_files_scroll.setWidget(self.kw_files_container)
+        lay.addWidget(self.kw_files_scroll, 1)
 
-        # 辅助快捷按钮
-        sub_btns = QtWidgets.QHBoxLayout()
-        sub_btns.setSpacing(12)
-        sub_btns.addStretch(1)
-
-        btn_folder = QtWidgets.QPushButton("本地课件文件夹", page)
-        btn_folder.setStyleSheet("padding: 6px 14px; font-size: 12px;")
-        btn_folder.clicked.connect(self._open_knowledge_folder)
-        sub_btns.addWidget(btn_folder)
-
-        btn_refresh = QtWidgets.QPushButton("刷新统计", page)
-        btn_refresh.setStyleSheet("padding: 6px 14px; font-size: 12px;")
-        btn_refresh.clicked.connect(lambda: self.refresh_knowledge_page())
-        sub_btns.addWidget(btn_refresh)
-
-        sub_btns.addStretch(1)
-        lay.addLayout(sub_btns)
-
-        lay.addStretch(1)
+        self._render_knowledge_files([])
         return page
 
     # ── 行为 ───────────────────────────────────────────────────────
@@ -1102,9 +1161,23 @@ class InfoPanel(QtWidgets.QWidget):
         self.stack.setCurrentIndex(1)
         tasks = self.owner.tasks
         now = datetime.now()
-        rows = sorted(tasks.items, key=lambda t: (t.done, t.due))
+        all_tasks = list(tasks.items)
+        rows = sorted(all_tasks, key=lambda t: (t.done, t.due))
+        soon = now + timedelta(days=30)
+        week_end = now + timedelta(days=7)
+        if hasattr(self, "task_stat_values"):
+            self.task_stat_values["pending"].setText(
+                str(sum(1 for task in all_tasks if not task.done)))
+            self.task_stat_values["exams"].setText(
+                str(sum(1 for task in all_tasks
+                        if not task.done and task.kind == "exam"
+                        and now <= task.due <= soon)))
+            self.task_stat_values["week"].setText(
+                str(sum(1 for task in all_tasks
+                        if not task.done and now <= task.due <= week_end)))
         self.task_table.setRowCount(len(rows))
         for i, t in enumerate(rows):
+            self.task_table.setRowHeight(i, 54)
             tag = "考试" if t.kind == "exam" else "作业"
             title = "%s · %s" % (tag, t.title)
             if t.done:
@@ -1189,17 +1262,104 @@ class InfoPanel(QtWidgets.QWidget):
         self.refresh_knowledge_page(select_course=course)
         self._launch_web_workspace(course=course)
 
+    def _render_knowledge_files(self, files):
+        """Render a small preview from the real local knowledge-base index."""
+        while self.kw_files_layout.count():
+            item = self.kw_files_layout.takeAt(0)
+            widget = item.widget()
+            if widget:
+                widget.deleteLater()
+
+        if not files:
+            empty = QtWidgets.QLabel(
+                "暂无课件资料。打开课程知识库可导入并整理讲义。",
+                self.kw_files_container)
+            empty.setAlignment(QtCore.Qt.AlignCenter)
+            empty.setMinimumHeight(150)
+            empty.setStyleSheet(
+                f"color:{apple.SECONDARY};font-size:{theme.FS_MD}px;padding:20px;")
+            self.kw_files_layout.addWidget(empty)
+            self.kw_files_layout.addStretch(1)
+            return
+
+        for info in files[:8]:
+            filename = str(info.get("filename") or "未命名课件")
+            course = str(info.get("course") or "通用讲义")
+            extension = filename.rsplit(".", 1)[-1].upper() if "." in filename else "DOC"
+            size = max(0, int(info.get("size") or 0))
+            size_text = f"{size / (1024 * 1024):.1f} MB" if size >= 1024 * 1024 else f"{size / 1024:.0f} KB"
+            chunks = max(0, int(info.get("chunks") or 0))
+
+            card = QtWidgets.QFrame(self.kw_files_container)
+            card.setObjectName("KnowledgeFileCard")
+            card.setMinimumHeight(74)
+            row = QtWidgets.QHBoxLayout(card)
+            row.setContentsMargins(14, 10, 16, 10)
+            row.setSpacing(14)
+
+            badge = QtWidgets.QLabel(extension, card)
+            badge.setObjectName("FileBadge")
+            badge.setAlignment(QtCore.Qt.AlignCenter)
+            badge.setMinimumWidth(54)
+            row.addWidget(badge)
+
+            details = QtWidgets.QVBoxLayout()
+            details.setSpacing(4)
+            name = QtWidgets.QLabel(filename, card)
+            name.setStyleSheet(
+                f"font-size:{theme.FS_MD}px;font-weight:600;color:{apple.TEXT};")
+            name.setWordWrap(True)
+            meta = QtWidgets.QLabel(course, card)
+            meta.setStyleSheet(
+                f"font-size:{theme.FS_SM}px;color:{apple.SECONDARY};")
+            details.addWidget(name)
+            details.addWidget(meta)
+            row.addLayout(details, 1)
+
+            count = QtWidgets.QLabel(f"{chunks} 段内容  ·  {size_text}", card)
+            count.setAlignment(QtCore.Qt.AlignRight | QtCore.Qt.AlignVCenter)
+            count.setStyleSheet(
+                f"font-size:{theme.FS_SM}px;color:{apple.SECONDARY};")
+            row.addWidget(count)
+            self.kw_files_layout.addWidget(card)
+
+        self.kw_files_layout.addStretch(1)
+
     def refresh_knowledge_page(self, select_course=None):
         """刷新知识库页面列表与统计。"""
-        kb = getattr(self.owner.brain, "knowledge", None)
+        brain = getattr(self.owner, "brain", None)
+        kb = getattr(brain, "knowledge", None)
         if kb:
             stats = kb.get_stats()
             f_count = stats.get("file_count", 0)
             c_count = stats.get("chunk_count", 0)
             courses = stats.get("courses", [])
-            text = f"本地已收录 {f_count} 份课件 · {c_count} 段内容 · 覆盖 {len(courses)} 门课程"
+            course_count = stats.get("course_count", len(courses))
+            if hasattr(self, "kw_stat_values"):
+                self.kw_stat_values["courses"].setText(str(course_count))
+                self.kw_stat_values["files"].setText(str(f_count))
+                self.kw_stat_values["chunks"].setText(str(c_count))
+            text = f"本地已收录 {f_count} 份课件 · {c_count} 段内容 · 覆盖 {course_count} 门课程"
             if hasattr(self, "kw_stat_lbl"):
                 self.kw_stat_lbl.setText(text)
+            file_course = select_course if select_course else "__ALL__"
+            files = list(kb.get_course_files(file_course))
+            def recency(item):
+                try:
+                    return float(item.get("mtime") or 0)
+                except (TypeError, ValueError):
+                    return 0.0
+            files.sort(key=recency, reverse=True)
+            if hasattr(self, "kw_files_layout"):
+                self._render_knowledge_files(files)
+            if hasattr(self, "kw_recent_title"):
+                self.kw_recent_title.setText(
+                    f"《{select_course}》的课件" if select_course else "最近添加的课件")
+        else:
+            if hasattr(self, "kw_stat_lbl"):
+                self.kw_stat_lbl.setText("本地知识库暂不可用。")
+            if hasattr(self, "kw_files_layout"):
+                self._render_knowledge_files([])
 
     def _on_digest_progress(self, filename, course, pct, status_msg):
         """当课件知识点提炼进度更新时，更新知识库提示。"""

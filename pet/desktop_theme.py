@@ -1,8 +1,7 @@
-"""Light desktop-window palette inspired by native macOS productivity apps.
+"""Shared light palette inspired by native macOS productivity apps.
 
-This palette is scoped to the main desktop information window and its weekly
-timetable. The floating pet and compact overlays keep their Rhodes violet
-appearance.
+The desktop information window, pet overlays, menus and dialogs share these
+surfaces and indigo-violet accents so the app feels like one product.
 """
 
 BG = "#F5F5F7"

@@ -15,126 +15,54 @@ from .chat import ReplyWorker
 from .schedule_dialogs import DigestGenerateThread
 
 
-# ── NotebookLM 专属 QSS 风格（大字号、低噪点、沉稳统一） ─────────────────────────
+# ── NotebookLM workspace: same light desktop system as the timetable ─────
 
 _NLM_QSS = f"""
 QWidget#NLMRoot {{
-    background: #0D0B14;
-    color: #F1EFF7;
-    font-family: {theme.FONT};
+    background:{theme.BG}; color:{theme.TEXT}; font-family:{theme.FONT};
+    font-size:{theme.FS_SM}px;
 }}
-
-/* 分割条设计 */
-QSplitter::handle {{
-    background: rgba(167, 139, 250, 0.15);
-    border-radius: 1px;
-}}
-QSplitter::handle:hover {{
-    background: {theme.ACCENT};
-}}
-QSplitter::handle:horizontal {{
-    width: 6px;
-}}
-
-/* 滚动条 */
-QScrollBar:vertical {{
-    background: transparent;
-    width: 8px;
-    margin: 2px 0;
-}}
-QScrollBar::handle:vertical {{
-    background: rgba(167, 139, 250, 0.25);
-    border-radius: 4px;
-    min-height: 28px;
-}}
-QScrollBar::handle:vertical:hover {{
-    background: {theme.ACCENT};
-}}
-QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
-    height: 0px;
-}}
-
-/* 下拉框 */
+QWidget {{ color:{theme.TEXT}; }}
+QSplitter::handle {{ background:{theme.GRID}; border-radius:3px; }}
+QSplitter::handle:hover {{ background:{theme.ACCENT}; }}
+QSplitter::handle:horizontal {{ width:7px; }}
+QScrollBar:vertical {{ background:transparent; width:9px; margin:3px 2px; }}
+QScrollBar::handle:vertical {{ background:{theme.BORDER_STRONG}; border-radius:4px; min-height:28px; }}
+QScrollBar::handle:vertical:hover {{ background:{theme.ACCENT}; }}
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height:0; }}
 QComboBox {{
-    background: #171422;
-    color: #F1EFF7;
-    border: 1px solid #2D273D;
-    border-radius: 8px;
-    padding: 7px 14px;
-    font-size: 15px;
-    min-width: 140px;
+    background:{theme.FIELD}; color:{theme.TEXT}; border:1px solid {theme.GRID};
+    border-radius:{theme.R_MD}px; padding:7px 12px; font-size:{theme.FS_SM}px; min-width:140px;
 }}
-QComboBox:hover {{
-    border-color: {theme.BORDER_STRONG};
-}}
-QComboBox:focus {{
-    border-color: {theme.ACCENT};
-}}
+QComboBox:hover, QComboBox:focus {{ border-color:{theme.ACCENT}; }}
 QComboBox QAbstractItemView {{
-    background: #1A1726;
-    color: #F1EFF7;
-    border: 1px solid #362F47;
-    selection-background-color: rgba(167, 139, 250, 0.2);
-    selection-color: #FFFFFF;
-    font-size: 15px;
-    padding: 6px;
+    background:{theme.PANEL_SOLID}; color:{theme.TEXT}; border:1px solid {theme.BORDER_STRONG};
+    selection-background-color:{theme.FLOAT_SELECT_BG}; selection-color:{theme.TEXT};
+    font-size:{theme.FS_SM}px; padding:6px;
 }}
-
-/* 输入框与文本阅览 */
 QLineEdit, QPlainTextEdit, QTextBrowser {{
-    background: #171422;
-    color: #F1EFF7;
-    border: 1px solid #2D273D;
-    border-radius: 8px;
-    font-size: 16px;
-    font-family: {theme.FONT};
+    background:{theme.PANEL_SOLID}; color:{theme.TEXT}; border:1px solid {theme.GRID};
+    border-radius:{theme.R_MD}px; font-size:{theme.FS_MD}px; font-family:{theme.FONT};
 }}
-QLineEdit:focus, QPlainTextEdit:focus {{
-    border: 1px solid {theme.ACCENT};
-    background: #1C182A;
-}}
-
-/* 按钮统一风格 */
+QLineEdit:focus, QPlainTextEdit:focus {{ border:1px solid {theme.ACCENT}; background:{theme.FIELD}; }}
 QPushButton {{
-    background: #1A1726;
-    color: #E2DEEC;
-    border: 1px solid #2D273D;
-    border-radius: 8px;
-    padding: 8px 16px;
-    font-size: 14px;
-    font-weight: 500;
+    background:{theme.FIELD}; color:{theme.TEXT}; border:1px solid {theme.GRID};
+    border-radius:{theme.R_MD}px; padding:8px 14px; font-size:{theme.FS_SM}px; font-weight:500;
 }}
-QPushButton:hover {{
-    background: rgba(167, 139, 250, 0.15);
-    border-color: {theme.ACCENT};
-    color: #FFFFFF;
-}}
-QPushButton:pressed {{
-    background: {theme.ACCENT_DEEP};
-    color: #FFFFFF;
-}}
-QPushButton:disabled {{
-    color: #6B6278;
-    border-color: rgba(255, 255, 255, 0.05);
-}}
-
-/* 核心行动主按钮 */
+QPushButton:hover {{ background:{theme.DLG_HOVER}; border-color:{theme.BORDER_STRONG}; }}
+QPushButton:pressed {{ background:{theme.DLG_PRESSED}; }}
+QPushButton:disabled {{ color:{theme.TEXT_MUTE}; border-color:{theme.GRID}; }}
 QPushButton#PrimaryBtn {{
-    background: {theme.ACCENT};
-    color: #120E1A;
-    border: 1px solid {theme.ACCENT};
-    font-weight: bold;
-    font-size: 15px;
-    border-radius: 8px;
+    background:{theme.ACCENT}; color:{theme.ON_ACCENT}; border:1px solid {theme.ACCENT};
+    font-weight:700; font-size:{theme.FS_MD}px; border-radius:{theme.R_MD}px;
 }}
-QPushButton#PrimaryBtn:hover {{
-    background: {theme.ACCENT_BRIGHT};
-    border-color: {theme.ACCENT_BRIGHT};
+QPushButton#PrimaryBtn:hover {{ background:{theme.ACCENT_BRIGHT}; border-color:{theme.ACCENT_BRIGHT}; }}
+QPushButton#PrimaryBtn:pressed {{ background:{theme.ACCENT_DEEP}; color:#FFFFFF; }}
+QProgressBar {{
+    background:{theme.FIELD}; color:{theme.TEXT}; border:1px solid {theme.GRID};
+    border-radius:{theme.R_SM}px; text-align:center;
 }}
-QPushButton#PrimaryBtn:pressed {{
-    background: {theme.ACCENT_DEEP};
-    color: #FFFFFF;
-}}
+QProgressBar::chunk {{ background:{theme.ACCENT}; border-radius:{theme.R_SM}px; }}
 """
 
 
@@ -171,14 +99,14 @@ class SourceCard(QtWidgets.QFrame):
         badge_lbl = QtWidgets.QLabel(ext, self)
         badge_lbl.setStyleSheet(
             f"font-size: 12px; font-weight: bold; color: {theme.ACCENT_BRIGHT}; "
-            f"background: rgba(167, 139, 250, 0.12); border: 1px solid rgba(167, 139, 250, 0.25); "
+            f"background: {theme.DLG_TINT}; border: 1px solid {theme.GRID}; "
             f"border-radius: 4px; padding: 2px 7px;"
         )
         top_row.addWidget(badge_lbl)
 
         fn = self.file_info.get("filename", "")
         title_lbl = QtWidgets.QLabel(fn, self)
-        title_lbl.setStyleSheet("font-size: 15px; font-weight: bold; color: #FFFFFF;")
+        title_lbl.setStyleSheet(f"font-size: 15px; font-weight: bold; color: {theme.TEXT};")
         title_lbl.setToolTip(fn)
         title_lbl.setWordWrap(True)
         top_row.addWidget(title_lbl, 1)
@@ -187,8 +115,8 @@ class SourceCard(QtWidgets.QFrame):
         btn_del.setFixedSize(24, 24)
         btn_del.setToolTip("从知识库移除此课件")
         btn_del.setStyleSheet(
-            f"QPushButton {{ border: none; background: transparent; color: #7A7288; font-size: 14px; font-weight: bold; }} "
-            f"QPushButton:hover {{ color: {theme.RED}; background: rgba(248, 113, 113, 0.15); border-radius: 4px; }}"
+            f"QPushButton {{ border: none; background: transparent; color: {theme.TEXT_MUTE}; font-size: 14px; font-weight: bold; }} "
+            f"QPushButton:hover {{ color: {theme.RED}; background: {theme.DLG_HOVER}; border-radius: 4px; }}"
         )
         btn_del.clicked.connect(lambda: self.sig_delete.emit(self.file_info))
         top_row.addWidget(btn_del)
@@ -201,7 +129,7 @@ class SourceCard(QtWidgets.QFrame):
         c_name = self.file_info.get("course") or "通用资料"
         course_badge = QtWidgets.QLabel(c_name, self)
         course_badge.setStyleSheet(
-            "background: rgba(255, 255, 255, 0.06); color: #C5BFD2; border: 1px solid rgba(255, 255, 255, 0.1); "
+            f"background: {theme.FIELD}; color: {theme.TEXT_DIM}; border: 1px solid {theme.GRID}; "
             "padding: 2px 8px; border-radius: 4px; font-size: 12px; font-weight: 500;"
         )
         meta_row.addWidget(course_badge)
@@ -210,7 +138,7 @@ class SourceCard(QtWidgets.QFrame):
         chunks = self.file_info.get("chunks", 0)
         info_text = f"{sz_str} · {chunks} 切片" if sz_str else f"{chunks} 切片"
         info_lbl = QtWidgets.QLabel(info_text, self)
-        info_lbl.setStyleSheet("color: #9A92A8; font-size: 13px;")
+        info_lbl.setStyleSheet(f"color: {theme.TEXT_DIM}; font-size: 13px;")
         meta_row.addWidget(info_lbl)
         meta_row.addStretch(1)
         lay.addLayout(meta_row)
@@ -224,9 +152,9 @@ class SourceCard(QtWidgets.QFrame):
             QProgressBar {{
                 border: none;
                 border-radius: 4px;
-                background: #231E31;
+                background: {theme.FIELD};
                 text-align: center;
-                color: #FFFFFF;
+                color: {theme.TEXT};
                 font-size: 11px;
                 font-weight: bold;
             }}
@@ -249,9 +177,9 @@ class SourceCard(QtWidgets.QFrame):
         btn_digest = QtWidgets.QPushButton("⚡ 考纲", self)
         btn_digest.setToolTip("在右侧工作室查看或生成核心知识点大纲")
         btn_digest.setStyleSheet(
-            f"QPushButton {{ background: rgba(167, 139, 250, 0.12); color: {theme.ACCENT_BRIGHT}; "
-            f"border: 1px solid rgba(167, 139, 250, 0.3); padding: 4px 10px; font-size: 13px; border-radius: 6px; font-weight: 500; }} "
-            f"QPushButton:hover {{ background: {theme.ACCENT}; color: #120E1A; font-weight: bold; border-color: {theme.ACCENT}; }}"
+            f"QPushButton {{ background: {theme.DLG_TINT}; color: {theme.ACCENT_DEEP}; "
+            f"border: 1px solid {theme.GRID}; padding: 4px 10px; font-size: 13px; border-radius: 6px; font-weight: 500; }} "
+            f"QPushButton:hover {{ background: {theme.ACCENT}; color: {theme.ON_ACCENT}; font-weight: bold; border-color: {theme.ACCENT}; }}"
         )
         btn_digest.clicked.connect(lambda: self.sig_digest.emit(self.file_info))
         bottom_row.addWidget(btn_digest)
@@ -259,9 +187,9 @@ class SourceCard(QtWidgets.QFrame):
         btn_ask = QtWidgets.QPushButton("💬 提问", self)
         btn_ask.setToolTip("针对此课件在中间问答栏向阿米娅发起提问")
         btn_ask.setStyleSheet(
-            f"QPushButton {{ background: #201B2E; color: #E2DEEC; "
-            f"border: 1px solid #362F47; padding: 4px 10px; font-size: 13px; border-radius: 6px; font-weight: 500; }} "
-            f"QPushButton:hover {{ background: rgba(167, 139, 250, 0.2); border-color: {theme.ACCENT}; color: #FFFFFF; }}"
+            f"QPushButton {{ background: {theme.FIELD}; color: {theme.TEXT}; "
+            f"border: 1px solid {theme.GRID}; padding: 4px 10px; font-size: 13px; border-radius: 6px; font-weight: 500; }} "
+            f"QPushButton:hover {{ background: {theme.DLG_HOVER}; border-color: {theme.ACCENT}; color: {theme.TEXT}; }}"
         )
         btn_ask.clicked.connect(lambda: self.sig_ask.emit(self.file_info))
         bottom_row.addWidget(btn_ask)
@@ -284,7 +212,7 @@ class SourceCard(QtWidgets.QFrame):
             self.pbar.setVisible(False)
         else:
             self.status_lbl.setText("○ 待提炼考纲")
-            self.status_lbl.setStyleSheet("color: #8C849B; font-size: 13px;")
+            self.status_lbl.setStyleSheet(f"color: {theme.TEXT_DIM}; font-size: 13px;")
             self.pbar.setVisible(False)
 
     def set_active(self, active):
@@ -304,21 +232,21 @@ class SourceCard(QtWidgets.QFrame):
         if self.is_active:
             self.setStyleSheet(f"""
                 QFrame#SourceCard {{
-                    background: #231C33;
+                    background: {theme.DLG_TINT};
                     border: 1.5px solid {theme.ACCENT};
                     border-radius: 10px;
                 }}
             """)
         else:
-            self.setStyleSheet("""
+            self.setStyleSheet(f"""
                 QFrame#SourceCard {{
-                    background: #171422;
-                    border: 1px solid #2B253A;
+                    background: {theme.PANEL_SOLID};
+                    border: 1px solid {theme.GRID};
                     border-radius: 10px;
                 }}
                 QFrame#SourceCard:hover {{
-                    border: 1px solid #483E5E;
-                    background: #1D182A;
+                    border: 1px solid {theme.BORDER_STRONG};
+                    background: {theme.FIELD};
                 }}
             """)
 
@@ -370,9 +298,9 @@ class NotebookLMWorkspace(QtWidgets.QWidget):
         title_lay = QtWidgets.QVBoxLayout()
         title_lay.setSpacing(3)
         self.title_lbl = QtWidgets.QLabel("课件学业研究台 · NotebookLM", self)
-        self.title_lbl.setStyleSheet("font-size: 20px; font-weight: bold; color: #FFFFFF;")
+        self.title_lbl.setStyleSheet(f"font-size: 20px; font-weight: bold; color: {theme.TEXT};")
         self.stat_lbl = QtWidgets.QLabel("正在同步课程知识库...", self)
-        self.stat_lbl.setStyleSheet("font-size: 14px; color: #9A92A8;")
+        self.stat_lbl.setStyleSheet(f"font-size: 14px; color: {theme.TEXT_DIM};")
         title_lay.addWidget(self.title_lbl)
         title_lay.addWidget(self.stat_lbl)
         top_bar.addLayout(title_lay)
@@ -380,7 +308,7 @@ class NotebookLMWorkspace(QtWidgets.QWidget):
         top_bar.addStretch(1)
 
         c_lbl = QtWidgets.QLabel("课程视图：", self)
-        c_lbl.setStyleSheet("color: #B5ADBF; font-size: 15px; font-weight: 500;")
+        c_lbl.setStyleSheet(f"color: {theme.TEXT_DIM}; font-size: 15px; font-weight: 500;")
         top_bar.addWidget(c_lbl)
 
         self.course_combo = QtWidgets.QComboBox(self)
@@ -412,7 +340,7 @@ class NotebookLMWorkspace(QtWidgets.QWidget):
 
         s_head = QtWidgets.QHBoxLayout()
         s_title = QtWidgets.QLabel("📚 来源资料", sources_panel)
-        s_title.setStyleSheet("font-size: 16px; font-weight: bold; color: #FFFFFF;")
+        s_title.setStyleSheet(f"font-size: 16px; font-weight: bold; color: {theme.TEXT};")
         self.s_count_lbl = QtWidgets.QLabel("0 份文件", sources_panel)
         self.s_count_lbl.setStyleSheet(f"color: {theme.ACCENT_BRIGHT}; font-size: 14px; font-weight: bold;")
         s_head.addWidget(s_title)
@@ -422,16 +350,16 @@ class NotebookLMWorkspace(QtWidgets.QWidget):
 
         # 拖拽提示卡片
         self.drop_card = QtWidgets.QFrame(sources_panel)
-        self.drop_card.setStyleSheet("""
+        self.drop_card.setStyleSheet(f"""
             QFrame {
-                background: #15121F;
-                border: 1.5px dashed #3D3551;
+                background: {theme.FIELD};
+                border: 1.5px dashed {theme.BORDER_STRONG};
                 border-radius: 8px;
                 padding: 10px;
             }
             QFrame:hover {
-                border-color: #A78BFA;
-                background: rgba(167, 139, 250, 0.08);
+                border-color: {theme.ACCENT};
+                background: {theme.DLG_TINT};
             }
         """)
         drop_lay = QtWidgets.QVBoxLayout(self.drop_card)
@@ -442,7 +370,7 @@ class NotebookLMWorkspace(QtWidgets.QWidget):
         drop_tip.setStyleSheet(f"color: {theme.ACCENT_BRIGHT}; font-size: 14px; font-weight: 600;")
         drop_sub = QtWidgets.QLabel("阿米娅将自动关联课程并提炼考纲", self.drop_card)
         drop_sub.setAlignment(QtCore.Qt.AlignCenter)
-        drop_sub.setStyleSheet("color: #8C849B; font-size: 12px;")
+        drop_sub.setStyleSheet(f"color: {theme.TEXT_DIM}; font-size: 12px;")
         drop_lay.addWidget(drop_tip)
         drop_lay.addWidget(drop_sub)
         sources_lay.addWidget(self.drop_card)
@@ -469,9 +397,9 @@ class NotebookLMWorkspace(QtWidgets.QWidget):
 
         chat_head = QtWidgets.QHBoxLayout()
         chat_title = QtWidgets.QLabel("💬 智能学研助教", chat_panel)
-        chat_title.setStyleSheet("font-size: 16px; font-weight: bold; color: #FFFFFF;")
+        chat_title.setStyleSheet(f"font-size: 16px; font-weight: bold; color: {theme.TEXT};")
         chat_sub = QtWidgets.QLabel("基于选定课件解答与考点推演", chat_panel)
-        chat_sub.setStyleSheet("color: #9A92A8; font-size: 13px;")
+        chat_sub.setStyleSheet(f"color: {theme.TEXT_DIM}; font-size: 13px;")
         chat_head.addWidget(chat_title)
         chat_head.addWidget(chat_sub)
         chat_head.addStretch(1)
@@ -495,9 +423,9 @@ class NotebookLMWorkspace(QtWidgets.QWidget):
             btn = QtWidgets.QPushButton(label, chat_panel)
             btn.setStyleSheet(f"""
                 QPushButton {{
-                    background: #1A1726;
-                    color: #EDE8F5;
-                    border: 1px solid #362F47;
+                    background: {theme.FIELD};
+                    color: {theme.TEXT};
+                    border: 1px solid {theme.GRID};
                     border-radius: 16px;
                     padding: 6px 14px;
                     font-size: 13px;
@@ -505,7 +433,7 @@ class NotebookLMWorkspace(QtWidgets.QWidget):
                 }}
                 QPushButton:hover {{
                     background: {theme.ACCENT};
-                    color: #120E1A;
+                    color: {theme.ON_ACCENT};
                     border-color: {theme.ACCENT};
                     font-weight: bold;
                 }}
@@ -518,10 +446,11 @@ class NotebookLMWorkspace(QtWidgets.QWidget):
         # 问答展示框
         self.chat_browser = QtWidgets.QTextBrowser(chat_panel)
         self.chat_browser.setOpenExternalLinks(True)
-        self.chat_browser.setStyleSheet("""
+        self.chat_browser.setStyleSheet(f"""
             QTextBrowser {{
-                background: #14111E;
-                border: 1px solid #282236;
+                background: {theme.PANEL_SOLID};
+                color: {theme.TEXT};
+                border: 1px solid {theme.GRID};
                 border-radius: 10px;
                 padding: 14px;
                 font-size: 16px;
@@ -535,7 +464,7 @@ class NotebookLMWorkspace(QtWidgets.QWidget):
         input_container = QtWidgets.QFrame(chat_panel)
         input_container.setStyleSheet(f"""
             QFrame {{
-                background: #1C182A;
+                background: {theme.FIELD};
                 border: 1px solid {theme.BORDER_STRONG};
                 border-radius: 22px;
                 padding: 4px 10px;
@@ -547,7 +476,7 @@ class NotebookLMWorkspace(QtWidgets.QWidget):
 
         self.chat_input = QtWidgets.QLineEdit(input_container)
         self.chat_input.setPlaceholderText("向选中的课件提问，或让阿米娅帮您梳理核心考点...")
-        self.chat_input.setStyleSheet("border: none; background: transparent; font-size: 15px; color: #FFFFFF; padding: 4px;")
+        self.chat_input.setStyleSheet(f"border: none; background: transparent; font-size: 15px; color: {theme.TEXT}; padding: 4px;")
         self.chat_input.returnPressed.connect(self._on_input_submitted)
         input_lay.addWidget(self.chat_input, 1)
 
@@ -557,7 +486,7 @@ class NotebookLMWorkspace(QtWidgets.QWidget):
         self.btn_send.setStyleSheet(f"""
             QPushButton {{
                 background: {theme.ACCENT};
-                color: #120E1A;
+                color: {theme.ON_ACCENT};
                 border: none;
                 border-radius: 17px;
                 font-size: 16px;
@@ -584,13 +513,13 @@ class NotebookLMWorkspace(QtWidgets.QWidget):
         studio_head.setSpacing(10)
 
         st_title = QtWidgets.QLabel("⚡ 核心考纲工作室", studio_panel)
-        st_title.setStyleSheet("font-size: 16px; font-weight: bold; color: #FFFFFF;")
+        st_title.setStyleSheet(f"font-size: 16px; font-weight: bold; color: {theme.TEXT};")
         studio_head.addWidget(st_title)
 
         self.active_file_badge = QtWidgets.QLabel("请在左侧选择课件", studio_panel)
         self.active_file_badge.setStyleSheet(
-            f"background: rgba(167, 139, 250, 0.12); color: {theme.ACCENT_BRIGHT}; "
-            f"border: 1px solid rgba(167, 139, 250, 0.25); padding: 3px 10px; border-radius: 5px; "
+            f"background: {theme.DLG_TINT}; color: {theme.ACCENT_DEEP}; "
+            f"border: 1px solid {theme.GRID}; padding: 3px 10px; border-radius: 5px; "
             f"font-size: 13px; font-weight: bold;"
         )
         studio_head.addWidget(self.active_file_badge)
@@ -623,9 +552,9 @@ class NotebookLMWorkspace(QtWidgets.QWidget):
             QProgressBar {{
                 border: 1px solid {theme.ACCENT};
                 border-radius: 6px;
-                background: #1B1728;
+                background: {theme.FIELD};
                 text-align: center;
-                color: #FFFFFF;
+                color: {theme.TEXT};
                 font-size: 13px;
                 font-weight: bold;
             }}
@@ -642,9 +571,9 @@ class NotebookLMWorkspace(QtWidgets.QWidget):
         self.studio_browser.setOpenExternalLinks(True)
         self.studio_browser.setStyleSheet(f"""
             QTextBrowser {{
-                background: #14111E;
-                color: #F1EFF7;
-                border: 1px solid #282236;
+                background: {theme.PANEL_SOLID};
+                color: {theme.TEXT};
+                border: 1px solid {theme.GRID};
                 border-radius: 10px;
                 padding: 22px;
                 font-size: 18px;
@@ -662,12 +591,12 @@ class NotebookLMWorkspace(QtWidgets.QWidget):
 
     def _init_chat_welcome(self):
         welcome_html = f"""
-        <div style="padding: 12px; color: #F1EFF7; font-family: {theme.FONT};">
-            <h3 style="color: #FFFFFF; margin-bottom: 10px; font-size: 18px;">✨ 阿米娅学术学研助教</h3>
-            <p style="color: #A6A0B5; line-height: 1.7; font-size: 16px;">
+        <div style="padding: 12px; color: {theme.TEXT}; font-family: {theme.FONT};">
+            <h3 style="color: {theme.TEXT}; margin-bottom: 10px; font-size: 18px;">✨ 阿米娅学术学研助教</h3>
+            <p style="color: {theme.TEXT_DIM}; line-height: 1.7; font-size: 16px;">
                 您可以点击上方的 <b>快捷探针</b>（如期末重点、模拟考题、公式定理梳理），或直接在下方针对当前课件提问。
             </p>
-            <div style="background: #1A1726; border-left: 3px solid {theme.ACCENT}; padding: 12px; border-radius: 4px; margin-top: 14px; font-size: 15px; color: #C5BFD2;">
+            <div style="background: {theme.DLG_TINT}; border-left: 3px solid {theme.ACCENT}; padding: 12px; border-radius: 4px; margin-top: 14px; font-size: 15px; color: {theme.TEXT};">
                 💡 <b>贴士</b>：在左侧列表点击任意课件，中栏问答与右侧工作室将自动切换至该课件考纲。
             </div>
         </div>
@@ -727,7 +656,7 @@ class NotebookLMWorkspace(QtWidgets.QWidget):
         if not files:
             empty_lbl = QtWidgets.QLabel("暂无课件文件\n点击上方「➕ 添加来源」导入", self.cards_container)
             empty_lbl.setAlignment(QtCore.Qt.AlignCenter)
-            empty_lbl.setStyleSheet("color: #7A7288; padding: 40px 10px; font-size: 15px;")
+            empty_lbl.setStyleSheet(f"color: {theme.TEXT_MUTE}; padding: 40px 10px; font-size: 15px;")
             self.cards_lay.insertWidget(0, empty_lbl)
             self._set_active_file(None)
             return
@@ -775,7 +704,7 @@ class NotebookLMWorkspace(QtWidgets.QWidget):
 
         if not file_info:
             self.active_file_badge.setText("未选择课件")
-            self.studio_browser.setHtml("<div style='color:#7A7288; padding:50px; text-align:center; font-size:16px;'>请在左侧选择课件以查看考纲</div>")
+            self.studio_browser.setHtml(f"<div style='color:{theme.TEXT_MUTE}; padding:50px; text-align:center; font-size:16px;'>请在左侧选择课件以查看考纲</div>")
             self.btn_copy_digest.setEnabled(False)
             self.btn_export_md.setEnabled(False)
             self.btn_regen_digest.setEnabled(False)
@@ -809,10 +738,10 @@ class NotebookLMWorkspace(QtWidgets.QWidget):
             self.studio_pbar.setFormat(f"正在提炼考纲: {pct}% · {status_msg}")
             self.btn_regen_digest.setEnabled(False)
             self.studio_browser.setHtml(f"""
-                <div style="text-align: center; padding: 70px 20px; color: #FFFFFF;">
-                    <h2 style="color: #FFFFFF; font-size: 22px;">⏳ 阿米娅正在深度梳理《{fn}》核心考点...</h2>
+                <div style="text-align: center; padding: 70px 20px; color: {theme.TEXT};">
+                    <h2 style="color: {theme.TEXT}; font-size: 22px;">⏳ 阿米娅正在深度梳理《{fn}》核心考点...</h2>
                     <p style="color: {theme.ACCENT_BRIGHT}; font-size: 16px; margin-top: 10px;">已完成 {pct}% · {status_msg}</p>
-                    <p style="color: #8C849B; font-size: 14px; margin-top: 15px;">
+                    <p style="color: {theme.TEXT_DIM}; font-size: 14px; margin-top: 15px;">
                         正在提炼考纲大纲、公式推导、概念辨析与预测考题，请稍候。
                     </p>
                 </div>
@@ -832,12 +761,12 @@ class NotebookLMWorkspace(QtWidgets.QWidget):
         self.studio_pbar.setVisible(False)
         self.btn_regen_digest.setEnabled(True)
         empty_digest_html = f"""
-        <div style="padding: 30px 15px; color: #F1EFF7; font-family: {theme.FONT};">
-            <h2 style="color: #FFFFFF; margin-bottom: 14px; font-size: 22px;">⚡ 尚未为《{fn}》生成核心考纲</h2>
-            <p style="color: #A6A0B5; font-size: 17px; line-height: 1.7;">
+        <div style="padding: 30px 15px; color: {theme.TEXT}; font-family: {theme.FONT};">
+            <h2 style="color: {theme.TEXT}; margin-bottom: 14px; font-size: 22px;">⚡ 尚未为《{fn}》生成核心考纲</h2>
+            <p style="color: {theme.TEXT_DIM}; font-size: 17px; line-height: 1.7;">
                 点击右上角的 <b>「🔄 重新提炼」</b> 按钮，阿米娅将使用大模型深入解析课件全貌，自动生成：
             </p>
-            <ul style="color: #EDE8F5; font-size: 16px; line-height: 1.8; margin-left: 20px;">
+            <ul style="color: {theme.TEXT}; font-size: 16px; line-height: 1.8; margin-left: 20px;">
                 <li>📚 <b>核心概念与关键术语速记表</b></li>
                 <li>📐 <b>重点公式推导、定理法则与解题步骤</b></li>
                 <li>🎯 <b>期末必考考点与预测大题 (⭐⭐⭐)</b></li>
@@ -845,7 +774,7 @@ class NotebookLMWorkspace(QtWidgets.QWidget):
                 <li>📝 <b>考前自测模拟简答题 (Q&A)</b></li>
             </ul>
             <div style="margin-top: 30px; text-align: center;">
-                <p style="color: #7A7288; font-size: 14px;">提炼完成后将永久缓存在本地知识库，随时支持检索与问答。</p>
+                <p style="color: {theme.TEXT_MUTE}; font-size: 14px;">提炼完成后将永久缓存在本地知识库，随时支持检索与问答。</p>
             </div>
         </div>
         """
@@ -869,8 +798,8 @@ class NotebookLMWorkspace(QtWidgets.QWidget):
                     in_code = False
                 else:
                     out.append(
-                        "<div style='background:#100E17; border:1px solid #282436; border-radius:6px; padding:12px; margin:12px 0;'>"
-                        f"<pre style='font-family:{theme.MONO}; color:#EDE8F5; font-size:16px; margin:0; line-height:1.6;'>"
+                        f"<div style='background:{theme.FIELD}; border:1px solid {theme.GRID}; border-radius:6px; padding:12px; margin:12px 0;'>"
+                        f"<pre style='font-family:{theme.MONO}; color:{theme.TEXT}; font-size:16px; margin:0; line-height:1.6;'>"
                     )
                     in_code = True
                 continue
@@ -881,26 +810,26 @@ class NotebookLMWorkspace(QtWidgets.QWidget):
 
             l = line.strip()
             if l.startswith("# "):
-                out.append(f"<h1 style='color:#FFFFFF; border-bottom:1px solid rgba(167, 139, 250, 0.35); padding-bottom:8px; margin-top:24px; font-size:25px; font-weight:bold;'>{l[2:]}</h1>")
+                out.append(f"<h1 style='color:{theme.TEXT}; border-bottom:1px solid {theme.GRID}; padding-bottom:8px; margin-top:24px; font-size:25px; font-weight:bold;'>{l[2:]}</h1>")
             elif l.startswith("## "):
-                out.append(f"<h2 style='color:#FFFFFF; border-left:4px solid {theme.ACCENT}; padding-left:10px; margin-top:22px; font-size:21px; font-weight:bold;'>{l[3:]}</h2>")
+                out.append(f"<h2 style='color:{theme.TEXT}; border-left:4px solid {theme.ACCENT}; padding-left:10px; margin-top:22px; font-size:21px; font-weight:bold;'>{l[3:]}</h2>")
             elif l.startswith("### "):
-                out.append(f"<h3 style='color:#E6E1F2; margin-top:16px; font-size:18px; font-weight:bold;'>{l[4:]}</h3>")
+                out.append(f"<h3 style='color:{theme.TEXT}; margin-top:16px; font-size:18px; font-weight:bold;'>{l[4:]}</h3>")
             elif l.startswith("- ") or l.startswith("* "):
                 content = l[2:]
-                content = re.sub(r"\*\*(.+?)\*\*", r"<b style='color:#FFFFFF; font-weight:600;'>\1</b>", content)
-                out.append(f"<div style='margin-left:14px; margin-bottom:5px; font-size:17px; line-height:1.75; color:#F0EFF5;'>• {content}</div>")
+                content = re.sub(r"\*\*(.+?)\*\*", f"<b style='color:{theme.TEXT}; font-weight:600;'>\\1</b>", content)
+                out.append(f"<div style='margin-left:14px; margin-bottom:5px; font-size:17px; line-height:1.75; color:{theme.TEXT};'>• {content}</div>")
             elif re.match(r"^\d+\.\s", l):
                 content = re.sub(r"^\d+\.\s", "", l)
-                content = re.sub(r"\*\*(.+?)\*\*", r"<b style='color:#FFFFFF; font-weight:600;'>\1</b>", content)
-                out.append(f"<div style='margin-left:14px; margin-bottom:5px; font-size:17px; line-height:1.75; color:#F0EFF5;'>① {content}</div>")
+                content = re.sub(r"\*\*(.+?)\*\*", f"<b style='color:{theme.TEXT}; font-weight:600;'>\\1</b>", content)
+                out.append(f"<div style='margin-left:14px; margin-bottom:5px; font-size:17px; line-height:1.75; color:{theme.TEXT};'>① {content}</div>")
             elif l.startswith("> "):
-                out.append(f"<div style='background:rgba(167, 139, 250, 0.08); border-left:3px solid {theme.ACCENT}; padding:10px 14px; border-radius:4px; margin:10px 0; color:#DDD8E8; font-size:16px; line-height:1.7;'>{l[2:]}</div>")
+                out.append(f"<div style='background:{theme.DLG_TINT}; border-left:3px solid {theme.ACCENT}; padding:10px 14px; border-radius:4px; margin:10px 0; color:{theme.TEXT}; font-size:16px; line-height:1.7;'>{l[2:]}</div>")
             elif not l:
                 out.append("<div style='height:10px;'></div>")
             else:
-                content = re.sub(r"\*\*(.+?)\*\*", r"<b style='color:#FFFFFF; font-weight:600;'>\1</b>", line)
-                out.append(f"<p style='font-size:17px; line-height:1.75; margin:6px 0; color:#F0EFF5;'>{content}</p>")
+                content = re.sub(r"\*\*(.+?)\*\*", f"<b style='color:{theme.TEXT}; font-weight:600;'>\\1</b>", line)
+                out.append(f"<p style='font-size:17px; line-height:1.75; margin:6px 0; color:{theme.TEXT};'>{content}</p>")
 
         if in_code:
             out.append("</pre></div>")
@@ -1034,7 +963,7 @@ class NotebookLMWorkspace(QtWidgets.QWidget):
         # 添加用户问题气泡（沉稳紫灰卡片，大字号）
         user_bubble = f"""
         <div style="margin: 14px 0; text-align: right;">
-            <div style="display: inline-block; background: #2B243B; color: #FFFFFF; border: 1px solid #453A5E;
+            <div style="display: inline-block; background: {theme.DLG_TINT}; color: {theme.TEXT}; border: 1px solid {theme.GRID};
                         padding: 10px 16px; border-radius: 14px; font-size: 16px; line-height: 1.6; text-align: left; max-width: 85%;">
                 <b>我：</b>{QtCore.Qt.escape(question) if hasattr(QtCore.Qt, "escape") else question}
             </div>
@@ -1049,12 +978,12 @@ class NotebookLMWorkspace(QtWidgets.QWidget):
         worker = ReplyWorker(self.brain, full_prompt, parent=self)
         self._reply_worker = worker
 
-        placeholder = """
+        placeholder = f"""
         <div style="margin: 14px 0;">
-            <div style="background: #171322; border: 1px solid #2C263B; border-left: 4px solid #A78BFA;
-                        border-radius: 8px; padding: 14px; font-size: 16px; color: #F1EFF7; line-height: 1.7;">
-                <b style="color: #A78BFA;">🐰 阿米娅：</b>
-                <div style="margin-top: 8px; color: #9A92A8;">正在分析课件考点并生成解答...</div>
+            <div style="background: {theme.FIELD}; border: 1px solid {theme.GRID}; border-left: 4px solid {theme.ACCENT};
+                        border-radius: 8px; padding: 14px; font-size: 16px; color: {theme.TEXT}; line-height: 1.7;">
+                <b style="color: {theme.ACCENT_DEEP};">🐰 阿米娅：</b>
+                <div style="margin-top: 8px; color: {theme.TEXT_DIM};">正在分析课件考点并生成解答...</div>
             </div>
         </div>
         """
@@ -1063,9 +992,9 @@ class NotebookLMWorkspace(QtWidgets.QWidget):
         def on_delta(delta_text):
             formatted = self._format_markdown_html(delta_text)
             self.chat_browser.append(f"""
-                <div style="background: #171322; border: 1px solid #2C263B; border-left: 4px solid #A78BFA;
-                            border-radius: 8px; padding: 14px; font-size: 16px; color: #F1EFF7; line-height: 1.7; margin: 10px 0;">
-                    <b style="color: #A78BFA;">🐰 阿米娅：</b>
+                <div style="background: {theme.FIELD}; border: 1px solid {theme.GRID}; border-left: 4px solid {theme.ACCENT};
+                            border-radius: 8px; padding: 14px; font-size: 16px; color: {theme.TEXT}; line-height: 1.7; margin: 10px 0;">
+                    <b style="color: {theme.ACCENT_DEEP};">🐰 阿米娅：</b>
                     <div style="margin-top: 8px;">{formatted}</div>
                 </div>
             """)
