@@ -14,7 +14,7 @@ import sys
 from PyQt5 import QtCore, QtGui, QtWidgets
 
 from pet import Character, PetWindow
-from pet import logging as petlog
+from pet import logging as petlog, theme
 from pet.settings import Settings, characters_dirs
 
 
@@ -73,6 +73,9 @@ def main():
     # High-DPI scaling is enabled by default in PyQt5 5.15+; the explicit
     # attribute is deprecated and prints a runtime warning.
     app = QtWidgets.QApplication(sys.argv)
+    # Style native Qt confirmation and message boxes consistently with the
+    # custom desktop windows and dialogs.
+    app.setStyleSheet(theme.DIALOG_QSS)
 
     icon_path = _app_icon_path()
     if icon_path:
