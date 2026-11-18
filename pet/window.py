@@ -16,7 +16,7 @@ from .ai import AmiyaBrain
 from .character import Character
 from .focus import PetFocusToolsManager
 from .frames import key_frame, calc_action_interval
-from .sprite_animation import SpriteCapture, resize_sprite
+from .sprite_animation import SpriteCapture, resize_sprite, blend_sprites
 from .hotkey import GlobalHotkey
 from .info_panel import InfoPanel, PAGE_OCR, PAGE_SCHEDULE, PAGE_TASKS
 from .input_controller import PetInputController
@@ -971,6 +971,7 @@ class PetWindow(QtWidgets.QWidget):
         return capture
 
     def play(self, action_name):
+        previous_facing = getattr(self, "_last_facing_left", getattr(self, "_facing_left", False))
         if action_name != "move":
             self._facing_left = False
         action = self.char.action(action_name)
@@ -981,6 +982,13 @@ class PetWindow(QtWidgets.QWidget):
         except Exception as error:
             petlog.warn(f"播放动作 {action_name} 失败: {error}")
             return False
+        previous_action = getattr(self, "_cur_action", None)
+        transition_from = None
+        if (action.sprite is not None and previous_action is not None
+                and previous_action.sprite is not None):
+            transition_from = getattr(self, "_last_bgra", None)
+            if transition_from is not None and previous_facing != self._facing_left:
+                transition_from = cv2.flip(transition_from, 1)
         if self._cap is not None:
             self._cap.release()
         self._cap = capture
@@ -998,6 +1006,8 @@ class PetWindow(QtWidgets.QWidget):
         self._cache_full = False        # reset budget tracker for this clip
         self._skip_count = 0            # reset frame-skip counter
         self._last_bgra = None
+        self._sprite_transition_from = transition_from
+        self._sprite_transition_step = 0
         # 按动画原始真实速度播放（优先使用各角色 config.json 中校准的原生真实毫秒间隔）。
         fps = self._cap.get(cv2.CAP_PROP_FPS)
         speed = float(self.prefs.get("anim_speed", 1.0)) if hasattr(self, "prefs") else 1.0
@@ -1139,7 +1149,6 @@ class PetWindow(QtWidgets.QWidget):
                 self._cache_full = True
                 self._mem.force_collect()
         self._show(bgra)
-        self._last_bgra = bgra      # save for potential frame-skip reuse
         self._mem.tick_gc()
 
     def _compress_tick(self):
@@ -1167,6 +1176,16 @@ class PetWindow(QtWidgets.QWidget):
         self._compress_i += 1
 
     def _show(self, bgra):
+        transition_from = getattr(self, "_sprite_transition_from", None)
+        if transition_from is not None:
+            self._sprite_transition_step += 1
+            bgra = blend_sprites(transition_from, bgra, self._sprite_transition_step / 2)
+            if self._sprite_transition_step >= 2 or transition_from.shape != bgra.shape:
+                self._sprite_transition_from = None
+        # Keep the latest displayed, unmirrored pose even during cached replay.
+        # Action fades are display-only: cached loops retain steady-state frames.
+        self._last_bgra = bgra
+        self._last_facing_left = getattr(self, "_facing_left", False)
         if getattr(self, "_facing_left", False):
             bgra = cv2.flip(bgra, 1)
         dim = getattr(self, "_dim_factor", 1.0)

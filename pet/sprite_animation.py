@@ -18,6 +18,21 @@ def _transform_alpha(frame, operation):
     return np.clip(np.rint(filtered), 0, 255).astype(np.uint8)
 
 
+def blend_sprites(previous, current, weight):
+    """Crossfade color and coverage together, without dark/transparent flashes."""
+    if previous.shape != current.shape:
+        return current.copy()
+    weight = max(0.0, min(1.0, float(weight)))
+    before = previous.astype(np.float32)
+    after = current.astype(np.float32)
+    before[:, :, :3] *= before[:, :, 3:4] / 255
+    after[:, :, :3] *= after[:, :, 3:4] / 255
+    result = before * (1 - weight) + after * weight
+    np.divide(result[:, :, :3] * 255, result[:, :, 3:4],
+              out=result[:, :, :3], where=result[:, :, 3:4] > 0)
+    return np.clip(np.rint(result), 0, 255).astype(np.uint8)
+
+
 @lru_cache(maxsize=2)
 def _read_sheet(path, modified):
     sheet = cv2.imdecode(np.fromfile(path, dtype=np.uint8), cv2.IMREAD_UNCHANGED)
@@ -50,8 +65,52 @@ class SpriteCapture:
         self._motion = cfg.get("motion", "none")
         if self._motion not in ("none", "breathe", "sway", "bounce"):
             raise ValueError("未知插画动画效果")
+        self._transition_frames = cfg.get("transition_frames", 0)
+        if type(self._transition_frames) is not int or not 0 <= self._transition_frames <= 8:
+            raise ValueError("插画过渡帧数无效")
+        self._alignment = self._validate_alignment(cfg.get("alignment"))
+        self._poses = {cell: self._aligned_pose(cell) for cell in set(self._cells)}
         self._index = 0
         self._closed = False
+        self._previous_cell = None
+        self._last_pose = None
+        self._transition_from = None
+        self._transition_step = 0
+
+    def _validate_alignment(self, alignment):
+        if alignment is None:
+            return None
+        try:
+            count = self._cols * self._rows
+            anchors = np.asarray(alignment["anchors"], dtype=np.float32)
+            heights = np.asarray(alignment["heights"], dtype=np.float32)
+            reference = alignment.get("reference", 0)
+            valid = (anchors.shape == (count, 2) and heights.shape == (count,)
+                     and type(reference) is int and 0 <= reference < count
+                     and np.isfinite(anchors).all() and np.isfinite(heights).all()
+                     and (anchors >= 0).all() and (heights > 0).all()
+                     and (anchors[:, 0] <= self._width).all()
+                     and (anchors[:, 1] <= self._height).all()
+                     and (heights <= self._height).all())
+            if valid:
+                return anchors, heights, reference
+        except (KeyError, TypeError, ValueError):
+            pass
+        raise ValueError("插画对齐配置无效")
+
+    def _aligned_pose(self, cell):
+        left = (cell % self._cols) * self._width
+        top = (cell // self._cols) * self._height
+        pose = self._sheet[top:top + self._height, left:left + self._width].copy()
+        if self._alignment is not None:
+            anchors, heights, reference = self._alignment
+            scale = float(heights[reference] / heights[cell])
+            offset = anchors[reference] - scale * anchors[cell]
+            matrix = np.float32([[scale, 0, offset[0]], [0, scale, offset[1]]])
+            pose = _transform_alpha(pose, lambda pixels: cv2.warpAffine(
+                pixels, matrix, (self._width, self._height), flags=cv2.INTER_LINEAR,
+                borderMode=cv2.BORDER_CONSTANT, borderValue=(0, 0, 0, 0)))
+        return pose
 
     def isOpened(self):
         return not self._closed
@@ -69,6 +128,8 @@ class SpriteCapture:
         if prop != cv2.CAP_PROP_POS_FRAMES or self._closed:
             return False
         self._index = max(0, min(len(self._cells), int(value)))
+        self._previous_cell = self._last_pose = self._transition_from = None
+        self._transition_step = 0
         return True
 
     def read(self):
@@ -77,9 +138,19 @@ class SpriteCapture:
         index = self._index
         cell = self._cells[index]
         self._index += 1
-        left = (cell % self._cols) * self._width
-        top = (cell // self._cols) * self._height
-        frame = self._sheet[top:top + self._height, left:left + self._width].copy()
+        pose = self._poses[cell]
+        if cell != self._previous_cell and self._last_pose is not None and self._transition_frames:
+            self._transition_from = self._last_pose
+            self._transition_step = 0
+        self._previous_cell = cell
+        if self._transition_from is not None:
+            self._transition_step += 1
+            pose = blend_sprites(self._transition_from, pose,
+                                 self._transition_step / self._transition_frames)
+            if self._transition_step >= self._transition_frames:
+                self._transition_from = None
+        self._last_pose = pose.copy()
+        frame = pose.copy()
         # Keep feet at a stable baseline; a tiny squash/sway gives the drawing
         # movement without inventing a walking or fully rigged skeleton.
         phase = math.tau * index / len(self._cells)
@@ -102,6 +173,8 @@ class SpriteCapture:
     def release(self):
         self._closed = True
         self._sheet = None
+        self._poses.clear()
+        self._last_pose = self._transition_from = None
 
 
 def resize_sprite(frame, scale):
